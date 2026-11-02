@@ -3,6 +3,9 @@ with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Exceptions;
+with Ada_Quality.Checks;
+with Ada_Quality.Policy;
+with Ada_Quality.Reporting;
 with Ada_Quality.Storage;
 with Ada_Quality.Types;
 with AUnit;
@@ -15,11 +18,13 @@ with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
 with Improve.Planner;
+with Improve.Presentation;
 with Improve.Refinement;
 with Improve.Recovery;
 with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
+with Improve.Tasks;
 with Improve.Text;
 with Improve.Workflow;
 with Model_Runner.Errors;
@@ -36,10 +41,13 @@ package body Improve_Test_Suite is
    use type Improve.CLI.Command_Kind;
    use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
+   use type Improve.Config.Output_Format;
+   use type Improve.Config.Severity_Level;
    use type Improve.Model.Candidate_Kind;
    use type Improve.Model.Task_Vectors.Vector;
    use type Improve.Refinement.Refinement_Status;
    use type Improve.Refinement.Source_State;
+   use type Improve.Tasks.Operational_Status;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
 
@@ -58,7 +66,8 @@ package body Improve_Test_Suite is
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
       Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Interrupted_Publication_Recovery,
-      Recovery_Limit_Enforced, Recover_Missing_State);
+      Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
+      Operational_Terminal_Paths, Task_Status_Matrix, Real_End_To_End_Workflow);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -241,6 +250,39 @@ package body Improve_Test_Suite is
    begin
       Project_Tools.Files.Delete_Tree (To_String (Item.Directory));
    end Remove;
+
+   function Publish_Real_Assessment
+     (Database : String;
+      Project  : Positive;
+      Root     : String;
+      Policy   : Ada_Quality.Policy.Quality_Policy) return Positive is
+      Store : Ada_Quality.Storage.Store;
+      Run   : Natural := 0;
+   begin
+      Ada_Quality.Storage.Open (Store, Database);
+      Run := Ada_Quality.Storage.Start_Assessment
+        (Store, Project, Ada_Quality.Checks.Source_Fingerprint (Root), Ada_Quality.Policy.Fingerprint (Policy));
+      declare
+         Value : Ada_Quality.Types.Assessment := Ada_Quality.Checks.Assess (Project, Root, Policy);
+      begin
+         Value.Id := Run;
+         if Ada_Quality.Storage.Publish (Store, Value) /= Run then
+            raise Program_Error with "real assessment publication changed its identity";
+         end if;
+      end;
+      Ada_Quality.Storage.Close (Store);
+      return Positive (Run);
+   exception
+      when others =>
+         if Ada_Quality.Storage.Is_Open (Store) then
+            if Run > 0 then
+               Ada_Quality.Storage.Interrupt_Assessment
+                 (Store, Positive (Run), "end-to-end assessment aborted");
+            end if;
+            Ada_Quality.Storage.Close (Store);
+         end if;
+         raise;
+   end Publish_Real_Assessment;
 
    type Followup_State is (All_Pass, Structure_Failing, Structure_Unmeasurable);
 
@@ -484,19 +526,146 @@ package body Improve_Test_Suite is
             declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("unknown"));
             begin Assert (Result.Exit_Code = 2 and then Length (Result.Output) = 0 and then Length (Result.Errors) > 0,
                           "invalid command did not observe the output contract"); end;
-         when Catalog => Assert (Improve.Text.Catalog_Is_Valid, "message catalog is invalid");
+         when Catalog =>
+            Assert (Improve.Text.Catalog_Is_Valid, "message catalog is invalid");
+            declare
+               Value : constant Improve.Text.Argument := Improve.Text.Arg ("name", "value");
+               Rejected : Boolean := False;
+            begin
+               Assert (To_String (Value.Name) = "name" and then To_String (Value.Value) = "value",
+                       "message argument construction failed");
+               begin
+                  declare Text : constant String := Improve.Text.Message ("missing.key"); begin
+                     Assert (Text = "", "missing catalog message unexpectedly rendered");
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "missing catalog key was accepted");
+               Improve.Presentation.Configure (Improve.Config.Terminal_Format, Improve.Config.Color_Always);
+               Assert (Improve.Presentation.Header ("Improve") /= "", "styled header was empty");
+               Improve.Presentation.Configure (Improve.Config.Terminal_Format, Improve.Config.Color_Never);
+            end;
          when Digest => Assert (Improve.Stable_Digest ("improve") = Improve.Stable_Digest ("improve") and then
                                 Improve.Stable_Digest ("improve") /= Improve.Stable_Digest ("Improve"),
                                 "stable digest is not deterministic or discriminating");
          when Project_Discovery =>
             declare
-               Data  : constant Fixture := Build_Fixture ("projects");
-               Store : Improve.Source.Repository;
+               Data       : constant Fixture := Build_Fixture ("projects");
+               Store      : Improve.Source.Repository;
+               Writer     : Ada_Quality.Storage.Store;
+               Empty_Id   : Positive;
+               Left_Id    : Positive;
+               Right_Id   : Positive;
+               Rejected   : Boolean := False;
+               Left_Path  : constant String := To_String (Data.Directory) & "/left/shared";
+               Right_Path : constant String := To_String (Data.Directory) & "/right/shared";
+               Empty_Path : constant String := To_String (Data.Directory) & "/empty";
+
+               procedure Initialize_Crate (Path, Name : String) is
+               begin
+                  Ada.Directories.Create_Path (Path);
+                  Project_Tools.Files.Write_Text_File
+                    (Path & "/alire.toml",
+                     "name = """ & Name & """" & ASCII.LF &
+                     "description = ""source selection fixture""" & ASCII.LF &
+                     "version = ""0.1.0-dev""" & ASCII.LF &
+                     "authors = [""Improve tests""]" & ASCII.LF &
+                     "maintainers = [""Improve tests <tests@example.invalid>""]" & ASCII.LF &
+                     "maintainers-logins = [""improve-tests""]" & ASCII.LF &
+                     "licenses = ""MIT""" & ASCII.LF &
+                     "tags = [""test""]" & ASCII.LF);
+               end Initialize_Crate;
             begin
+               Initialize_Crate (Left_Path, "left_shared");
+               Initialize_Crate (Right_Path, "right_shared");
+               Initialize_Crate (Empty_Path, "empty_project");
+               Ada_Quality.Storage.Open (Writer, To_String (Data.Database));
+               Empty_Id := Ada_Quality.Storage.Add_Project (Writer, Empty_Path);
+               Left_Id := Ada_Quality.Storage.Add_Project (Writer, Left_Path);
+               Right_Id := Ada_Quality.Storage.Add_Project (Writer, Right_Path);
+               Assert (Left_Id /= Right_Id, "distinct project registrations reused an identity");
+               Ada_Quality.Storage.Close (Writer);
+
                Improve.Source.Open (Store, To_String (Data.Database));
-               Assert (Improve.Source.Projects (Store).Length = 1, "registered project was not discovered");
+               Assert (Improve.Source.Projects (Store).Length = 4, "registered projects were not discovered");
                Assert (Improve.Source.Identity (Store)'Length = 24, "snapshot identity is malformed");
+               Assert
+                 (Improve.Source.Resolve_Project (Store, To_String (Data.Target)).Id = Data.Project,
+                  "canonical project path did not resolve");
+               Assert
+                 (Improve.Source.Resolve_Project (Store, "improve").Id = Data.Project,
+                  "unique project name did not resolve");
+               begin
+                  declare
+                     Value : constant Improve.Model.Project_Reference :=
+                       Improve.Source.Resolve_Project (Store, "shared");
+                     pragma Unreferenced (Value);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Argument_Error => Rejected := True;
+               end;
+               Assert (Rejected, "ambiguous project name was accepted");
+
+               Rejected := False;
+               begin
+                  declare
+                     Value : constant Improve.Model.Project_Reference :=
+                       Improve.Source.Resolve_Project (Store, "");
+                     pragma Unreferenced (Value);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Argument_Error => Rejected := True;
+               end;
+               Assert (Rejected, "empty project selector was accepted");
+
+               Rejected := False;
+               begin
+                  declare
+                     Value : constant Improve.Model.Project_Reference :=
+                       Improve.Source.Resolve_Project (Store, "999999999999999999999999999999999999999999");
+                     pragma Unreferenced (Value);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Argument_Error => Rejected := True;
+               end;
+               Assert (Rejected, "out-of-range project identity was accepted");
+
+               Rejected := False;
+               begin
+                  declare
+                     Project : constant Improve.Model.Project_Reference :=
+                       Improve.Source.Resolve_Project (Store, Id_Image (Empty_Id));
+                     Value : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
+                     pragma Unreferenced (Value);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Dependency_Error => Rejected := True;
+               end;
+               Assert (Rejected, "project without a completed assessment was accepted");
+
+               Improve.Source.Open (Store, To_String (Data.Database));
                Improve.Source.Close (Store);
+               Rejected := False;
+               begin
+                  declare
+                     Values : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Store);
+                     pragma Unreferenced (Values);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "closed quality repository was readable");
                Remove (Data);
             end;
          when Latest_Completed =>
@@ -582,10 +751,13 @@ package body Improve_Test_Suite is
                Remove (Data);
             end;
          when Safe_Path_Validation =>
+            Assert (Improve.Findings.Safe_Relative_Path (""), "empty relative path was rejected");
             Assert (Improve.Findings.Safe_Relative_Path ("src/parser.adb"), "safe path was rejected");
             Assert (not Improve.Findings.Safe_Relative_Path ("../outside"), "parent traversal was accepted");
             Assert (not Improve.Findings.Safe_Relative_Path ("src//unit.adb"), "empty path component was accepted");
             Assert (not Improve.Findings.Safe_Relative_Path ("/absolute/path"), "absolute path was accepted");
+            Assert (not Improve.Findings.Safe_Relative_Path ("C:\\outside"), "drive path was accepted");
+            Assert (not Improve.Findings.Safe_Relative_Path (".."), "terminal parent traversal was accepted");
          when Projects_CLI =>
             declare
                Data   : constant Fixture := Build_Fixture ("projects_cli");
@@ -618,6 +790,18 @@ package body Improve_Test_Suite is
                           Length (Strategy.Verification) > 0,
                           "strategy metadata is incomplete for " & Ada_Quality.Types.Image (Indicator));
                end;
+            end loop;
+            for Kind in Improve.Rules.Strategy_Kind loop
+               Assert (Improve.Rules.Image (Kind) /= "", "strategy kind has no stable spelling");
+            end loop;
+            for Kind in Improve.Model.Candidate_Kind loop
+               Assert (Improve.Model.Image (Kind) /= "", "candidate kind has no stable spelling");
+            end loop;
+            for Value in Improve.Model.Priority loop
+               Assert (Improve.Model.Image (Value) /= "", "priority has no stable spelling");
+            end loop;
+            for Value in Improve.Model.Quality_Outcome loop
+               Assert (Improve.Model.Image (Value) /= "", "quality outcome has no stable spelling");
             end loop;
          when Deterministic_Planner =>
             declare
@@ -690,23 +874,74 @@ package body Improve_Test_Suite is
             end;
          when Dependency_Cycle_Rejected =>
             declare
-               Values   : Improve.Model.Task_Vectors.Vector;
-               First    : Improve.Model.Task_Specification;
-               Second   : Improve.Model.Task_Specification;
-               Rejected : Boolean := False;
+               procedure Expect_Rejection
+                 (Values : Improve.Model.Task_Vectors.Vector;
+                  Label  : String) is
+                  Rejected : Boolean := False;
+               begin
+                  begin
+                     Improve.Dependencies.Validate (Values);
+                  exception
+                     when Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, Label & " was accepted");
+               end Expect_Rejection;
+
+               function Make_Task (Identity : String) return Improve.Model.Task_Specification is
+                  Result : Improve.Model.Task_Specification;
+               begin
+                  Result.Id := To_Unbounded_String (Identity);
+                  return Result;
+               end Make_Task;
+
+               Values : Improve.Model.Task_Vectors.Vector;
+               First  : Improve.Model.Task_Specification;
+               Second : Improve.Model.Task_Specification;
             begin
-               First.Id := To_Unbounded_String ("IMP-A");
+               Improve.Dependencies.Validate (Values);
+               Values.Append (Make_Task ("IMP-VALID-A"));
+               Second := Make_Task ("IMP-VALID-B");
+               Second.Dependencies.Append (To_Unbounded_String ("IMP-VALID-A"));
+               Values.Append (Second);
+               Improve.Dependencies.Validate (Values);
+
+               Values.Clear;
+               Values.Append (Make_Task (""));
+               Expect_Rejection (Values, "empty task identity");
+
+               Values.Clear;
+               Values.Append (Make_Task ("IMP-DUP"));
+               Values.Append (Make_Task ("IMP-DUP"));
+               Expect_Rejection (Values, "duplicate task identity");
+
+               Values.Clear;
+               First := Make_Task ("IMP-UNKNOWN");
+               First.Dependencies.Append (To_Unbounded_String ("IMP-MISSING"));
+               Values.Append (First);
+               Expect_Rejection (Values, "unknown dependency");
+
+               Values.Clear;
+               First := Make_Task ("IMP-SELF");
+               First.Dependencies.Append (First.Id);
+               Values.Append (First);
+               Expect_Rejection (Values, "self dependency");
+
+               Values.Clear;
+               First := Make_Task ("IMP-EDGE");
+               First.Dependencies.Append (To_Unbounded_String ("IMP-TARGET"));
+               First.Dependencies.Append (To_Unbounded_String ("IMP-TARGET"));
+               Values.Append (First);
+               Values.Append (Make_Task ("IMP-TARGET"));
+               Expect_Rejection (Values, "duplicate dependency edge");
+
+               Values.Clear;
+               First := Make_Task ("IMP-A");
                First.Dependencies.Append (To_Unbounded_String ("IMP-B"));
-               Second.Id := To_Unbounded_String ("IMP-B");
+               Second := Make_Task ("IMP-B");
                Second.Dependencies.Append (To_Unbounded_String ("IMP-A"));
                Values.Append (First);
                Values.Append (Second);
-               begin
-                  Improve.Dependencies.Validate (Values);
-               exception
-                  when Improve.Data_Error => Rejected := True;
-               end;
-               Assert (Rejected, "dependency cycle was accepted");
+               Expect_Rejection (Values, "dependency cycle");
             end;
          when Plan_Dry_Run_CLI =>
             declare
@@ -823,6 +1058,38 @@ package body Improve_Test_Suite is
                Store   : Stores.Store;
                Status  : Errors.Error_Info;
             begin
+               declare
+                  Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
+                  Rejected : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Value : constant Improve.Workflow.Publication_Result :=
+                          Improve.Workflow.Publish (To_String (Data.Target), Draft, "auto");
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Dependency_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "publication accepted uninitialized harness state");
+
+                  Rejected := False;
+                  begin
+                     declare
+                        Value : constant Improve.Workflow.Published_Vectors.Vector :=
+                          Improve.Workflow.Reconcile
+                            (To_String (Data.Target), Improve.Workflow.Published_Vectors.Empty_Vector);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Dependency_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "reconciliation accepted uninitialized harness state");
+               end;
                Initialize_Harness (To_String (Data.Target));
                Plan_Result := Improve.CLI.Execute
                  (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
@@ -1341,6 +1608,404 @@ package body Improve_Test_Suite is
                Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0 and then
                          not Project_Tools.Files.File_Exists (Path),
                        "recover initialized missing state or returned the wrong exit code");
+            end;
+         when Configuration_Bounds =>
+            declare
+               Path : constant String := "/tmp/improve_phase9_configuration.toml";
+
+               procedure Write (Text : String) is
+               begin
+                  Project_Tools.Files.Write_Text_File
+                    (Path, "schema_version = 1" & ASCII.LF & Text & ASCII.LF);
+               end Write;
+
+               procedure Reject (Text, Label : String) is
+                  Rejected : Boolean := False;
+               begin
+                  Write (Text);
+                  begin
+                     declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "configuration accepted invalid " & Label);
+               end Reject;
+
+               procedure Accept_Severity (Text : String; Expected : Improve.Config.Severity_Level) is
+               begin
+                  Write ("minimum_severity = """ & Text & """");
+                  Assert (Improve.Config.Load (Path).Minimum_Severity = Expected,
+                          "configuration did not preserve severity " & Text);
+               end Accept_Severity;
+            begin
+               Write
+                 ("database = ""quality.db""" & ASCII.LF &
+                  "selection = ""latest_completed""" & ASCII.LF &
+                  "minimum_severity = ""critical""" & ASCII.LF &
+                  "maximum_tasks_per_plan = 7" & ASCII.LF &
+                  "maximum_findings_per_task = 6" & ASCII.LF &
+                  "allow_investigation_tasks = false" & ASCII.LF &
+                  "require_review = false" & ASCII.LF &
+                  "agent_max_context_bytes = 4096" & ASCII.LF &
+                  "agent_max_file_bytes = 2048" & ASCII.LF &
+                  "agent_max_response_bytes = 1024" & ASCII.LF &
+                  "agent_timeout_seconds = 2" & ASCII.LF &
+                  "maximum_output_items = 8" & ASCII.LF &
+                  "maximum_recovery_operations = 9" & ASCII.LF &
+                  "task_kind = ""remediation""" & ASCII.LF &
+                  "publication = ""candidate""" & ASCII.LF &
+                  "require_initialized_project = false" & ASCII.LF &
+                  "require_fresh_measurement = false" & ASCII.LF &
+                  "require_same_policy = false" & ASCII.LF &
+                  "require_same_toolchain = true" & ASCII.LF &
+                  "require_no_new_critical_findings = false" & ASCII.LF &
+                  "format = ""json""" & ASCII.LF &
+                  "color = ""never""");
+               declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
+                  Assert
+                    (Value.Minimum_Severity = Improve.Config.Critical and then
+                     Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
+                     not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
+                     Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
+                     Value.Maximum_Recovery_Operations = 9 and then Value.Format = Improve.Config.JSON_Format and then
+                     Value.Color = Improve.Config.Color_Never and then
+                     Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "operations.maximum") > 0,
+                     "valid nondefault configuration was not preserved");
+               end;
+               Project_Tools.Files.Write_Text_File (Path, "schema_version = 2" & ASCII.LF);
+               begin
+                  declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                     pragma Unreferenced (Value);
+                  begin
+                     Assert (False, "unsupported configuration schema was accepted");
+                  end;
+               exception
+                  when Improve.Argument_Error => null;
+               end;
+               Accept_Severity ("info", Improve.Config.Info);
+               Accept_Severity ("medium", Improve.Config.Medium);
+               Accept_Severity ("high", Improve.Config.High);
+               Reject ("selection = ""newest""", "selection");
+               Reject ("database = """"", "empty database");
+               Reject ("minimum_severity = ""urgent""", "severity");
+               Reject ("task_kind = """"", "task kind");
+               Reject ("publication = ""accepted""", "publication mode");
+               Reject ("format = ""yaml""", "output format");
+               Reject ("color = ""sometimes""", "color policy");
+               Reject ("maximum_tasks_per_plan = 0", "zero task limit");
+               Reject ("maximum_tasks_per_plan = 10001", "task limit");
+               Reject ("maximum_findings_per_task = 10001", "finding limit");
+               Reject ("agent_max_context_bytes = 1000", "small agent context");
+               Reject
+                 ("agent_max_context_bytes = 1024" & ASCII.LF & "agent_max_file_bytes = 2048",
+                  "agent file limit");
+               Reject ("agent_max_response_bytes = 1048577", "agent response limit");
+               Reject ("agent_timeout_seconds = 3601", "agent timeout");
+               Reject ("maximum_output_items = 100001", "output item limit");
+               Reject ("maximum_recovery_operations = 10001", "recovery limit");
+               Reject ("require_review = maybe", "boolean");
+               Project_Tools.Files.Delete_File_If_Present (Path);
+            end;
+         when Operational_Terminal_Paths =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("terminal_paths", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Result  : Improve.CLI.Outcome;
+               Commands : Improve.Model.UString_Vectors.Vector;
+            begin
+               Assert (Planned.Exit_Code = 0, "terminal-path fixture planning failed");
+               Initialize_Harness (To_String (Data.Target));
+               Commands.Append
+                 (To_Unbounded_String
+                    ("plan|list|--project|" & Id_Image (Data.Project) & "|--database|" &
+                     To_String (Data.Database) & "|--state|" & State & "|--color|never"));
+               Commands.Append
+                 (To_Unbounded_String ("plan|show|PLAN-000001|--state|" & State & "|--color|never"));
+               Commands.Append
+                 (To_Unbounded_String
+                    ("apply|PLAN-000001|--dry-run|--database|" & To_String (Data.Database) & "|--state|" & State &
+                     "|--color|never"));
+               Commands.Append
+                 (To_Unbounded_String
+                    ("tasks|--project|" & Id_Image (Data.Project) & "|--status|verified|--database|" &
+                     To_String (Data.Database) & "|--state|" & State & "|--color|never"));
+               Commands.Append
+                 (To_Unbounded_String
+                    ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                     To_String (Data.Database) & "|--state|" & State & "|--color|never"));
+               Commands.Append (To_Unbounded_String ("recover|--state|" & State & "|--color|never"));
+               Commands.Append (To_Unbounded_String ("config|show|--format|json"));
+               for Command of Commands loop
+                  Result := Improve.CLI.Execute (Args (To_String (Command)));
+                  Assert
+                    (Result.Exit_Code = 0 and then Length (Result.Output) > 0 and then Length (Result.Errors) = 0,
+                     "operational terminal path failed: " & To_String (Command));
+               end loop;
+               Must_Reject ("--version|projects", "cannot be combined");
+               Must_Reject ("help|unknown", "unknown help topic");
+               Must_Reject ("plan|show", "requires a plan identity");
+               Must_Reject ("status|--all|--project|1", "exactly one");
+               Must_Reject ("projects|--dry-run", "not accepted");
+               Must_Reject ("tasks|--task=", "requires a value");
+               Remove (Data);
+            end;
+         when Task_Status_Matrix =>
+            declare
+               Data : constant Fixture := Build_Fixture ("task_status_matrix", Harness_Project => True);
+               Plan : Improve.Model.Plan_Revision := Draft_For (Data);
+               Only : constant Improve.Model.Task_Specification := Plan.Tasks.First_Element;
+
+               procedure Check
+                 (Harness_State : String;
+                  Expected      : Improve.Tasks.Operational_Status;
+                  Verified      : Boolean := False;
+                  Outcome       : Improve.Model.Quality_Outcome := Improve.Model.Unverified) is
+                  Publications : Improve.Storage.Publication_Vectors.Vector;
+                  Evidence     : Improve.Storage.Verification_Vectors.Vector;
+                  Views        : Improve.Tasks.View_Vectors.Vector;
+               begin
+                  if Harness_State /= "" then
+                     Publications.Append
+                       (Improve.Storage.Publication_Record'
+                          (Improve_Task_Id => Only.Id,
+                           Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
+                           Origin => To_Unbounded_String ("improve:test"),
+                           State => To_Unbounded_String (Harness_State)));
+                  end if;
+                  if Verified then
+                     Evidence.Append
+                       (Improve.Storage.Verification_Record'
+                          (Task_Id => Only.Id, Assessment_Id => 2, Outcome => Outcome, Comparable => True,
+                           Explanation => To_Unbounded_String ("matrix")));
+                  end if;
+                  Views := Improve.Tasks.Build (Plan, Publications, Evidence);
+                  Assert (Views.First_Element.Status = Expected, "unexpected operational task status");
+               end Check;
+            begin
+               Plan.Tasks.Clear;
+               Plan.Tasks.Append (Only);
+               Check ("", Improve.Tasks.Proposed);
+               Check ("candidate", Improve.Tasks.Published);
+               Check ("accepted", Improve.Tasks.Published);
+               Check ("running", Improve.Tasks.In_Progress);
+               Check ("blocked", Improve.Tasks.Blocked);
+               Check ("failed", Improve.Tasks.Failed);
+               Check ("cancelled", Improve.Tasks.Cancelled);
+               Check ("rejected", Improve.Tasks.Rejected);
+               Check ("complete", Improve.Tasks.Awaiting_Verification);
+               Check ("verification", Improve.Tasks.Awaiting_Verification);
+               Check ("complete", Improve.Tasks.Verified, True, Improve.Model.Verified);
+               Check ("complete", Improve.Tasks.Partially_Resolved, True, Improve.Model.Partially_Resolved);
+               Check ("complete", Improve.Tasks.Still_Failing, True, Improve.Model.Still_Failing);
+               Check ("complete", Improve.Tasks.Inconclusive, True, Improve.Model.Inconclusive);
+               Check ("running", Improve.Tasks.Regressed, True, Improve.Model.Regressed);
+               Check ("running", Improve.Tasks.Superseded, True, Improve.Model.Superseded);
+               Assert
+                 (Improve.Tasks.Valid_Filter ("unresolved") and then
+                  Improve.Tasks.Valid_Filter ("verified") and then
+                  not Improve.Tasks.Valid_Filter ("unknown") and then
+                  Improve.Tasks.Matches
+                    (Improve.Tasks.Build
+                       (Plan, Improve.Storage.Publication_Vectors.Empty_Vector,
+                        Improve.Storage.Verification_Vectors.Empty_Vector).First_Element,
+                     "unresolved"),
+                  "task status filter contract is inconsistent");
+               Remove (Data);
+            end;
+         when Real_End_To_End_Workflow =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Root      : constant String := "/tmp/improve_phase9_end_to_end";
+               Database  : constant String := Root & "/quality.db";
+               State     : constant String := Root & "/improve.db";
+               Source    : constant String := Root & "/src/e2e_fixture.adb";
+               Quality   : Ada_Quality.Storage.Store;
+               Project   : Positive;
+               First_Run : Positive;
+               Next_Run  : Positive;
+               Policy    : Ada_Quality.Policy.Quality_Policy := Ada_Quality.Policy.Default;
+               Planned   : Improve.CLI.Outcome;
+               Applied   : Improve.CLI.Outcome;
+               Verified  : Improve.CLI.Outcome;
+               Replanned : Improve.CLI.Outcome;
+               Repeated  : Improve.CLI.Outcome;
+               Plan      : Improve.Model.Plan_Revision;
+               New_Plan  : Improve.Model.Plan_Revision;
+               Hygiene_Key  : Unbounded_String;
+               Hygiene_Task : Unbounded_String;
+               Prior_Ids    : Improve.Model.UString_Vectors.Vector;
+               Mapping      : Improve.Storage.Publication_Record;
+            begin
+               Project_Tools.Files.Delete_Tree (Root);
+               Ada.Directories.Create_Path (Root & "/src");
+               Project_Tools.Files.Write_Text_File
+                 (Root & "/alire.toml",
+                  "name = ""e2e_fixture""" & ASCII.LF &
+                  "description = ""Improve end-to-end fixture""" & ASCII.LF &
+                  "version = ""0.1.0""" & ASCII.LF &
+                  "licenses = ""MIT""" & ASCII.LF &
+                  "authors = [""Improve tests""]" & ASCII.LF &
+                  "maintainers = [""Improve tests <tests@example.invalid>""]" & ASCII.LF &
+                  "maintainers-logins = [""improve-tests""]" & ASCII.LF &
+                  "website = ""https://example.invalid/improve-tests""" & ASCII.LF &
+                  "tags = [""test""]" & ASCII.LF &
+                  "project-files = [""e2e_fixture.gpr""]" & ASCII.LF &
+                  "executables = [""e2e_fixture""]" & ASCII.LF);
+               Project_Tools.Files.Write_Text_File
+                 (Root & "/e2e_fixture.gpr",
+                  "project E2E_Fixture is" & ASCII.LF &
+                  "   for Source_Dirs use (""src"");" & ASCII.LF &
+                  "   for Object_Dir use ""obj"";" & ASCII.LF &
+                  "   for Exec_Dir use ""bin"";" & ASCII.LF &
+                  "   for Main use (""e2e_fixture.adb"");" & ASCII.LF &
+                  "end E2E_Fixture;" & ASCII.LF);
+               Project_Tools.Files.Write_Text_File
+                 (Source,
+                  "procedure E2E_Fixture is" & ASCII.LF &
+                  "begin" & ASCII.LF &
+                  "   null; " & ASCII.LF &
+                  "end E2E_Fixture;" & ASCII.LF);
+               Project_Tools.Files.Write_Text_File (Root & "/README.md", "# End-to-end fixture" & ASCII.LF);
+               Project_Tools.Files.Write_Text_File (Root & "/LICENSE", "MIT test fixture" & ASCII.LF);
+               Ada_Quality.Storage.Open (Quality, Database);
+               Project := Ada_Quality.Storage.Add_Project (Quality, Root);
+               Ada_Quality.Storage.Close (Quality);
+               Policy.Require_Clean_Worktree := False;
+               Policy.Process_Timeout_Seconds := 60;
+               Policy.Maximum_Output_Bytes := 262_144;
+               First_Run := Publish_Real_Assessment (Database, Project, Root, Policy);
+               Planned := Improve.CLI.Execute
+                 (Args
+                    ("plan|--project|" & Id_Image (Project) & "|--run|" & Id_Image (First_Run) &
+                     "|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Assert (Planned.Exit_Code = 0, "real assessment planning failed: " & To_String (Planned.Errors));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               for Finding of Plan.Findings loop
+                  if Finding.Indicator = Ada_Quality.Types.SRC_04 then Hygiene_Key := Finding.Fingerprint; exit; end if;
+               end loop;
+               Assert (Length (Hygiene_Key) > 0, "real assessment did not report the hygiene defect");
+               for Spec of Plan.Tasks loop
+                  if Spec.Finding_Keys.Contains (Hygiene_Key) then Hygiene_Task := Spec.Id;
+                  else Prior_Ids.Append (Spec.Id);
+                  end if;
+               end loop;
+               Assert (Length (Hygiene_Task) > 0, "planner did not create a traceable hygiene task");
+               Initialize_Harness (Root);
+               Applied := Improve.CLI.Execute
+                 (Args
+                    ("apply|PLAN-000001|--task|" & To_String (Hygiene_Task) & "|--database|" & Database &
+                     "|--state|" & State & "|--format|json"));
+               Assert (Applied.Exit_Code = 0, "native end-to-end publication failed: " & To_String (Applied.Errors));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  for Published of Improve.Storage.Publications (Improve_State, "PLAN-000001") loop
+                     if Published.Improve_Task_Id = Hygiene_Task then Mapping := Published; exit; end if;
+                  end loop;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Assert (Length (Mapping.Harness_Task_Id) > 0, "published hygiene task mapping is missing");
+               declare
+                  Harness  : Stores.Store;
+                  Recovery : Stores.Recovery_Report;
+                  Change   : Stores.Transaction;
+                  Status   : Errors.Error_Info;
+               begin
+                  Stores.Open (Harness, Root, Recovery, Status);
+                  Assert
+                    (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 1,
+                     "published end-to-end task is not visible in native harness state");
+                  Tasks.Move
+                    (Harness, Change, To_String (Mapping.Harness_Task_Id), "accepted", "", Status => Status,
+                     Actor => "improve-e2e-test");
+                  Assert (Errors.Is_Ok (Status), "published end-to-end task could not be accepted");
+                  Stores.Commit (Harness, Change, Status);
+                  Assert
+                    (Errors.Is_Ok (Status) and then
+                     Tasks.Next_Work_Of (Harness).Runnable.Contains (To_String (Mapping.Harness_Task_Id)),
+                     "accepted end-to-end task is not executable through the ordinary work queue");
+                  Stores.Close (Harness);
+               end;
+               Project_Tools.Files.Write_Text_File
+                 (Source,
+                  "procedure E2E_Fixture is" & ASCII.LF &
+                  "begin" & ASCII.LF &
+                  "   null;" & ASCII.LF &
+                  "end E2E_Fixture;" & ASCII.LF);
+               Next_Run := Publish_Real_Assessment (Database, Project, Root, Policy);
+               Verified := Improve.CLI.Execute
+                 (Args
+                    ("verify|--task|" & To_String (Hygiene_Task) & "|--run|" & Id_Image (Next_Run) &
+                     "|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Verified.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Verified.Output), """outcome"":""verified""") > 0,
+                  "corrected real finding was not independently verified: " & To_String (Verified.Errors));
+               Replanned := Improve.CLI.Execute
+                 (Args
+                    ("plan|--project|" & Id_Image (Project) & "|--run|" & Id_Image (Next_Run) &
+                     "|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Repeated := Improve.CLI.Execute
+                 (Args
+                    ("plan|--project|" & Id_Image (Project) & "|--run|" & Id_Image (Next_Run) &
+                     "|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Replanned.Exit_Code = 0 and then Repeated.Exit_Code = 0,
+                  "remeasured planning was not repeatable");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  New_Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  Assert
+                    (Improve.Storage.List (Improve_State, Project).Length = 1 and then New_Plan.Revision = 2,
+                     "remeasured planning did not retain one stable plan with immutable revisions");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Assert
+                 ((for all Finding of New_Plan.Findings => Finding.Indicator /= Ada_Quality.Types.SRC_04),
+                  "resolved hygiene evidence remained in the refreshed plan");
+               Assert
+                 ((for some Id of Prior_Ids =>
+                    (for some Spec of New_Plan.Tasks => Spec.Id = Id)),
+                  "unrelated remediation task identities were not preserved across assessment revisions");
+               Applied := Improve.CLI.Execute
+                 (Args
+                    ("apply|PLAN-000001|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Repeated := Improve.CLI.Execute
+                 (Args
+                    ("apply|PLAN-000001|--database|" & Database & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = 0 and then Repeated.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Repeated.Output), """recovered"":true") > 0,
+                  "repeated native publication was not idempotent");
+               declare
+                  Harness : Stores.Store;
+                  Status  : Errors.Error_Info;
+                  Report  : Stores.Recovery_Report;
+                  Snapshot : Ada_Quality.Reporting.Session;
+               begin
+                  Stores.Open (Harness, Root, Report, Status);
+                  Assert
+                    (Errors.Is_Ok (Status) and then
+                     Tasks.List (Harness).Length = New_Plan.Tasks.Length + 1,
+                     "repeated publication lost or duplicated native tasks");
+                  Stores.Close (Harness);
+                  Ada_Quality.Reporting.Open (Snapshot, Database);
+                  Assert
+                    (Ada_Quality.Reporting.Runs (Snapshot, Project).Length = 2,
+                     "real assessment history was not preserved");
+                  Ada_Quality.Reporting.Close (Snapshot);
+               end;
+               Project_Tools.Files.Delete_Tree (Root);
             end;
       end case;
    end Run_Test;

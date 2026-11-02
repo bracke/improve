@@ -407,6 +407,7 @@ package body Improve.Storage is
          Plan_Row     : Positive := Next_Id (Item, Tx, Plans_Table);
          Revision_Row : constant Positive := Next_Id (Item, Tx, Revisions_Table);
          Revision_No  : Positive := 1;
+         Previous_Revision : Natural := 0;
          Cursor       : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table);
       begin
          while Entity_Tables.Has_Element (Cursor) and then
@@ -420,6 +421,8 @@ package body Improve.Storage is
             begin
                while Entity_Tables.Has_Element (Revisions) loop
                   if Entity_Tables.Element (Revisions).Parent_Id = Plan_Row then
+                     Previous_Revision := Natural'Max
+                       (Previous_Revision, Entity_Tables.Element (Revisions).Id);
                      Revision_No := Positive'Max
                        (Revision_No,
                         Positive'Value
@@ -468,10 +471,44 @@ package body Improve.Storage is
             Link_Row : Positive := Next_Id (Item, Tx, Task_Findings_Table);
             Dependency_Row : Positive := Next_Id (Item, Tx, Task_Dependencies_Table);
             Original_Ids : Improve.Model.UString_Vectors.Vector;
+            Assigned_Ids : Improve.Model.UString_Vectors.Vector;
+
+            function Previous_Task_Id
+              (Spec : Improve.Model.Task_Specification) return Ada.Strings.Unbounded.Unbounded_String is
+               Tasks : Entity_Tables.Cursor;
+            begin
+               if Previous_Revision = 0 then return Null_Unbounded_String; end if;
+               Tasks := Scan (Item, Tx, Tasks_Table);
+               while Entity_Tables.Has_Element (Tasks) loop
+                  declare
+                     Row     : constant Entity := Entity_Tables.Element (Tasks);
+                     Payload : constant String := S (Row.Payload);
+                  begin
+                     if Row.Parent_Id = Previous_Revision and then S (Row.Kind) = To_String (Spec.Category) and then
+                       Field (Payload, "title") = To_String (Spec.Title) and then
+                       Field (Payload, "acceptance") = To_String (Spec.Acceptance) and then
+                       Field (Payload, "finding_keys") = Pack (Spec.Finding_Keys)
+                     then
+                        return To_Unbounded_String (Field (Payload, "draft_id"));
+                     end if;
+                  end;
+                  Advance (Item, Tx, Tasks_Table, Tasks);
+               end loop;
+               return Null_Unbounded_String;
+            end Previous_Task_Id;
          begin
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
                Original_Ids.Append (Stored.Tasks (Index).Id);
-               Stored.Tasks (Index).Id := To_Unbounded_String (Id_Image ("IMP-", First_Task_Row + Index - 1));
+               declare
+                  Prior : constant Ada.Strings.Unbounded.Unbounded_String :=
+                    Previous_Task_Id (Stored.Tasks (Index));
+                  Identity : constant Ada.Strings.Unbounded.Unbounded_String :=
+                    (if Length (Prior) > 0 and then not Assigned_Ids.Contains (Prior) then Prior
+                     else To_Unbounded_String (Id_Image ("IMP-", First_Task_Row + Index - 1)));
+               begin
+                  Stored.Tasks (Index).Id := Identity;
+                  Assigned_Ids.Append (Identity);
+               end;
             end loop;
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
                declare
@@ -623,7 +660,8 @@ package body Improve.Storage is
                Spec : Improve.Model.Task_Specification;
             begin
                if Row.Parent_Id = Revision_Id then
-                  Spec.Id := To_Unbounded_String (Id_Image ("IMP-", Row.Id));
+                  Spec.Id := To_Unbounded_String (Field (Payload, "draft_id"));
+                  if Length (Spec.Id) = 0 then Spec.Id := To_Unbounded_String (Id_Image ("IMP-", Row.Id)); end if;
                   Spec.Title := To_Unbounded_String (Field (Payload, "title"));
                   Spec.Category := To_Unbounded_String (S (Row.Kind));
                   Spec.Task_Priority := Priority_Value (Field (Payload, "priority"));

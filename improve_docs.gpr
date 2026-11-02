@@ -1,0 +1,7 @@
+project Improve_Docs is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src");
+   for Source_Files use ("improve.ads", "improve.adb");
+   for Object_Dir use "obj";
+   for Create_Missing_Dirs use "True";
+end Improve_Docs;

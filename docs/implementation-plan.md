@@ -10,18 +10,15 @@
 8. Add optional, validated agent refinement without weakening deterministic behavior.
 9. Complete terminal/JSON schemas, operational recovery, security limits, and end-to-end release gates.
 
-Every phase must leave the crate compiling and its tests passing. Later phases may extend stored schemas and command
-behavior but must not weaken the ownership boundaries established in the earlier phases.
+Every phase must leave the crate compiling and its tests passing. A phase is committed only after its gate succeeds.
+Later phases may extend stored schemas and command behavior but must not weaken the ownership boundaries established in
+the earlier phases.
 
-The executable Phase 6 gate is `tools/check_phase_6.sh`. It performs the warning-clean validation build, runs the full
-AUnit suite (including harness-state reconciliation and resolved, partial, still-failing, unavailable-evidence,
-regression, incomparable-policy, and incomplete-assessment verification scenarios), builds the repository checker, and
-runs it. CI invokes this same entry point.
+Phase 9 is the consolidated release gate. Its Ada entry point is `tools/bin/check_phase_9`, built from
+`tools/src/check_phase_9.adb` through `tools/improve_tools.gpr`. It retains every earlier test and adds a real
+Ada Quality assessment-to-plan-to-model_runner-to-remeasurement workflow, stable task identity across plan revisions,
+configuration and operational CLI paths, documentation generation, SPARK proof, and measured production coverage.
 
-The executable Phase 7 gate is `tools/check_phase_7.sh`. It retains every earlier check and adds bounded-context,
-valid-refinement, deterministic-persistence, malformed-response, missing-file, invented-evidence, invalid-category,
-dependency-cycle, enforced-timeout, unavailable-agent, and quality-policy weakening scenarios. CI invokes this gate.
-
-The executable Phase 8 gate is `tools/check_phase_8.sh`. It retains all earlier checks and adds golden terminal task
-output, stable JSON filtering, project and all-project status summaries, interrupted publication recovery, repeated
-recovery idempotency, recovery limits, and missing-state safety. CI invokes this gate.
+The gate is deliberately not a shell script. All repository check and coverage orchestration lives in Ada and invokes
+tools with explicit argument vectors. CI and `alr test` build and invoke this same entry point. See
+`docs/release-readiness.md` for the exact checks and current evidence.

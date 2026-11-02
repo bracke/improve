@@ -38,6 +38,11 @@ revision is returned instead of inserting duplicate work.
 Plan identities use `PLAN-NNNNNN`; task identities use `IMP-NNNNNN`. Draft dependency identities are translated to the
 persisted task identities before rows are inserted. Historical evidence is never updated or deleted by plan creation.
 
+When a newer immutable revision contains the same task category, title, acceptance contract, and exact finding set as
+the immediately preceding revision, it reuses that task's logical `IMP-NNNNNN` identity. The new revision still gets a
+new physical task row and remains immutable. Changed or newly introduced work receives a new logical identity. This
+keeps unaffected work and publication history stable while preserving complete revision history.
+
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
 perform recovery. Writable open initializes a missing version-1 database; an existing database with missing or different
 schema metadata is rejected rather than guessed or silently migrated.

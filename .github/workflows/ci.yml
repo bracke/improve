@@ -10,4 +10,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: alire-project/setup-alire@v5
-      - run: tools/check_phase_8.sh
+      - run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
+      - run: tools/bin/check_phase_9

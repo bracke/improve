@@ -21,7 +21,20 @@ alr build
 ./bin/improve help
 ```
 
+## Test and release gate
+
+All repository tooling is implemented in Ada. Build the tool executables and run the complete Phase 9 gate with:
+
+```sh
+alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
+tools/bin/check_phase_9
+```
+
+The gate performs warning-clean application and test builds, runs the 58-case AUnit suite, checks repository policy,
+audits the public API with GNATdoc, proves the root digest package with GNATprove, and requires at least 90% measured
+production-line coverage. `alr test` invokes the same Ada gate.
+
 The local development manifest pins the sibling repositories used by this workspace. See
 [`docs/implementation-plan.md`](docs/implementation-plan.md) for the phased gates and
-[`docs/architecture.md`](docs/architecture.md) for the integration boundaries.
+[`docs/release-readiness.md`](docs/release-readiness.md) for the release evidence.
 

@@ -1,0 +1,39 @@
+with "aunit";
+with "database";
+with "ada_quality";
+with "jsonlib";
+with "messages";
+with "terminal_styles";
+with "project_tools";
+with "hostkit";
+with "model_runner";
+
+project Coverage is
+   Coverage_Root := external ("IMPROVE_COVERAGE_ROOT", ".");
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "../src");
+   for Object_Dir use Coverage_Root & "/obj";
+   for Exec_Dir use Coverage_Root & "/bin";
+   for Main use ("improve_tests.adb", "improve_main.adb");
+   for Create_Missing_Dirs use "True";
+
+   Coverage_Switches := ("-fprofile-arcs", "-ftest-coverage");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-g", "-O0", "-gnat2022", "-gnatyM120", "-gnata") & Coverage_Switches;
+   end Compiler;
+
+   package Binder is
+      for Switches ("Ada") use ("-Es");
+   end Binder;
+
+   package Linker is
+      for Switches ("Ada") use Coverage_Switches;
+   end Linker;
+
+   package Builder is
+      for Executable ("improve_main.adb") use "improve";
+   end Builder;
+end Coverage;

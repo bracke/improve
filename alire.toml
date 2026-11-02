@@ -42,7 +42,11 @@ model_runner = "*"
 
 [[actions]]
 type = "test"
-command = ["sh", "-c", "cd tests && alr build && ./bin/improve_tests"]
+command = ["gprbuild", "-P", "tools/improve_tools.gpr", "-p", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tools/bin/check_phase_9"]
 
 # Local development pins. These are replaced by registry versions in a release manifest.
 [[pins]]

@@ -1,6 +1,6 @@
 with Interfaces;
 
-package body Improve is
+package body Improve with SPARK_Mode is
    function Stable_Digest (Text : String) return String is
       use type Interfaces.Unsigned_64;
       Value  : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
