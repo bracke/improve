@@ -1,10 +1,8 @@
 with Ada.Command_Line;
-with Ada.Text_IO;
-with Improve;
+with Improve.CLI;
 
---  Minimal executable retained while the strict Phase 1 CLI is developed.
+--  Thin executable adapter for Improve.CLI.
 procedure Improve_Main is
 begin
-   Ada.Text_IO.Put_Line ("improve " & Improve.Version);
-   Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+   Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (Improve.CLI.Run));
 end Improve_Main;

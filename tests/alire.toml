@@ -1,0 +1,39 @@
+name = "improve_tests"
+description = "AUnit acceptance tests for Improve"
+version = "0.1.0-dev"
+executables = ["improve_tests"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+aunit = "^26.0.0"
+
+[[depends-on]]
+improve = "*"
+
+[[pins]]
+improve = { path = ".." }
+ada_quality = { path = "../../ada_quality" }
+database = { path = "../../database" }
+jsonlib = { path = "../../jsonlib" }
+messages = { path = "../../messages" }
+terminal_styles = { path = "../../terminal_styles" }
+project_tools = { path = "../../project_tools" }
+hostkit = { path = "../../hostkit" }
+model_runner = { path = "../../model_runner" }
+cryptolib = { path = "../../cryptolib" }
+i18n = { path = "../../i18n" }
+regexp = { path = "../../regexp" }
+httpclient = { path = "../../httpclient" }
+ssllib = { path = "../../ssllib" }
+truststores = { path = "../../truststores" }
+zlib = { path = "../../zlib" }
+jpeglib = { path = "../../jpeglib" }
+versionlib = { path = "../../versionlib" }
+ssh_lib = { path = "../../sshlib" }
+awklib = { path = "../../awklib" }
+
+[build-profiles]
+"*" = "development"
+

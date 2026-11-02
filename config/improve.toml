@@ -1,0 +1,28 @@
+schema_version = 1
+
+[quality]
+database = ".ada-quality.db"
+selection = "latest_completed"
+
+[planning]
+minimum_severity = "low"
+maximum_tasks_per_plan = 100
+maximum_findings_per_task = 50
+allow_investigation_tasks = true
+require_review = true
+
+[workflow]
+task_kind = "auto"
+publication = "candidate"
+require_initialized_project = true
+
+[verification]
+require_fresh_measurement = true
+require_same_policy = true
+require_same_toolchain = false
+require_no_new_critical_findings = true
+
+[output]
+format = "terminal"
+color = "auto"
+
