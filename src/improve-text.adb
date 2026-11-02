@@ -43,6 +43,18 @@ package body Improve.Text is
      "en.help.version = improve {version}" & LF &
      "en.config.valid = Configuration is valid." & LF &
      "en.config.title = Effective Improve configuration" & LF &
+     "en.projects.title = Registered Ada Quality projects" & LF &
+     "en.projects.none = No active projects are registered." & LF &
+     "en.findings.title = Remediation findings for {project}, assessment {run}" & LF &
+     "en.findings.none = No eligible findings or unavailable evidence." & LF &
+     "en.label.id = ID" & LF &
+     "en.label.project = Project" & LF &
+     "en.label.enabled = Enabled" & LF &
+     "en.label.path = Path" & LF &
+     "en.label.indicator = Indicator" & LF &
+     "en.label.severity = Severity" & LF &
+     "en.label.location = Location" & LF &
+     "en.label.message = Message" & LF &
      "en.phase.pending = command {command} is not available before its implementation phase" & LF;
 
    Runtime : Messages.Runtime.Instance;

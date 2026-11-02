@@ -4,7 +4,13 @@ with Ada.IO_Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Text_IO;
 with Ada.Text_IO.Text_Streams;
+with Ada_Quality.Reporting;
+with Ada_Quality.Types;
+with Improve.Findings;
+with Improve.JSON;
+with Improve.Model;
 with Improve.Presentation;
+with Improve.Source;
 with Improve.Text;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
@@ -258,8 +264,106 @@ package body Improve.CLI is
       elsif Project_Tools.Files.File_Exists ("../config/improve.toml") then "../config/improve.toml"
       else "");
 
+   function Number (Value : Natural) return String is
+     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
+
+   function Quality_Severity (Value : Improve.Config.Severity_Level) return Ada_Quality.Types.Severity is
+     (case Value is
+         when Improve.Config.Info => Ada_Quality.Types.Info,
+         when Improve.Config.Low => Ada_Quality.Types.Low,
+         when Improve.Config.Medium => Ada_Quality.Types.Medium,
+         when Improve.Config.High => Ada_Quality.Types.High,
+         when Improve.Config.Critical => Ada_Quality.Types.Critical);
+
+   function Quality_Path (Item : Invocation; Settings : Improve.Config.Settings) return String is
+     (if Item.Has_Database then To_String (Item.Database) else To_String (Settings.Quality_Database));
+
+   function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      Store : Improve.Source.Repository;
+   begin
+      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      declare
+         Values   : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Store);
+         Snapshot : constant String := Improve.Source.Identity (Store);
+         Result   : Unbounded_String;
+      begin
+         if Item.Format = JSON_Format then
+            Result := To_Unbounded_String (Improve.JSON.Projects (Values, Snapshot));
+         else
+            Append (Result, Improve.Presentation.Header (Message ("projects.title")) & LF);
+            if Values.Is_Empty then
+               Append (Result, Message ("projects.none") & LF);
+            else
+               Append
+                 (Result,
+                  Message ("label.id") & "  " & Message ("label.enabled") & "  " & Message ("label.path") & LF);
+               for Value of Values loop
+                  Append
+                    (Result,
+                     Number (Value.Id) & "   " & (if Value.Enabled then "yes" else "no ") & "      " &
+                     To_String (Value.Path) & LF);
+               end loop;
+            end if;
+         end if;
+         Improve.Source.Close (Store);
+         return To_String (Result);
+      end;
+   end Projects_Output;
+
+   function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      Store : Improve.Source.Repository;
+   begin
+      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      declare
+         Project  : constant Improve.Model.Project_Reference :=
+           Improve.Source.Resolve_Project (Store, To_String (Item.Project));
+         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project, Item.Run_Id);
+         Values   : constant Improve.Model.Finding_Vectors.Vector :=
+           Improve.Findings.Normalize
+             (Selected, Quality_Severity (Settings.Minimum_Severity), Settings.Allow_Investigation_Tasks);
+         Result   : Unbounded_String;
+      begin
+         if Item.Format = JSON_Format then
+            Result := To_Unbounded_String (Improve.JSON.Findings (Selected, Values));
+         else
+            Append
+              (Result,
+               Improve.Presentation.Header
+                 (Message
+                    ("findings.title",
+                     [Arg ("project", To_String (Project.Name)),
+                      Arg ("run", Number (Selected.Assessment.Run.Id))])) & LF);
+            if Values.Is_Empty then
+               Append (Result, Message ("findings.none") & LF);
+            else
+               Append
+                 (Result,
+                  Message ("label.indicator") & "  " & Message ("label.severity") & "  " &
+                  Message ("label.location") & "  " & Message ("label.message") & LF);
+               for Value of Values loop
+                  declare
+                     Location : constant String :=
+                       (if Length (Value.Relative_Path) = 0 then "-"
+                        elsif Value.Line = 0 then To_String (Value.Relative_Path)
+                        else To_String (Value.Relative_Path) & ":" & Number (Value.Line));
+                  begin
+                     Append
+                       (Result,
+                        Ada_Quality.Types.Image (Value.Indicator) & "  " &
+                        Ada_Quality.Types.Severity'Image (Value.Level) & "  " & Location & "  " &
+                        To_String (Value.Message) & LF);
+                  end;
+               end loop;
+            end if;
+         end if;
+         Improve.Source.Close (Store);
+         return To_String (Result);
+      end;
+   end Findings_Output;
+
    function Dispatch (Item : Invocation) return String is
       Plain : Unbounded_String;
+      Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path);
    begin
       Improve.Presentation.Configure (Item.Format, Item.Color);
       case Item.Command is
@@ -267,14 +371,14 @@ package body Improve.CLI is
          when Version_Command =>
             Plain := To_Unbounded_String (Message ("help.version", [Arg ("version", Version)]) & LF);
          when Config_Command =>
-            declare Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path); begin
-               if Item.Has_Target and then To_String (Item.Target) = "validate" then
-                  Plain := To_Unbounded_String (Message ("config.valid") & LF);
-               else
-                  Plain := To_Unbounded_String
-                    (Improve.Presentation.Header (Message ("config.title")) & LF & Improve.Config.Image (Settings));
-               end if;
-            end;
+            if Item.Has_Target and then To_String (Item.Target) = "validate" then
+               Plain := To_Unbounded_String (Message ("config.valid") & LF);
+            else
+               Plain := To_Unbounded_String
+                 (Improve.Presentation.Header (Message ("config.title")) & LF & Improve.Config.Image (Settings));
+            end if;
+         when Projects_Command => return Projects_Output (Item, Settings);
+         when Findings_Command => return Findings_Output (Item, Settings);
          when others =>
             raise Dependency_Error with Message ("phase.pending", [Arg ("command", Name (Item.Command))]);
       end case;
