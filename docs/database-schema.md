@@ -45,3 +45,15 @@ schema metadata is rejected rather than guessed or silently migrated.
 Verification evidence is append-only by task and completed assessment. Repeating the same evaluation is idempotent;
 a conflicting outcome for the same task and assessment is rejected. Publication mappings preserve immutable Improve,
 harness, and origin identities while allowing only their cached harness-owned runtime state to be reconciled.
+
+## Publication operation journal
+
+Before a non-preview publication opens the harness store, Improve appends a `started` operation containing the plan and
+the exact ordered task identities. Its stable key combines those values, so retrying the same selection reuses the
+entry. After the harness transaction commits, Improve records the native task mappings and appends a `completed` child
+entry in its own transaction.
+
+The two databases are deliberately not treated as one atomic store. If the process stops between those commits,
+`recover` reads the unmatched `started` entry and republishes through model_runner's origin-aware idempotency contract.
+Only after verified mappings are stored is the operation completed. Planning journal records remain separate and are
+never interpreted as pending publications.

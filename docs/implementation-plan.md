@@ -21,3 +21,7 @@ runs it. CI invokes this same entry point.
 The executable Phase 7 gate is `tools/check_phase_7.sh`. It retains every earlier check and adds bounded-context,
 valid-refinement, deterministic-persistence, malformed-response, missing-file, invented-evidence, invalid-category,
 dependency-cycle, enforced-timeout, unavailable-agent, and quality-policy weakening scenarios. CI invokes this gate.
+
+The executable Phase 8 gate is `tools/check_phase_8.sh`. It retains all earlier checks and adds golden terminal task
+output, stable JSON filtering, project and all-project status summaries, interrupted publication recovery, repeated
+recovery idempotency, recovery limits, and missing-state safety. CI invokes this gate.

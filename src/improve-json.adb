@@ -221,5 +221,94 @@ package body Improve.JSON is
       Doc.Set_Root (Root);
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end Verification;
+
+   procedure Append_Task
+     (Doc    : in out Document;
+      List   : Node;
+      Value  : Improve.Tasks.Task_View) is
+      Item : constant Node := Doc.New_Object;
+   begin
+      Doc.Insert (Item, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project_Id)));
+      Doc.Insert (Item, "project", Doc.New_String (To_String (Value.Project)));
+      Doc.Insert (Item, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
+      Doc.Insert (Item, "improve_task_id", Doc.New_String (To_String (Value.Improve_Id)));
+      Doc.Insert (Item, "harness_task_id", Doc.New_String (To_String (Value.Harness_Id)));
+      Doc.Insert (Item, "title", Doc.New_String (To_String (Value.Title)));
+      Doc.Insert (Item, "harness_state", Doc.New_String (To_String (Value.Harness_State)));
+      Doc.Insert (Item, "quality_outcome", Doc.New_String (Improve.Model.Image (Value.Quality)));
+      Doc.Insert (Item, "status", Doc.New_String (Improve.Tasks.Image (Value.Status)));
+      Doc.Append (List, Item);
+   end Append_Task;
+
+   function Tasks
+     (Values : Improve.Tasks.View_Vectors.Vector;
+      Filter : String) return String is
+      Doc  : Document;
+      Root : constant Node := Doc.New_Object;
+      Data : constant Node := Doc.New_Object;
+      List : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("tasks"));
+      Doc.Insert (Data, "filter", Doc.New_String (if Filter = "" then "all" else Filter));
+      for Value of Values loop Append_Task (Doc, List, Value); end loop;
+      Doc.Insert (Data, "tasks", List);
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Tasks;
+
+   function Status (Values : Improve.Tasks.Status_Vectors.Vector) return String is
+      Doc      : Document;
+      Root     : constant Node := Doc.New_Object;
+      Data     : constant Node := Doc.New_Object;
+      Projects : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("status"));
+      for Value of Values loop
+         declare
+            Item     : constant Node := Doc.New_Object;
+            Tasks    : constant Node := Doc.New_Array;
+            Findings : constant Node := Doc.New_Object;
+         begin
+            Doc.Insert (Item, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project_Id)));
+            Doc.Insert (Item, "project", Doc.New_String (To_String (Value.Project)));
+            Doc.Insert (Item, "baseline_run", Doc.New_Integer (Long_Long_Integer (Value.Baseline_Run)));
+            Doc.Insert (Item, "latest_run", Doc.New_Integer (Long_Long_Integer (Value.Latest_Run)));
+            Doc.Insert (Item, "plan_count", Doc.New_Integer (Long_Long_Integer (Value.Plan_Count)));
+            for View of Value.Tasks loop Append_Task (Doc, Tasks, View); end loop;
+            Doc.Insert (Item, "tasks", Tasks);
+            Doc.Insert (Findings, "resolved", Doc.New_Integer (Long_Long_Integer (Value.Findings.Resolved)));
+            Doc.Insert
+              (Findings, "outstanding", Doc.New_Integer (Long_Long_Integer (Value.Findings.Outstanding)));
+            Doc.Insert
+              (Findings, "not_measurable", Doc.New_Integer (Long_Long_Integer (Value.Findings.Not_Measurable)));
+            Doc.Insert (Findings, "regressed", Doc.New_Integer (Long_Long_Integer (Value.Findings.Regressed)));
+            Doc.Insert (Findings, "superseded", Doc.New_Integer (Long_Long_Integer (Value.Findings.Superseded)));
+            Doc.Insert (Item, "findings", Findings);
+            Doc.Append (Projects, Item);
+         end;
+      end loop;
+      Doc.Insert (Data, "projects", Projects);
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Status;
+
+   function Recovery (Value : Improve.Recovery.Recovery_Report) return String is
+      Doc  : Document;
+      Root : constant Node := Doc.New_Object;
+      Data : constant Node := Doc.New_Object;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("recover"));
+      Doc.Insert
+        (Data, "operations_recovered", Doc.New_Integer (Long_Long_Integer (Value.Operations_Recovered)));
+      Doc.Insert (Data, "tasks_recovered", Doc.New_Integer (Long_Long_Integer (Value.Tasks_Recovered)));
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Recovery;
 end Improve.JSON;
 

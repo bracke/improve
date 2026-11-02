@@ -22,6 +22,8 @@ package Improve.Config is
       Agent_Max_File_Bytes      : Positive := 32_768;
       Agent_Max_Response_Bytes  : Positive := 131_072;
       Agent_Timeout_Seconds     : Positive := 60;
+      Maximum_Output_Items      : Positive := 10_000;
+      Maximum_Recovery_Operations : Positive := 100;
       Task_Kind                 : UString;
       Publication               : Publication_Mode := Candidate_Publication;
       Require_Initialized       : Boolean := True;

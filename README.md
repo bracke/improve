@@ -11,6 +11,8 @@ It has three strict ownership boundaries:
 
 Improve never measures or edits a target project and does not execute remediation agents.
 Optional planning refinement is available through a bounded typed adapter; deterministic planning remains the fallback.
+Operational `tasks` and `status` views report stored work without mutating state, while `recover` safely reconciles an
+interrupted native task publication by its stable Improve origin.
 
 ## Build
 

@@ -1,7 +1,9 @@
 with Ada_Quality.Reporting;
 with Improve.Model;
+with Improve.Recovery;
 with Improve.Source;
 with Improve.Storage;
+with Improve.Tasks;
 with Improve.Workflow;
 with Improve.Verification;
 
@@ -31,5 +33,16 @@ package Improve.JSON is
      (Value   : Improve.Verification.Report;
       Command : String := "verify") return String;
    --  Serialize an independent quality verification report.
+
+   function Tasks
+     (Values : Improve.Tasks.View_Vectors.Vector;
+      Filter : String) return String;
+   --  Serialize deterministic task inspection results.
+
+   function Status (Values : Improve.Tasks.Status_Vectors.Vector) return String;
+   --  Serialize one or more project remediation summaries.
+
+   function Recovery (Value : Improve.Recovery.Recovery_Report) return String;
+   --  Serialize publication recovery results.
 end Improve.JSON;
 

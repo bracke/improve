@@ -35,6 +35,11 @@ package body Improve.Text is
      "en.help.opt.project = Project identity or unique name" & LF &
      "en.help.opt.format = Output format: terminal or json" & LF &
      "en.help.opt.color = Color policy: auto, always, or never" & LF &
+     "en.help.opt.run = Completed assessment identity" & LF &
+     "en.help.opt.task = Improve task identity" & LF &
+     "en.help.opt.status = Task status filter" & LF &
+     "en.help.opt.dry_run = Preview without persistent modification" & LF &
+     "en.help.opt.all = Select every registered project" & LF &
      "en.help.opt.verbose = Include operational detail" & LF &
      "en.help.opt.quiet = Suppress nonessential terminal output" & LF &
      "en.help.opt.help = Display help" & LF &
@@ -62,6 +67,16 @@ package body Improve.Text is
      "en.apply.complete = Native harness transaction committed and publication mappings recorded." & LF &
      "en.verify.title = Quality verification for {plan}" & LF &
      "en.refresh.title = Reconciliation for {plan}" & LF &
+     "en.tasks.title = Remediation tasks" & LF &
+     "en.tasks.none = No remediation tasks match the selection." & LF &
+     "en.status.title = Improve — {project}" & LF &
+     "en.status.baseline = Baseline assessment: {run}" & LF &
+     "en.status.latest = Latest assessment: {run}" & LF &
+     "en.status.plans = Remediation plans: {count}" & LF &
+     "en.status.tasks = Generated tasks: {count}" & LF &
+     "en.status.findings = Quality findings:" & LF &
+     "en.recover.title = Publication recovery" & LF &
+     "en.recover.complete = Recovered {operations} operations and {tasks} tasks." & LF &
      "en.label.id = ID" & LF &
      "en.label.project = Project" & LF &
      "en.label.enabled = Enabled" & LF &
@@ -70,6 +85,9 @@ package body Improve.Text is
      "en.label.severity = Severity" & LF &
      "en.label.location = Location" & LF &
      "en.label.message = Message" & LF &
+     "en.label.harness = Harness" & LF &
+     "en.label.status = Status" & LF &
+     "en.label.title = Title" & LF &
      "en.phase.pending = command {command} is not available before its implementation phase" & LF;
 
    Runtime : Messages.Runtime.Instance;

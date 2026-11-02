@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Containers;
 with Ada.Exceptions;
 with Ada.IO_Exceptions;
 with Ada.Strings.Fixed;
@@ -11,8 +12,10 @@ with Improve.JSON;
 with Improve.Model;
 with Improve.Planner;
 with Improve.Presentation;
+with Improve.Recovery;
 with Improve.Source;
 with Improve.Storage;
+with Improve.Tasks;
 with Improve.Text;
 with Improve.Workflow;
 with Improve.Verification;
@@ -24,7 +27,9 @@ package body Improve.CLI is
    use Ada.Strings.Unbounded;
    use Improve.Config;
    use Improve.Text;
+   use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
+   use type Improve.Tasks.Operational_Status;
 
    LF : constant Character := Character'Val (10);
 
@@ -203,7 +208,7 @@ package body Improve.CLI is
          Fail ("--run is not accepted by command " & Name (Result.Command));
       elsif Result.Dry_Run and then Result.Command not in Plan_Command | Apply_Command then
          Fail ("--dry-run is not accepted by command " & Name (Result.Command));
-      elsif Result.Has_Task and then Result.Command not in Apply_Command | Verify_Command then
+      elsif Result.Has_Task and then Result.Command not in Apply_Command | Tasks_Command | Verify_Command then
          Fail ("--task is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Status and then Result.Command /= Tasks_Command then
          Fail ("--status is not accepted by command " & Name (Result.Command));
@@ -216,6 +221,8 @@ package body Improve.CLI is
          Fail ("plan show requires a plan identity");
       elsif Result.Command in Findings_Command | Refresh_Command and then not Result.Has_Project then
          Fail (Name (Result.Command) & " requires --project");
+      elsif Result.Command = Tasks_Command and then not Result.Has_Project and then not Result.Has_Task then
+         Fail ("tasks requires --project or --task");
       elsif Result.Command = Plan_Command and then Result.Plan_Action /= Show_Plan and then not Result.Has_Project then
          Fail ("plan requires --project");
       elsif Result.Command = Verify_Command and then not Result.Has_Project and then not Result.Has_Task then
@@ -244,6 +251,9 @@ package body Improve.CLI is
       Line ("--project ID|NAME", "help.opt.project", 36);
       Line ("--format terminal|json", "help.opt.format", 36);
       Line ("--color auto|always|never", "help.opt.color", 36);
+      Line ("--run ID", "help.opt.run", 36); Line ("--task ID", "help.opt.task", 36);
+      Line ("--status STATUS", "help.opt.status", 36); Line ("--dry-run", "help.opt.dry_run", 36);
+      Line ("--all", "help.opt.all", 36);
       Line ("--verbose", "help.opt.verbose", 36); Line ("--quiet", "help.opt.quiet", 36);
       Line ("--help", "help.opt.help", 36);
       Append (Result, LF & Message ("help.exit") & LF);
@@ -492,8 +502,9 @@ package body Improve.CLI is
    end Plan_Output;
 
    function Apply_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      State : Improve.Storage.Store;
-      Plan  : Improve.Model.Plan_Revision;
+      State        : Improve.Storage.Store;
+      Plan         : Improve.Model.Plan_Revision;
+      Operation_Id : Natural := 0;
    begin
       Improve.Storage.Open (State, State_Path (Item), Writable => False);
       Plan := Improve.Storage.Load (State, To_String (Item.Target));
@@ -528,6 +539,21 @@ package body Improve.CLI is
          end;
          Improve.Source.Close (Quality);
       end;
+      if not Item.Dry_Run then
+         declare
+            Preflight : constant Improve.Workflow.Publication_Result :=
+              Improve.Workflow.Publish
+                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Dry_Run => True);
+            pragma Unreferenced (Preflight);
+            Task_Ids : Improve.Model.UString_Vectors.Vector;
+         begin
+            for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+            Improve.Storage.Open (State, State_Path (Item), Writable => True);
+            Operation_Id := Improve.Storage.Begin_Publication
+              (State, To_String (Plan.Plan_Id), Task_Ids);
+            Improve.Storage.Close (State);
+         end;
+      end if;
       declare
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
@@ -542,6 +568,7 @@ package body Improve.CLI is
                end loop;
                Improve.Storage.Open (State, State_Path (Item), Writable => True);
                Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
+               Improve.Storage.Complete_Publication (State, Positive (Operation_Id));
                Improve.Storage.Close (State);
             end;
          end if;
@@ -565,6 +592,212 @@ package body Improve.CLI is
          end;
       end;
    end Apply_Output;
+
+   function One_Line (Text : String) return String is
+      Result : String := Text;
+   begin
+      for Value of Result loop
+         if Value in ASCII.HT | ASCII.LF | ASCII.CR then Value := ' '; end if;
+      end loop;
+      return Result;
+   end One_Line;
+
+   function Views_For
+     (State : in out Improve.Storage.Store;
+      Plan  : Improve.Model.Plan_Revision) return Improve.Tasks.View_Vectors.Vector is
+     (Improve.Tasks.Build
+        (Plan,
+         Improve.Storage.Publications (State, To_String (Plan.Plan_Id)),
+         Improve.Storage.Verifications (State, To_String (Plan.Plan_Id))));
+
+   function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      State      : Improve.Storage.Store;
+      Project_Id : Natural := 0;
+      Filtered   : Improve.Tasks.View_Vectors.Vector;
+      Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
+      Found_Task : Boolean := not Item.Has_Task;
+   begin
+      if not Improve.Tasks.Valid_Filter (Filter) then
+         raise Argument_Error with "invalid task status filter: " & Filter;
+      end if;
+      if Item.Has_Project then
+         declare Quality : Improve.Source.Repository; begin
+            Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+            Project_Id := Improve.Source.Resolve_Project (Quality, To_String (Item.Project)).Id;
+            Improve.Source.Close (Quality);
+         end;
+      end if;
+      Improve.Storage.Open (State, State_Path (Item), Writable => False);
+      declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+        Improve.Storage.List (State, Project_Id);
+      begin
+         if Summaries.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+            raise Data_Error with "task query exceeds output.maximum_output_items";
+         end if;
+         for Summary of Summaries loop
+            declare
+               Plan : constant Improve.Model.Plan_Revision :=
+                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+            begin
+               for View of Plan_Views loop
+                  if not Item.Has_Task or else View.Improve_Id = Item.Task_Id then
+                     Found_Task := True;
+                     if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
+                  end if;
+               end loop;
+            end;
+         end loop;
+      end;
+      Improve.Storage.Close (State);
+      if not Found_Task then raise Argument_Error with "unknown Improve task " & To_String (Item.Task_Id); end if;
+      if Filtered.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+         raise Data_Error with "task query exceeds output.maximum_output_items";
+      end if;
+      Improve.Tasks.Sort (Filtered);
+      if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
+      declare Result : Unbounded_String; begin
+         Append (Result, Improve.Presentation.Header (Message ("tasks.title")) & LF);
+         if Filtered.Is_Empty then Append (Result, Message ("tasks.none") & LF);
+         else
+            Append
+              (Result,
+               Message ("label.id") & "  " & Message ("label.harness") & "  " & Message ("label.status") &
+               "  " & Message ("label.title") & LF);
+            for View of Filtered loop
+               Append
+                 (Result,
+                  To_String (View.Improve_Id) & "  " &
+                  (if Length (View.Harness_Id) = 0 then "-" else To_String (View.Harness_Id)) & "  " &
+                  Improve.Tasks.Image (View.Status) & "  " & One_Line (To_String (View.Title)) & LF);
+            end loop;
+         end if;
+         return To_String (Result);
+      end;
+   end Tasks_Output;
+
+   function Status_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      State   : Improve.Storage.Store;
+      Quality : Improve.Source.Repository;
+      Values  : Improve.Tasks.Status_Vectors.Vector;
+      Total_Items : Natural := 0;
+
+      procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
+         Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+           Improve.Storage.List (State, Project.Id);
+         Value     : Improve.Tasks.Project_Status;
+         Last_Plan : Improve.Model.Plan_Revision;
+         Last_Views : Improve.Tasks.View_Vectors.Vector;
+         Has_Plan  : Boolean := False;
+      begin
+         Value.Project_Id := Project.Id;
+         Value.Project := Project.Name;
+         Value.Latest_Run := Latest_Run;
+         Value.Plan_Count := Natural (Summaries.Length);
+         for Summary of Summaries loop
+            declare
+               Plan : constant Improve.Model.Plan_Revision :=
+                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+            begin
+               Value.Tasks.Append_Vector (Plan_Views);
+               Last_Plan := Plan;
+               Last_Views := Plan_Views;
+               Value.Baseline_Run := Plan.Baseline.Run_Id;
+               Has_Plan := True;
+               Total_Items := Total_Items + Natural (Plan_Views.Length);
+            end;
+         end loop;
+         if Has_Plan then Value.Findings := Improve.Tasks.Findings (Last_Plan, Last_Views); end if;
+         Improve.Tasks.Sort (Value.Tasks);
+         Values.Append (Value);
+      end Add_Project;
+
+      procedure Add_Resolved_Project (Project : Improve.Model.Project_Reference) is
+         Latest : Natural := 0;
+      begin
+         begin
+            declare Selected : constant Improve.Source.Selection :=
+              Improve.Source.Select_Assessment (Quality, Project);
+            begin
+               Latest := Selected.Baseline.Run_Id;
+            end;
+         exception
+            when Dependency_Error => null;
+         end;
+         Add_Project (Project, Latest);
+      end Add_Resolved_Project;
+   begin
+      Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+      Improve.Storage.Open (State, State_Path (Item), Writable => False);
+      if Item.All_Projects then
+         declare Projects : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);
+         begin
+            if Projects.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+               raise Data_Error with "status query exceeds output.maximum_output_items";
+            end if;
+            for Registered of Projects loop
+               Add_Resolved_Project (Improve.Source.Resolve_Project (Quality, Number (Registered.Id)));
+            end loop;
+         end;
+      else
+         Add_Resolved_Project (Improve.Source.Resolve_Project (Quality, To_String (Item.Project)));
+      end if;
+      Improve.Storage.Close (State);
+      Improve.Source.Close (Quality);
+      if Total_Items > Settings.Maximum_Output_Items then
+         raise Data_Error with "status query exceeds output.maximum_output_items";
+      end if;
+      if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
+      declare Result : Unbounded_String; begin
+         for Value of Values loop
+            if Length (Result) > 0 then Append (Result, LF); end if;
+            Append
+              (Result,
+               Improve.Presentation.Header
+                 (Message ("status.title", [Arg ("project", To_String (Value.Project))])) & LF &
+               Message ("status.baseline", [Arg ("run", Number (Value.Baseline_Run))]) & LF &
+               Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
+               Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
+               Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF);
+            for Status in Improve.Tasks.Operational_Status loop
+               declare Count : Natural := 0; begin
+                  for View of Value.Tasks loop
+                     if View.Status = Status then Count := Count + 1; end if;
+                  end loop;
+                  if Count > 0 then
+                     Append
+                       (Result,
+                        "  " & Improve.Tasks.Image (Status) & " " & Number (Count) & LF);
+                  end if;
+               end;
+            end loop;
+            Append
+              (Result,
+               Message ("status.findings") & LF &
+               "  resolved " & Number (Value.Findings.Resolved) & LF &
+               "  outstanding " & Number (Value.Findings.Outstanding) & LF &
+               "  not_measurable " & Number (Value.Findings.Not_Measurable) & LF &
+               "  regressed " & Number (Value.Findings.Regressed) & LF &
+               "  superseded " & Number (Value.Findings.Superseded) & LF);
+         end loop;
+         return To_String (Result);
+      end;
+   end Status_Output;
+
+   function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      Report : constant Improve.Recovery.Recovery_Report :=
+        Improve.Recovery.Recover
+          (State_Path (Item), To_String (Settings.Task_Kind), Settings.Maximum_Recovery_Operations);
+   begin
+      if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
+      return
+        Improve.Presentation.Header (Message ("recover.title")) & LF &
+        Message
+          ("recover.complete",
+           [Arg ("operations", Number (Report.Operations_Recovered)),
+            Arg ("tasks", Number (Report.Tasks_Recovered))]) & LF;
+   end Recover_Output;
 
    function Verify_Output
      (Item     : Invocation;
@@ -739,10 +972,11 @@ package body Improve.CLI is
          when Findings_Command => return Findings_Output (Item, Settings);
          when Plan_Command => return Plan_Output (Item, Settings);
          when Apply_Command => return Apply_Output (Item, Settings);
+         when Tasks_Command => return Tasks_Output (Item, Settings);
+         when Status_Command => return Status_Output (Item, Settings);
          when Verify_Command => return Verify_Output (Item, Settings, Negative);
          when Refresh_Command => return Refresh_Output (Item, Settings);
-         when others =>
-            raise Dependency_Error with Message ("phase.pending", [Arg ("command", Name (Item.Command))]);
+         when Recover_Command => return Recover_Output (Item, Settings);
       end case;
       if Item.Format = JSON_Format then
          return JSON_Output (Name (Item.Command), "text", To_String (Plain));

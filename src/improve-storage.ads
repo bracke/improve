@@ -47,6 +47,15 @@ package Improve.Storage is
 
    package Verification_Vectors is new Ada.Containers.Vectors (Positive, Verification_Record);
 
+   type Operation_Record is record
+      Id       : Positive;
+      Key      : Ada.Strings.Unbounded.Unbounded_String;
+      Plan_Id  : Ada.Strings.Unbounded.Unbounded_String;
+      Task_Ids : Improve.Model.UString_Vectors.Vector;
+   end record;
+
+   package Operation_Vectors is new Ada.Containers.Vectors (Positive, Operation_Record);
+
    procedure Open (Item : in out Store; Path : String; Writable : Boolean);
    --  Open Improve state. Writable mode creates and initializes a missing
    --  database; read-only mode never creates, migrates, or repairs state.
@@ -94,6 +103,19 @@ package Improve.Storage is
       Task_Id : String := "") return Verification_Vectors.Vector;
    --  Read historical evidence in insertion order, optionally filtered by
    --  plan and Improve task identity.
+
+   function Begin_Publication
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Task_Ids : Improve.Model.UString_Vectors.Vector) return Positive;
+   --  Durably record deliberate publication authorization before touching
+   --  harness state. Repeating the same plan/task set returns the same ID.
+
+   procedure Complete_Publication (Item : in out Store; Operation_Id : Positive);
+   --  Append an idempotent completion event after mappings are durable.
+
+   function Pending_Publications (Item : in out Store) return Operation_Vectors.Vector;
+   --  Return authorized publication starts with no completion event.
 
 private
    Logical_Table_Count : constant := 12;

@@ -15,6 +15,9 @@ agent_max_file_bytes = 32768
 agent_max_response_bytes = 131072
 agent_timeout_seconds = 60
 
+[operations]
+maximum_recovery_operations = 100
+
 [workflow]
 task_kind = "auto"
 publication = "candidate"
@@ -29,4 +32,5 @@ require_no_new_critical_findings = true
 [output]
 format = "terminal"
 color = "auto"
+maximum_output_items = 10000
 

@@ -22,6 +22,8 @@ package body Improve.Config is
        Agent_Max_File_Bytes      => 32_768,
        Agent_Max_Response_Bytes  => 131_072,
        Agent_Timeout_Seconds     => 60,
+       Maximum_Output_Items      => 10_000,
+       Maximum_Recovery_Operations => 100,
        Task_Kind                 => To_Unbounded_String ("auto"),
        Publication               => Candidate_Publication,
        Require_Initialized       => True,
@@ -123,6 +125,8 @@ package body Improve.Config is
          Result.Agent_Max_File_Bytes := Natural_Value ("agent_max_file_bytes", 32_768);
          Result.Agent_Max_Response_Bytes := Natural_Value ("agent_max_response_bytes", 131_072);
          Result.Agent_Timeout_Seconds := Natural_Value ("agent_timeout_seconds", 60);
+         Result.Maximum_Output_Items := Natural_Value ("maximum_output_items", 10_000);
+         Result.Maximum_Recovery_Operations := Natural_Value ("maximum_recovery_operations", 100);
          if Result.Agent_Max_Context_Bytes < 1_024 or else Result.Agent_Max_Context_Bytes > 10_485_760 then
             raise Argument_Error with "planning.agent_max_context_bytes must be between 1024 and 10485760";
          elsif Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
@@ -131,6 +135,10 @@ package body Improve.Config is
             raise Argument_Error with "planning.agent_max_response_bytes exceeds 1048576";
          elsif Result.Agent_Timeout_Seconds > 3_600 then
             raise Argument_Error with "planning.agent_timeout_seconds exceeds 3600";
+         elsif Result.Maximum_Output_Items > 100_000 then
+            raise Argument_Error with "output.maximum_output_items exceeds 100000";
+         elsif Result.Maximum_Recovery_Operations > 10_000 then
+            raise Argument_Error with "operations.maximum_recovery_operations exceeds 10000";
          end if;
          Result.Task_Kind := To_Unbounded_String (Kind);
          Result.Require_Initialized := Boolean_Value ("require_initialized_project", True);
@@ -169,6 +177,7 @@ package body Improve.Config is
         "planning.agent_max_file_bytes =" & Positive'Image (Item.Agent_Max_File_Bytes) & LF &
         "planning.agent_max_response_bytes =" & Positive'Image (Item.Agent_Max_Response_Bytes) & LF &
         "planning.agent_timeout_seconds =" & Positive'Image (Item.Agent_Timeout_Seconds) & LF &
+        "operations.maximum_recovery_operations =" & Positive'Image (Item.Maximum_Recovery_Operations) & LF &
         "workflow.task_kind = """ & To_String (Item.Task_Kind) & """" & LF &
         "workflow.publication = ""candidate""" & LF &
         "workflow.require_initialized_project = " & Boolean_Image (Item.Require_Initialized) & LF &
@@ -176,6 +185,7 @@ package body Improve.Config is
         "verification.require_same_policy = " & Boolean_Image (Item.Require_Same_Policy) & LF &
         "verification.require_same_toolchain = " & Boolean_Image (Item.Require_Same_Toolchain) & LF &
         "verification.require_no_new_critical_findings = " & Boolean_Image (Item.Require_No_New_Critical) & LF &
+        "output.maximum_output_items =" & Positive'Image (Item.Maximum_Output_Items) & LF &
         "output.format = """ & (if Item.Format = Terminal_Format then "terminal" else "json") & """" & LF &
         "output.color = """ &
           (case Item.Color is when Color_Auto => "auto", when Color_Always => "always", when Color_Never => "never") &

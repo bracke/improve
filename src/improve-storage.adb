@@ -965,4 +965,145 @@ package body Improve.Storage is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
    end Verifications;
+
+   function Begin_Publication
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Task_Ids : Improve.Model.UString_Vectors.Vector) return Positive is
+      Plan    : constant Improve.Model.Plan_Revision := Load (Item, Plan_Id);
+      Tx      : Database.Transactions.Transaction;
+      Packed  : constant String := Pack (Task_Ids);
+      Key     : constant String := "publish:" & Plan_Id & ":" & Stable_Digest (Packed);
+      Row_Id  : Positive;
+   begin
+      if not Item.Opened or else not Item.Writable then
+         raise Data_Error with "Improve state is not open for publication journaling";
+      elsif Task_Ids.Is_Empty then
+         raise Argument_Error with "publication operation has no tasks";
+      end if;
+      for Task_Id of Task_Ids loop
+         declare Found : Boolean := False; begin
+            for Spec of Plan.Tasks loop
+               if Spec.Id = Task_Id then Found := True; exit; end if;
+            end loop;
+            if not Found then raise Data_Error with "publication operation references an unknown task"; end if;
+         end;
+      end loop;
+      for Left in 1 .. Natural (Task_Ids.Length) loop
+         for Right in Left + 1 .. Natural (Task_Ids.Length) loop
+            if Task_Ids (Left) = Task_Ids (Right) then
+               raise Data_Error with "publication operation contains a duplicate task";
+            end if;
+         end loop;
+      end loop;
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               if S (Row.Kind) = Key and then S (Row.State) = "started" then
+                  Database.Transactions.Rollback (Tx);
+                  return Row.Id;
+               end if;
+            end;
+            Advance (Item, Tx, Operations_Table, Cursor);
+         end loop;
+      end;
+      Row_Id := Next_Id (Item, Tx, Operations_Table);
+      Check
+        (Entity_Tables.Insert
+           (Tx, Item.DB, Item.Schemas (Operations_Table),
+            (Row_Id, 0, WW (Key), WW ("started"),
+             WW (Pair ("plan_id", Plan_Id) & LF & Pair ("task_ids", Packed)), True, Operations_Table)),
+         "journal publication start");
+      Database.Transactions.Commit (Tx);
+      return Row_Id;
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Begin_Publication;
+
+   procedure Complete_Publication (Item : in out Store; Operation_Id : Positive) is
+      Tx      : Database.Transactions.Transaction;
+      Started : Entity;
+      Found   : Boolean := False;
+      Row_Id  : Positive;
+   begin
+      if not Item.Opened or else not Item.Writable then
+         raise Data_Error with "Improve state is not open for publication completion";
+      end if;
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               if Row.Id = Operation_Id and then S (Row.State) = "started" then
+                  Started := Row;
+                  Found := True;
+               elsif Row.Parent_Id = Operation_Id and then S (Row.State) = "completed" then
+                  Database.Transactions.Rollback (Tx);
+                  return;
+               end if;
+            end;
+            Advance (Item, Tx, Operations_Table, Cursor);
+         end loop;
+      end;
+      if not Found then raise Data_Error with "unknown publication operation"; end if;
+      Row_Id := Next_Id (Item, Tx, Operations_Table);
+      Check
+        (Entity_Tables.Insert
+           (Tx, Item.DB, Item.Schemas (Operations_Table),
+            (Row_Id, Operation_Id, Started.Kind, WW ("completed"), Started.Payload, True, Operations_Table)),
+         "journal publication completion");
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Complete_Publication;
+
+   function Pending_Publications (Item : in out Store) return Operation_Vectors.Vector is
+      Tx     : Database.Transactions.Transaction;
+      Result : Operation_Vectors.Vector;
+   begin
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      declare Starts : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+         while Entity_Tables.Has_Element (Starts) loop
+            declare
+               Row       : constant Entity := Entity_Tables.Element (Starts);
+               Completed : Boolean := False;
+            begin
+               if S (Row.State) = "started" then
+                  declare Ends : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+                     while Entity_Tables.Has_Element (Ends) loop
+                        if Entity_Tables.Element (Ends).Parent_Id = Row.Id and then
+                          S (Entity_Tables.Element (Ends).State) = "completed"
+                        then
+                           Completed := True;
+                           exit;
+                        end if;
+                        Advance (Item, Tx, Operations_Table, Ends);
+                     end loop;
+                  end;
+                  if not Completed then
+                     declare Payload : constant String := S (Row.Payload); begin
+                        Result.Append
+                          (Operation_Record'
+                             (Id       => Row.Id,
+                              Key      => To_Unbounded_String (S (Row.Kind)),
+                              Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
+                              Task_Ids => Unpack (Field (Payload, "task_ids"))));
+                     end;
+                  end if;
+               end if;
+            end;
+            Advance (Item, Tx, Operations_Table, Starts);
+         end loop;
+      end;
+      Database.Transactions.Rollback (Tx);
+      return Result;
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Pending_Publications;
 end Improve.Storage;

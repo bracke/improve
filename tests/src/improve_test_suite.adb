@@ -16,10 +16,12 @@ with Improve.Findings;
 with Improve.Model;
 with Improve.Planner;
 with Improve.Refinement;
+with Improve.Recovery;
 with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Text;
+with Improve.Workflow;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Configurations;
 with Model_Runner.Framework.Records;
@@ -54,7 +56,9 @@ package body Improve_Test_Suite is
       Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
-      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected);
+      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
+      Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Interrupted_Publication_Recovery,
+      Recovery_Limit_Enforced, Recover_Missing_State);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -1178,6 +1182,166 @@ package body Improve_Test_Suite is
          when Agent_Weakening_Rejected =>
             Check_Agent_Fallback
               (Weakening_Agent, Improve.Refinement.Rejected_Fallback, "weakening");
+         when Tasks_CLI_Golden =>
+            declare
+               Data     : constant Fixture := Build_Fixture ("tasks_golden", Harness_Project => True);
+               State    : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Result   : Improve.CLI.Outcome;
+               Expected : constant String :=
+                 "Remediation tasks" & Character'Val (10) &
+                 "ID  Harness  Status  Title" & Character'Val (10) &
+                 "IMP-000001  -  proposed  Repair the Alire manifest" & Character'Val (10) &
+                 "IMP-000002  -  proposed  Restore toolchain identification" & Character'Val (10) &
+                 "IMP-000003  -  proposed  Investigate missing coverage evidence" & Character'Val (10);
+            begin
+               Assert (Planned.Exit_Code = 0, "tasks golden fixture plan failed");
+               Result := Improve.CLI.Execute
+                 (Args ("tasks|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--color|never"));
+               Assert (Result.Exit_Code = 0 and then To_String (Result.Output) = Expected,
+                       "terminal task output changed unexpectedly: " & To_String (Result.Errors));
+               Must_Reject ("tasks", "requires --project or --task");
+               Remove (Data);
+            end;
+         when Tasks_JSON_Filter =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("tasks_json", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Result  : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "tasks JSON fixture plan failed");
+               Result := Improve.CLI.Execute
+                 (Args ("tasks|--task|IMP-000001|--state|" & State & "|--format|json|--color|always"));
+               Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """command"":""tasks""") > 0 and then
+                         Ada.Strings.Fixed.Index (To_String (Result.Output), "IMP-000001") > 0 and then
+                         Ada.Strings.Fixed.Index (To_String (Result.Output), "IMP-000002") = 0 and then
+                         Ada.Strings.Fixed.Index (To_String (Result.Output), Character'Val (27) & "[") = 0,
+                       "task JSON filtering or styling is invalid");
+               Result := Improve.CLI.Execute
+                 (Args ("tasks|--project|" & Id_Image (Data.Project) & "|--status|not-a-status|--database|" &
+                        To_String (Data.Database) & "|--state|" & State));
+               Assert (Result.Exit_Code = Improve.CLI.Argument_Exit and then Length (Result.Output) = 0,
+                       "invalid task status did not return exit 2");
+               Remove (Data);
+            end;
+         when Status_Project_And_All =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("status", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               One     : Improve.CLI.Outcome;
+               All_Of  : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "status fixture plan failed");
+               One := Improve.CLI.Execute
+                 (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               All_Of := Improve.CLI.Execute
+                 (Args ("status|--all|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (One.Exit_Code = 0 and then All_Of.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (One.Output), """baseline_run"":1") > 0 and then Ada.Strings.Fixed.Index
+                         (To_String (One.Output), """latest_run"":1") > 0 and then Ada.Strings.Fixed.Index
+                         (To_String (One.Output), """plan_count"":1") > 0 and then Ada.Strings.Fixed.Index
+                         (To_String (One.Output), """outstanding"":3") > 0 and then Ada.Strings.Fixed.Index
+                         (To_String (All_Of.Output), """command"":""status""") > 0,
+                       "project or all-project status summary is invalid");
+               Remove (Data);
+            end;
+         when Interrupted_Publication_Recovery =>
+            declare
+               Data      : constant Fixture := Build_Fixture ("recover", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Plan      : Improve.Model.Plan_Revision;
+               Task_Ids  : Improve.Model.UString_Vectors.Vector;
+               Operation : Positive;
+               pragma Unreferenced (Operation);
+               First     : Improve.CLI.Outcome;
+               Second    : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "recovery fixture plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+                  Operation := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", Task_Ids);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               declare Published : constant Improve.Workflow.Publication_Result :=
+                 Improve.Workflow.Publish (To_String (Plan.Project.Path), Plan, "auto");
+               begin
+                  Assert (Published.Tasks.Length = 3,
+                          "interrupted recovery fixture did not commit harness tasks");
+               end;
+               First := Improve.CLI.Execute (Args ("recover|--state|" & State & "|--format|json"));
+               Second := Improve.CLI.Execute (Args ("recover|--state|" & State & "|--format|json"));
+               Assert (First.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (First.Output), """operations_recovered"":1") > 0 and then
+                         Ada.Strings.Fixed.Index (To_String (First.Output), """tasks_recovered"":3") > 0,
+                       "interrupted publication was not recovered");
+               Assert (Second.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Second.Output), """operations_recovered"":0") > 0,
+                       "repeated recovery was not idempotent");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Assert (Improve.Storage.Pending_Publications (Improve_State).Is_Empty and then
+                            Improve.Storage.Publications (Improve_State, "PLAN-000001").Length = 3,
+                          "recovery did not durably complete mappings and journal state");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
+            end;
+         when Recovery_Limit_Enforced =>
+            declare
+               Data      : constant Fixture := Build_Fixture ("recover_limit", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Plan      : Improve.Model.Plan_Revision;
+               All_Tasks : Improve.Model.UString_Vectors.Vector;
+               One_Task  : Improve.Model.UString_Vectors.Vector;
+               Rejected  : Boolean := False;
+            begin
+               Assert (Planned.Exit_Code = 0, "recovery limit fixture plan failed");
+               declare Improve_State : Improve.Storage.Store; First, Second : Positive; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  for Spec of Plan.Tasks loop All_Tasks.Append (Spec.Id); end loop;
+                  One_Task.Append (Plan.Tasks.First_Element.Id);
+                  First := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", All_Tasks);
+                  Second := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", One_Task);
+                  Assert (First /= Second, "distinct recovery operations reused an identity");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               begin
+                  declare
+                     Report : constant Improve.Recovery.Recovery_Report :=
+                       Improve.Recovery.Recover (State, "auto", Maximum => 1);
+                     pragma Unreferenced (Report);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "recovery operation limit was not enforced");
+               Remove (Data);
+            end;
+         when Recover_Missing_State =>
+            declare
+               Path   : constant String := "/tmp/improve_phase8_missing_state.db";
+               Result : Improve.CLI.Outcome;
+            begin
+               Project_Tools.Files.Delete_File_If_Present (Path);
+               Result := Improve.CLI.Execute (Args ("recover|--state|" & Path & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0 and then
+                         not Project_Tools.Files.File_Exists (Path),
+                       "recover initialized missing state or returned the wrong exit code");
+            end;
       end case;
    end Run_Test;
 
