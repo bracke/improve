@@ -30,6 +30,7 @@ package body Improve.Storage is
    Tasks_Table               : constant Positive := 7;
    Task_Findings_Table       : constant Positive := 8;
    Task_Dependencies_Table   : constant Positive := 9;
+   Publications_Table        : constant Positive := 10;
    Operations_Table          : constant Positive := 12;
 
    Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
@@ -728,4 +729,87 @@ package body Improve.Storage is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
    end List;
+
+   procedure Record_Publications
+     (Item    : in out Store;
+      Plan_Id : String;
+      Values  : Publication_Vectors.Vector) is
+      Tx     : Database.Transactions.Transaction;
+      Row_Id : Positive;
+   begin
+      if not Item.Opened or else not Item.Writable then
+         raise Data_Error with "Improve state is not open for publication recording";
+      end if;
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      Row_Id := Next_Id (Item, Tx, Publications_Table);
+      for Value of Values loop
+         declare
+            Cursor   : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table);
+            Existing : Boolean := False;
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) then
+                     if Field (S (Row.Payload), "harness_id") /= To_String (Value.Harness_Task_Id) or else
+                       Field (S (Row.Payload), "origin") /= To_String (Value.Origin)
+                     then
+                        raise Data_Error with "published task identity is already mapped to unrelated work";
+                     end if;
+                     Existing := True;
+                     exit;
+                  end if;
+               end;
+               Advance (Item, Tx, Publications_Table, Cursor);
+            end loop;
+            if not Existing then
+               Check
+                 (Entity_Tables.Insert
+                    (Tx, Item.DB, Item.Schemas (Publications_Table),
+                     (Row_Id, 0, WW (To_String (Value.Improve_Task_Id)), WW (To_String (Value.State)),
+                      WW (Pair ("plan_id", Plan_Id) & LF &
+                          Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
+                          Pair ("origin", To_String (Value.Origin))), True, Publications_Table)),
+                  "record publication mapping");
+               Row_Id := Row_Id + 1;
+            end if;
+         end;
+      end loop;
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Record_Publications;
+
+   function Publications
+     (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector is
+      Tx     : Database.Transactions.Transaction;
+      Cursor : Entity_Tables.Cursor;
+      Result : Publication_Vectors.Vector;
+   begin
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      Cursor := Scan (Item, Tx, Publications_Table);
+      while Entity_Tables.Has_Element (Cursor) loop
+         declare
+            Row     : constant Entity := Entity_Tables.Element (Cursor);
+            Payload : constant String := S (Row.Payload);
+         begin
+            if Plan_Id = "" or else Field (Payload, "plan_id") = Plan_Id then
+               Result.Append
+                 (Publication_Record'
+                    (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
+                     Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
+                     Origin          => To_Unbounded_String (Field (Payload, "origin")),
+                     State           => To_Unbounded_String (S (Row.State))));
+            end if;
+         end;
+         Advance (Item, Tx, Publications_Table, Cursor);
+      end loop;
+      Database.Transactions.Rollback (Tx);
+      return Result;
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Publications;
 end Improve.Storage;

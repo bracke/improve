@@ -2,6 +2,7 @@ with Ada_Quality.Reporting;
 with Improve.Model;
 with Improve.Source;
 with Improve.Storage;
+with Improve.Workflow;
 
 --  Versioned deterministic JSON serialization of read-only quality evidence.
 package Improve.JSON is
@@ -20,5 +21,9 @@ package Improve.JSON is
 
    function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String;
    --  Serialize persisted plan summaries.
+
+   function Publication
+     (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String;
+   --  Serialize native harness publication or preview results.
 end Improve.JSON;
 

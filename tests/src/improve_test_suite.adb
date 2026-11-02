@@ -19,6 +19,12 @@ with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Text;
+with Model_Runner.Errors;
+with Model_Runner.Framework.Configurations;
+with Model_Runner.Framework.Records;
+with Model_Runner.Framework.Stores;
+with Model_Runner.Framework.Tasks;
+with Model_Runner.Framework.Templates;
 with Project_Tools.Files;
 
 package body Improve_Test_Suite is
@@ -38,7 +44,8 @@ package body Improve_Test_Suite is
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
-      Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize);
+      Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
+      Native_Publication_And_Recovery);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -86,9 +93,10 @@ package body Improve_Test_Suite is
       Project   : Positive;
       Run       : Positive;
       Interrupted : Positive;
+      Target      : Unbounded_String;
    end record;
 
-   function Build_Fixture (Label : String) return Fixture is
+   function Build_Fixture (Label : String; Harness_Project : Boolean := False) return Fixture is
       use Ada_Quality.Types;
       Directory : constant String := "/tmp/improve_phase2_" & Label;
       DB_Path   : constant String := Directory & "/quality.db";
@@ -97,15 +105,30 @@ package body Improve_Test_Suite is
       Run       : Positive;
       Later     : Positive;
       Value     : Assessment;
+      Target    : constant String :=
+        (if Harness_Project then Directory & "/project" else Ada.Directories.Full_Name (".."));
    begin
       Project_Tools.Files.Delete_Tree (Directory);
       Ada.Directories.Create_Directory (Directory);
+      if Harness_Project then
+         Ada.Directories.Create_Directory (Target);
+         Project_Tools.Files.Write_Text_File
+           (Target & "/alire.toml",
+            "name = ""improve_fixture""" & Character'Val (10) &
+            "description = ""Improve integration fixture""" & Character'Val (10) &
+            "version = ""0.1.0-dev""" & Character'Val (10) &
+            "authors = [""Improve tests""]" & Character'Val (10) &
+            "maintainers = [""Improve tests <tests@example.invalid>""]" & Character'Val (10) &
+            "maintainers-logins = [""improve-tests""]" & Character'Val (10) &
+            "licenses = ""MIT""" & Character'Val (10) &
+            "tags = [""test""]" & Character'Val (10));
+      end if;
       Ada_Quality.Storage.Open (Store, DB_Path);
-      Project := Ada_Quality.Storage.Add_Project (Store, Ada.Directories.Full_Name (".."));
+      Project := Ada_Quality.Storage.Add_Project (Store, Target);
       Run := Ada_Quality.Storage.Start_Assessment (Store, Project, "source-a", "policy-a");
       Value.Id := Run;
       Value.Project_Id := Project;
-      Value.Project_Path := To_Unbounded_String (Ada.Directories.Full_Name (".."));
+      Value.Project_Path := To_Unbounded_String (Target);
       Value.Source_Fingerprint := To_Unbounded_String ("source-a");
       Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
       Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
@@ -151,8 +174,41 @@ package body Improve_Test_Suite is
       Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
       Ada_Quality.Storage.Close (Store);
       return
-        (To_Unbounded_String (Directory), To_Unbounded_String (DB_Path), Project, Run, Later);
+        (To_Unbounded_String (Directory), To_Unbounded_String (DB_Path), Project, Run, Later,
+         To_Unbounded_String (Target));
    end Build_Fixture;
+
+   procedure Initialize_Harness (Directory : String) is
+      package Config renames Model_Runner.Framework.Configurations;
+      package Errors renames Model_Runner.Errors;
+      package Stores renames Model_Runner.Framework.Stores;
+      package Templates renames Model_Runner.Framework.Templates;
+      Template : Templates.Template;
+      Registry : Templates.Registry;
+      Composed : Templates.Composition;
+      Given    : Config.Value_Maps.Map;
+      Planned  : Config.Plan;
+      Done     : Config.Outcome;
+      Store    : Stores.Store;
+      Status   : Errors.Error_Info;
+   begin
+      Templates.Parse
+        ("template = improve-tests" & Character'Val (10) &
+         "name = Improve tests" & Character'Val (10) &
+         "description = Native Improve task publication fixture" & Character'Val (10) &
+         "version = 1" & Character'Val (10) &
+         "task_kind remediation = acceptance, notes?" & Character'Val (10),
+         "improve-tests", Template, Status);
+      Assert (Errors.Is_Ok (Status), "harness template parsing failed");
+      Templates.Add (Registry, Template);
+      Templates.Compose (Registry, "improve-tests", Composed, Status);
+      Assert (Errors.Is_Ok (Status), "harness template composition failed");
+      Config.Prepare (Composed, Directory, Given, Planned, Status);
+      Assert (Errors.Is_Ok (Status), "harness fixture preparation failed");
+      Config.Initialize (Store, Directory, Planned, Done, Status);
+      Assert (Errors.Is_Ok (Status), "harness fixture initialization failed");
+      Stores.Close (Store);
+   end Initialize_Harness;
 
    procedure Remove (Item : Fixture) is
    begin
@@ -524,6 +580,76 @@ package body Improve_Test_Suite is
                Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then not Ada.Directories.Exists (State),
                        "read-only plan inspection initialized missing state");
                Project_Tools.Files.Delete_Tree (Directory);
+            end;
+         when Native_Publication_And_Recovery =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data    : constant Fixture := Build_Fixture ("native_publication", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan_Result : Improve.CLI.Outcome;
+               Preview_Result : Improve.CLI.Outcome;
+               Apply_Result : Improve.CLI.Outcome;
+               Retry_Result : Improve.CLI.Outcome;
+               Store   : Stores.Store;
+               Status  : Errors.Error_Info;
+            begin
+               Initialize_Harness (To_String (Data.Target));
+               Plan_Result := Improve.CLI.Execute
+                 (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+                        Id_Image (Data.Project) & "|--format|json"));
+               Assert (Plan_Result.Exit_Code = 0, "publication fixture plan failed: " & To_String (Plan_Result.Errors));
+               Preview_Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--dry-run|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Preview_Result.Exit_Code = 0,
+                  "publication preview failed: " & To_String (Preview_Result.Errors));
+               Stores.Open_To_Read (Store, To_String (Data.Target), Status);
+               Assert (Errors.Is_Ok (Status) and then Tasks.List (Store).Is_Empty,
+                       "publication preview modified harness state");
+               Stores.Close (Store);
+               Apply_Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (Apply_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Apply_Result.Output), """task_kind"":""remediation""") > 0,
+                       "native publication failed: " & To_String (Apply_Result.Errors));
+               Stores.Open_To_Read (Store, To_String (Data.Target), Status);
+               Assert (Errors.Is_Ok (Status), "published harness state could not be opened");
+               declare Ids : constant Model_Runner.Framework.Name_Lists.Vector := Tasks.List (Store); begin
+                  Assert (Ids.Length = 3, "native publication did not create exactly three tasks");
+                  for Id of Ids loop
+                     declare Definition : Records.Item; begin
+                        Tasks.Definition (Store, Id, Definition, Status);
+                        Assert
+                          (Errors.Is_Ok (Status) and then
+                           Records.Get (Definition, "created_by") = "improve" and then
+                                Ada.Strings.Fixed.Index (Records.Get (Definition, "origin"), "improve:") = 1 and then
+                                Tasks.State_Of (Store, Id) = "candidate",
+                                "published task lost provenance or candidate state");
+                     end;
+                  end loop;
+               end;
+               Stores.Close (Store);
+               Retry_Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (Retry_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Retry_Result.Output), """recovered"":true") > 0,
+                       "repeated apply did not recover by stable origin: " & To_String (Retry_Result.Errors));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  declare Mappings : constant Improve.Storage.Publication_Vectors.Vector :=
+                    Improve.Storage.Publications (Improve_State, "PLAN-000001");
+                  begin
+                     Assert (Mappings.Length = 3, "publication mappings were not persisted exactly once");
+                  end;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
             end;
       end case;
    end Run_Test;

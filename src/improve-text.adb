@@ -57,6 +57,9 @@ package body Improve.Text is
      "en.plan.none = No remediation tasks are required." & LF &
      "en.plan.list.title = Stored remediation plans" & LF &
      "en.plan.list.none = No stored remediation plans." & LF &
+     "en.apply.title = Harness publication for {plan}" & LF &
+     "en.apply.preview = Preview only; harness and Improve state were not modified." & LF &
+     "en.apply.complete = Native harness transaction committed and publication mappings recorded." & LF &
      "en.label.id = ID" & LF &
      "en.label.project = Project" & LF &
      "en.label.enabled = Enabled" & LF &

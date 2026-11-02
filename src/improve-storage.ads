@@ -28,6 +28,15 @@ package Improve.Storage is
 
    package Summary_Vectors is new Ada.Containers.Vectors (Positive, Plan_Summary);
 
+   type Publication_Record is record
+      Improve_Task_Id : Ada.Strings.Unbounded.Unbounded_String;
+      Harness_Task_Id : Ada.Strings.Unbounded.Unbounded_String;
+      Origin          : Ada.Strings.Unbounded.Unbounded_String;
+      State           : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
+
    procedure Open (Item : in out Store; Path : String; Writable : Boolean);
    --  Open Improve state. Writable mode creates and initializes a missing
    --  database; read-only mode never creates, migrates, or repairs state.
@@ -44,6 +53,17 @@ package Improve.Storage is
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector;
    --  List latest plan revisions, optionally filtered by project.
+
+   procedure Record_Publications
+     (Item    : in out Store;
+      Plan_Id : String;
+      Values  : Publication_Vectors.Vector);
+   --  Atomically record verified Improve-to-harness mappings. Existing equal
+   --  mappings are retained; conflicting reuse is rejected.
+
+   function Publications
+     (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector;
+   --  Read publication mappings, optionally for one plan.
 
 private
    Logical_Table_Count : constant := 12;

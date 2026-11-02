@@ -14,6 +14,7 @@ with Improve.Presentation;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Text;
+with Improve.Workflow;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
 with Project_Tools.Files;
@@ -488,6 +489,81 @@ package body Improve.CLI is
       end;
    end Plan_Output;
 
+   function Apply_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      State : Improve.Storage.Store;
+      Plan  : Improve.Model.Plan_Revision;
+   begin
+      Improve.Storage.Open (State, State_Path (Item), Writable => False);
+      Plan := Improve.Storage.Load (State, To_String (Item.Target));
+      Improve.Storage.Close (State);
+      if Item.Has_Task then
+         declare
+            Selected : Improve.Model.Task_Vectors.Vector;
+         begin
+            for Spec of Plan.Tasks loop
+               if To_String (Spec.Id) = To_String (Item.Task_Id) then Selected.Append (Spec); end if;
+            end loop;
+            if Selected.Is_Empty then
+               raise Argument_Error with "task does not belong to plan: " & To_String (Item.Task_Id);
+            end if;
+            Plan.Tasks := Selected;
+         end;
+      end if;
+      declare
+         Quality : Improve.Source.Repository;
+      begin
+         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+         declare
+            Project : constant Improve.Model.Project_Reference :=
+              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
+            Latest  : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
+         begin
+            if Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
+              Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
+            then
+               raise Data_Error with "project source changed after planning; refresh the plan before publication";
+            end if;
+         end;
+         Improve.Source.Close (Quality);
+      end;
+      declare
+         Published : constant Improve.Workflow.Publication_Result :=
+           Improve.Workflow.Publish
+             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Item.Dry_Run);
+      begin
+         if not Item.Dry_Run then
+            declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin
+               for Value of Published.Tasks loop
+                  Mappings.Append
+                    (Improve.Storage.Publication_Record'
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.State));
+               end loop;
+               Improve.Storage.Open (State, State_Path (Item), Writable => True);
+               Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
+               Improve.Storage.Close (State);
+            end;
+         end if;
+         if Item.Format = JSON_Format then
+            return Improve.JSON.Publication (To_String (Plan.Plan_Id), Published, Item.Dry_Run);
+         end if;
+         declare Result : Unbounded_String; begin
+            Append
+              (Result,
+               Improve.Presentation.Header
+                 (Message ("apply.title", [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
+            Append (Result, Message (if Item.Dry_Run then "apply.preview" else "apply.complete") & LF);
+            for Value of Published.Tasks loop
+               Append
+                 (Result,
+                  To_String (Value.Improve_Id) & " -> " &
+                  (if Length (Value.Harness_Id) = 0 then "candidate" else To_String (Value.Harness_Id)) &
+                  "  " & To_String (Value.State) & (if Value.Recovered then " (recovered)" else "") & LF);
+            end loop;
+            return To_String (Result);
+         end;
+      end;
+   end Apply_Output;
+
    function Dispatch (Item : Invocation) return String is
       Plain : Unbounded_String;
       Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path);
@@ -507,6 +583,7 @@ package body Improve.CLI is
          when Projects_Command => return Projects_Output (Item, Settings);
          when Findings_Command => return Findings_Output (Item, Settings);
          when Plan_Command => return Plan_Output (Item, Settings);
+         when Apply_Command => return Apply_Output (Item, Settings);
          when others =>
             raise Dependency_Error with Message ("phase.pending", [Arg ("command", Name (Item.Command))]);
       end case;

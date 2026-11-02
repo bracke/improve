@@ -160,5 +160,33 @@ package body Improve.JSON is
       Doc.Set_Root (Root);
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end Plans;
+
+   function Publication
+     (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String is
+      Doc  : Document;
+      Root : constant Node := Doc.New_Object;
+      Data : constant Node := Doc.New_Object;
+      List : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("apply"));
+      Doc.Insert (Data, "plan_id", Doc.New_String (Plan_Id));
+      Doc.Insert (Data, "task_kind", Doc.New_String (To_String (Value.Task_Kind)));
+      Doc.Insert (Data, "dry_run", Doc.New_Boolean (Dry_Run));
+      for Published of Value.Tasks loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "improve_task_id", Doc.New_String (To_String (Published.Improve_Id)));
+            Doc.Insert (Item, "harness_task_id", Doc.New_String (To_String (Published.Harness_Id)));
+            Doc.Insert (Item, "origin", Doc.New_String (To_String (Published.Origin)));
+            Doc.Insert (Item, "state", Doc.New_String (To_String (Published.State)));
+            Doc.Insert (Item, "recovered", Doc.New_Boolean (Published.Recovered));
+            Doc.Append (List, Item);
+         end;
+      end loop;
+      Doc.Insert (Data, "tasks", List);
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Publication;
 end Improve.JSON;
 
