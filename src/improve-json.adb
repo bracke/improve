@@ -95,7 +95,7 @@ package body Improve.JSON is
       Doc.Insert (Data, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
       Doc.Insert (Data, "planner", Doc.New_String (To_String (Value.Planner_Id)));
       Doc.Insert (Data, "dry_run", Doc.New_Boolean (Dry_Run));
-      Doc.Insert (Data, "stored", Doc.New_Boolean (False));
+      Doc.Insert (Data, "stored", Doc.New_Boolean (not Dry_Run));
       for Spec of Value.Tasks loop
          declare
             Item         : constant Node := Doc.New_Object;
@@ -134,5 +134,31 @@ package body Improve.JSON is
       Doc.Set_Root (Root);
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end Plan;
+
+   function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String is
+      Doc  : Document;
+      Root : constant Node := Doc.New_Object;
+      Data : constant Node := Doc.New_Object;
+      List : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("plan list"));
+      for Value of Values loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
+            Doc.Insert (Item, "revision", Doc.New_Integer (Long_Long_Integer (Value.Revision)));
+            Doc.Insert (Item, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project_Id)));
+            Doc.Insert (Item, "project", Doc.New_String (To_String (Value.Project)));
+            Doc.Insert (Item, "run_id", Doc.New_Integer (Long_Long_Integer (Value.Run_Id)));
+            Doc.Insert (Item, "task_count", Doc.New_Integer (Long_Long_Integer (Value.Task_Count)));
+            Doc.Insert (Item, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
+            Doc.Append (List, Item);
+         end;
+      end loop;
+      Doc.Insert (Data, "plans", List);
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Plans;
 end Improve.JSON;
 

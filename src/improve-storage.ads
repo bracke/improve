@@ -1,0 +1,58 @@
+with Ada.Containers.Vectors;
+with Ada.Strings.Unbounded;
+with Database;
+with Database.Schema;
+with Improve.Model;
+
+--  Improve-owned durable state. External quality and harness stores are never
+--  opened through this package.
+package Improve.Storage is
+   Current_Schema_Version : constant Positive := 1;
+
+   type Store is limited private;
+
+   type Save_Result is record
+      Plan     : Improve.Model.Plan_Revision;
+      Existing : Boolean := False;
+   end record;
+
+   type Plan_Summary is record
+      Plan_Id     : Ada.Strings.Unbounded.Unbounded_String;
+      Revision    : Positive;
+      Project_Id  : Positive;
+      Project     : Ada.Strings.Unbounded.Unbounded_String;
+      Run_Id      : Positive;
+      Task_Count  : Natural;
+      Fingerprint : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Summary_Vectors is new Ada.Containers.Vectors (Positive, Plan_Summary);
+
+   procedure Open (Item : in out Store; Path : String; Writable : Boolean);
+   --  Open Improve state. Writable mode creates and initializes a missing
+   --  database; read-only mode never creates, migrates, or repairs state.
+
+   procedure Close (Item : in out Store);
+
+   function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result;
+   --  Atomically persist a plan revision and its evidence graph. Repeating an
+   --  identical fingerprint returns the existing revision.
+
+   function Load (Item : in out Store; Plan_Id : String) return Improve.Model.Plan_Revision;
+   --  Load the latest immutable revision for a plan.
+
+   function List
+     (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector;
+   --  List latest plan revisions, optionally filtered by project.
+
+private
+   Logical_Table_Count : constant := 12;
+   type Schema_Array is array (Positive range 1 .. Logical_Table_Count) of Database.Schema.Table_Schema;
+
+   type Store is limited record
+      DB       : Database.Handle;
+      Schemas  : Schema_Array;
+      Opened   : Boolean := False;
+      Writable : Boolean := False;
+   end record;
+end Improve.Storage;

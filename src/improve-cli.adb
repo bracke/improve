@@ -12,6 +12,7 @@ with Improve.Model;
 with Improve.Planner;
 with Improve.Presentation;
 with Improve.Source;
+with Improve.Storage;
 with Improve.Text;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
@@ -279,6 +280,9 @@ package body Improve.CLI is
    function Quality_Path (Item : Invocation; Settings : Improve.Config.Settings) return String is
      (if Item.Has_Database then To_String (Item.Database) else To_String (Settings.Quality_Database));
 
+   function State_Path (Item : Invocation) return String is
+     (if Item.Has_State then To_String (Item.State) else ".improve.db");
+
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Store : Improve.Source.Repository;
    begin
@@ -363,27 +367,96 @@ package body Improve.CLI is
    end Findings_Output;
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Store : Improve.Source.Repository;
+      Quality : Improve.Source.Repository;
+
+      function Stored_Plan_Terminal (Plan : Improve.Model.Plan_Revision) return String is
+         Result : Unbounded_String;
+      begin
+         Append
+           (Result,
+            Improve.Presentation.Header
+              (Message
+                 ("plan.title",
+                  [Arg ("project", To_String (Plan.Project.Name)),
+                   Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
+         Append (Result, Message ("plan.persisted.identity", [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
+         Append (Result, Message ("plan.revision", [Arg ("revision", Number (Plan.Revision))]) & LF);
+         if Plan.Tasks.Is_Empty then Append (Result, Message ("plan.none") & LF); end if;
+         for Spec of Plan.Tasks loop
+            Append
+              (Result,
+               To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
+               To_String (Spec.Title) & LF & "  " & To_String (Spec.Acceptance) & LF);
+         end loop;
+         return To_String (Result);
+      end Stored_Plan_Terminal;
    begin
-      if Item.Plan_Action /= Create_Plan then
-         raise Dependency_Error with Message ("phase.pending", [Arg ("command", "plan " &
-           (if Item.Plan_Action = List_Plans then "list" else "show"))]);
-      elsif not Item.Dry_Run then
-         raise Dependency_Error with Message ("plan.persistence.pending");
+      if Item.Plan_Action = Show_Plan then
+         declare State : Improve.Storage.Store; begin
+            Improve.Storage.Open (State, State_Path (Item), Writable => False);
+            declare Plan : constant Improve.Model.Plan_Revision :=
+              Improve.Storage.Load (State, To_String (Item.Target));
+            begin
+               Improve.Storage.Close (State);
+               if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
+               return Stored_Plan_Terminal (Plan);
+            end;
+         end;
+      elsif Item.Plan_Action = List_Plans then
+         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+         declare
+            Project : constant Improve.Model.Project_Reference :=
+              Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
+            State : Improve.Storage.Store;
+         begin
+            Improve.Source.Close (Quality);
+            Improve.Storage.Open (State, State_Path (Item), Writable => False);
+            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+              Improve.Storage.List (State, Project.Id);
+            begin
+               Improve.Storage.Close (State);
+               if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
+               declare Result : Unbounded_String; begin
+                  Append (Result, Improve.Presentation.Header (Message ("plan.list.title")) & LF);
+                  if Values.Is_Empty then Append (Result, Message ("plan.list.none") & LF); end if;
+                  for Value of Values loop
+                     Append (Result, To_String (Value.Plan_Id) & "  r" & Number (Value.Revision) & "  " &
+                       Number (Value.Task_Count) & " tasks  run " & Number (Value.Run_Id) & LF);
+                  end loop;
+                  return To_String (Result);
+               end;
+            end;
+         end;
       end if;
-      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      Improve.Source.Open (Quality, Quality_Path (Item, Settings));
       declare
          Project  : constant Improve.Model.Project_Reference :=
-           Improve.Source.Resolve_Project (Store, To_String (Item.Project));
-         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project, Item.Run_Id);
+           Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
+         Selected : constant Improve.Source.Selection :=
+           Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
          Findings : constant Improve.Model.Finding_Vectors.Vector :=
            Improve.Findings.Normalize
              (Selected, Quality_Severity (Settings.Minimum_Severity), Settings.Allow_Investigation_Tasks);
-         Plan     : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+         Draft    : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+         Plan     : Improve.Model.Plan_Revision := Draft;
+         Existing : Boolean := False;
          Result   : Unbounded_String;
       begin
+         Improve.Source.Close (Quality);
+         if not Item.Dry_Run then
+            declare
+               State : Improve.Storage.Store;
+               Saved : Improve.Storage.Save_Result;
+            begin
+               Improve.Storage.Open (State, State_Path (Item), Writable => True);
+               Saved := Improve.Storage.Save (State, Draft);
+               Improve.Storage.Close (State);
+               Plan := Saved.Plan;
+               Existing := Saved.Existing;
+            end;
+         end if;
          if Item.Format = JSON_Format then
-            Result := To_Unbounded_String (Improve.JSON.Plan (Plan, Dry_Run => True));
+            Result := To_Unbounded_String (Improve.JSON.Plan (Plan, Item.Dry_Run));
          else
             Append
               (Result,
@@ -391,8 +464,15 @@ package body Improve.CLI is
                  (Message
                     ("plan.title",
                      [Arg ("project", To_String (Project.Name)), Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
-            Append (Result, Message ("plan.dry_run") & LF);
-            Append (Result, Message ("plan.identity", [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
+            Append
+              (Result,
+               Message
+                 ((if Item.Dry_Run then "plan.dry_run" elsif Existing then "plan.existing" else "plan.stored")) & LF);
+            Append
+              (Result,
+               Message
+                 ((if Item.Dry_Run then "plan.identity" else "plan.persisted.identity"),
+                  [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
             if Plan.Tasks.Is_Empty then
                Append (Result, Message ("plan.none") & LF);
             else
@@ -404,7 +484,6 @@ package body Improve.CLI is
                end loop;
             end if;
          end if;
-         Improve.Source.Close (Store);
          return To_String (Result);
       end;
    end Plan_Output;

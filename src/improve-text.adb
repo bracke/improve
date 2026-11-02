@@ -49,9 +49,14 @@ package body Improve.Text is
      "en.findings.none = No eligible findings or unavailable evidence." & LF &
      "en.plan.title = Remediation plan for {project}, assessment {run}" & LF &
      "en.plan.dry_run = Preview only; this plan has not been stored." & LF &
+     "en.plan.stored = Plan revision stored." & LF &
+     "en.plan.existing = An identical immutable plan revision already exists." & LF &
      "en.plan.identity = Deterministic draft identity: {id}" & LF &
+     "en.plan.persisted.identity = Plan identity: {id}" & LF &
+     "en.plan.revision = Revision: {revision}" & LF &
      "en.plan.none = No remediation tasks are required." & LF &
-     "en.plan.persistence.pending = persistent plans become available in implementation phase 4; use --dry-run" & LF &
+     "en.plan.list.title = Stored remediation plans" & LF &
+     "en.plan.list.none = No stored remediation plans." & LF &
      "en.label.id = ID" & LF &
      "en.label.project = Project" & LF &
      "en.label.enabled = Enabled" & LF &

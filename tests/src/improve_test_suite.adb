@@ -17,6 +17,7 @@ with Improve.Model;
 with Improve.Planner;
 with Improve.Rules;
 with Improve.Source;
+with Improve.Storage;
 with Improve.Text;
 with Project_Tools.Files;
 
@@ -36,7 +37,8 @@ package body Improve_Test_Suite is
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
-      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI);
+      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
+      Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -436,6 +438,92 @@ package body Improve_Test_Suite is
                        "Investigate missing coverage evidence") > 0,
                        "plan JSON dry-run failed: " & To_String (Result.Errors));
                Remove (Data);
+            end;
+         when Persistent_Plan_Roundtrip =>
+            declare
+               Data  : constant Fixture := Build_Fixture ("plan_roundtrip");
+               State : constant String := To_String (Data.Directory) & "/improve.db";
+               Create_Result : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute
+                   (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+                          Id_Image (Data.Project) & "|--format|json"));
+               Show_Result : Improve.CLI.Outcome;
+               List_Result : Improve.CLI.Outcome;
+            begin
+               Assert (Create_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Create_Result.Output), """plan_id"":""PLAN-000001""") > 0,
+                       "persistent plan creation failed: " & To_String (Create_Result.Errors));
+               Show_Result := Improve.CLI.Execute (Args ("plan|show|PLAN-000001|--state|" & State & "|--format|json"));
+               Assert (Show_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Show_Result.Output), """stored"":true") > 0 and then
+                       Ada.Strings.Fixed.Index (To_String (Show_Result.Output), "fixture-manifest") > 0,
+                       "stored plan did not round-trip: " & To_String (Show_Result.Errors));
+               List_Result := Improve.CLI.Execute
+                 (Args ("plan|list|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+                        Id_Image (Data.Project) & "|--format|json"));
+               Assert (List_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (List_Result.Output), """task_count"":3") > 0,
+                       "stored plan listing failed: " & To_String (List_Result.Errors));
+               Remove (Data);
+            end;
+         when Repeated_Plan_Idempotent =>
+            declare
+               Data  : constant Fixture := Build_Fixture ("plan_repeat");
+               State : constant String := To_String (Data.Directory) & "/improve.db";
+               Command : constant String :=
+                 "plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+                 Id_Image (Data.Project) & "|--format|json";
+               First  : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args (Command));
+               Second : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args (Command));
+               Store  : Improve.Storage.Store;
+            begin
+               Assert (First.Exit_Code = 0 and then Second.Exit_Code = 0, "repeated planning failed");
+               Improve.Storage.Open (Store, State, Writable => False);
+               declare Values : constant Improve.Storage.Summary_Vectors.Vector := Improve.Storage.List (Store); begin
+                  Assert (Values.Length = 1 and then Values.First_Element.Revision = 1,
+                          "repeated planning duplicated the plan revision");
+               end;
+               Improve.Storage.Close (Store);
+               Remove (Data);
+            end;
+         when Persisted_Dependency_Translation =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("dependency_translation");
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Quality : Improve.Source.Repository;
+               Store   : Improve.Storage.Store;
+            begin
+               Improve.Source.Open (Quality, To_String (Data.Database));
+               declare
+                  Project  : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
+                  Draft    : Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, Improve.Findings.Normalize (Selected), Improve.Config.Defaults);
+               begin
+                  Draft.Tasks (2).Dependencies.Append (Draft.Tasks (1).Id);
+                  Improve.Storage.Open (Store, State, Writable => True);
+                  declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Draft); begin
+                     Assert (To_String (Saved.Plan.Tasks (2).Dependencies.First_Element) = "IMP-000001",
+                             "persisted dependency did not use the assigned Improve task identity");
+                  end;
+                  Improve.Storage.Close (Store);
+               end;
+               Improve.Source.Close (Quality);
+               Remove (Data);
+            end;
+         when Read_Only_Does_Not_Initialize =>
+            declare
+               Directory : constant String := "/tmp/improve_phase4_read_only";
+               State     : constant String := Directory & "/missing.db";
+               Result    : Improve.CLI.Outcome;
+            begin
+               Project_Tools.Files.Delete_Tree (Directory);
+               Ada.Directories.Create_Directory (Directory);
+               Result := Improve.CLI.Execute (Args ("plan|show|PLAN-000001|--state|" & State));
+               Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then not Ada.Directories.Exists (State),
+                       "read-only plan inspection initialized missing state");
+               Project_Tools.Files.Delete_Tree (Directory);
             end;
       end case;
    end Run_Test;
