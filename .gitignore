@@ -1,0 +1,43 @@
+# Alire workspace state
+/alire/
+/**/alire/
+!/alire.toml
+!/**/alire.toml
+
+# Alire-generated configuration
+/config/improve_config.*
+/tests/config/
+/tools/config/
+
+# Build products
+/bin/
+/obj/
+/lib/
+/dist/
+/**/bin/
+/**/obj/
+/**/lib/
+
+# Local application and assessment databases
+/.improve.db
+/.improve.db.*
+/.ada-quality.db
+/.ada-quality.db.*
+/tests/tmp*/
+
+# Ada and GNAT generated artifacts
+*.ali
+*.o
+*.lexch
+*.bexch
+*.gcda
+*.gcno
+*.cswi
+*.stdout
+*.stderr
+
+# Editor and operating-system noise
+*~
+.#*
+.DS_Store
+Thumbs.db
