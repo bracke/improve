@@ -11,5 +11,15 @@ package body Improve.Model is
          when High_Priority => "high",
          when Normal_Priority => "normal",
          when Low_Priority => "low");
+
+   function Image (Item : Quality_Outcome) return String is
+     (case Item is
+         when Unverified => "unverified",
+         when Verified => "verified",
+         when Partially_Resolved => "partially_resolved",
+         when Still_Failing => "still_failing",
+         when Regressed => "regressed",
+         when Inconclusive => "inconclusive",
+         when Superseded => "superseded");
 end Improve.Model;
 

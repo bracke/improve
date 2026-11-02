@@ -15,6 +15,7 @@ with Improve.Source;
 with Improve.Storage;
 with Improve.Text;
 with Improve.Workflow;
+with Improve.Verification;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
 with Project_Tools.Files;
@@ -23,6 +24,7 @@ package body Improve.CLI is
    use Ada.Strings.Unbounded;
    use Improve.Config;
    use Improve.Text;
+   use type Improve.Model.Quality_Outcome;
 
    LF : constant Character := Character'Val (10);
 
@@ -564,10 +566,163 @@ package body Improve.CLI is
       end;
    end Apply_Output;
 
-   function Dispatch (Item : Invocation) return String is
+   function Verify_Output
+     (Item     : Invocation;
+      Settings : Improve.Config.Settings;
+      Negative : out Boolean;
+      Command  : String := "verify") return String is
+      State : Improve.Storage.Store;
+      Plan  : Improve.Model.Plan_Revision;
+      Previously_Verified : Improve.Model.UString_Vectors.Vector;
+   begin
+      Improve.Storage.Open (State, State_Path (Item), Writable => False);
+      if Item.Has_Task then
+         declare Found : Boolean := False; begin
+            for Summary of Improve.Storage.List (State) loop
+               declare Candidate : constant Improve.Model.Plan_Revision :=
+                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+               begin
+                  for Spec of Candidate.Tasks loop
+                     if To_String (Spec.Id) = To_String (Item.Task_Id) then
+                        Plan := Candidate;
+                        Found := True;
+                        exit;
+                     end if;
+                  end loop;
+               end;
+               exit when Found;
+            end loop;
+            if not Found then raise Argument_Error with "unknown Improve task " & To_String (Item.Task_Id); end if;
+         end;
+      else
+         declare
+            Quality : Improve.Source.Repository;
+            Project : Improve.Model.Project_Reference;
+         begin
+            Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+            Project := Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
+            Improve.Source.Close (Quality);
+            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+              Improve.Storage.List (State, Project.Id);
+            begin
+               if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
+               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
+            end;
+         end;
+      end if;
+      for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
+         if Record_Value.Outcome = Improve.Model.Verified and then
+           not Previously_Verified.Contains (Record_Value.Task_Id)
+         then
+            Previously_Verified.Append (Record_Value.Task_Id);
+         end if;
+      end loop;
+      Improve.Storage.Close (State);
+      declare
+         Quality : Improve.Source.Repository;
+      begin
+         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+         declare
+            Project : constant Improve.Model.Project_Reference :=
+              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
+            Current : constant Improve.Source.Selection :=
+              Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
+            Report : constant Improve.Verification.Report :=
+              Improve.Verification.Evaluate
+                (Plan, Current, Settings, (if Item.Has_Task then To_String (Item.Task_Id) else ""),
+                 Previously_Verified);
+            Records : Improve.Storage.Verification_Vectors.Vector;
+         begin
+            Improve.Source.Close (Quality);
+            for Result of Report.Tasks loop
+               Records.Append
+                 (Improve.Storage.Verification_Record'
+                    (Result.Task_Id, Report.Verification_Run, Result.Outcome,
+                     Report.Comparable, Result.Explanation));
+            end loop;
+            Improve.Storage.Open (State, State_Path (Item), Writable => True);
+            Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
+            Improve.Storage.Close (State);
+            Negative := Report.Outcome /= Improve.Model.Verified;
+            if Item.Format = JSON_Format then return Improve.JSON.Verification (Report, Command); end if;
+            declare Output : Unbounded_String; begin
+               Append
+                 (Output,
+                  Improve.Presentation.Header
+                    (Message
+                       ((if Command = "refresh" then "refresh.title" else "verify.title"),
+                        [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
+               Append (Output, "Outcome: " & Improve.Model.Image (Report.Outcome) & LF);
+               for Result of Report.Tasks loop
+                  Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
+               end loop;
+               return To_String (Output);
+            end;
+         end;
+      end;
+   end Verify_Output;
+
+   function Refresh_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      State       : Improve.Storage.Store;
+      Plan        : Improve.Model.Plan_Revision;
+      Publications : Improve.Storage.Publication_Vectors.Vector;
+      Ignored     : Boolean;
+   begin
+      declare Quality : Improve.Source.Repository; begin
+         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
+         declare
+            Project : constant Improve.Model.Project_Reference :=
+              Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
+         begin
+            Improve.Source.Close (Quality);
+            Improve.Storage.Open (State, State_Path (Item), Writable => False);
+            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+              Improve.Storage.List (State, Project.Id);
+            begin
+               if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
+               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
+               Publications := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
+            end;
+            Improve.Storage.Close (State);
+         end;
+      end;
+      if not Publications.Is_Empty then
+         declare
+            Published  : Improve.Workflow.Published_Vectors.Vector;
+            Reconciled : Improve.Workflow.Published_Vectors.Vector;
+            Updates    : Improve.Storage.Publication_Vectors.Vector;
+         begin
+            for Value of Publications loop
+               Published.Append
+                 (Improve.Workflow.Published_Task'
+                    (Improve_Id => Value.Improve_Task_Id,
+                     Harness_Id => Value.Harness_Task_Id,
+                     Origin     => Value.Origin,
+                     State      => Value.State,
+                     Recovered  => True));
+            end loop;
+            Reconciled := Improve.Workflow.Reconcile (To_String (Plan.Project.Path), Published);
+            for Value of Reconciled loop
+               Updates.Append
+                 (Improve.Storage.Publication_Record'
+                    (Improve_Task_Id => Value.Improve_Id,
+                     Harness_Task_Id => Value.Harness_Id,
+                     Origin          => Value.Origin,
+                     State           => Value.State));
+            end loop;
+            Improve.Storage.Open (State, State_Path (Item), Writable => True);
+            Improve.Storage.Update_Publication_States (State, Updates);
+            Improve.Storage.Close (State);
+         end;
+      end if;
+      return Verify_Output (Item, Settings, Ignored, Command => "refresh");
+   end Refresh_Output;
+
+   function Dispatch (Item : Invocation; Negative : out Boolean) return String is
       Plain : Unbounded_String;
       Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path);
    begin
+      Negative := False;
       Improve.Presentation.Configure (Item.Format, Item.Color);
       case Item.Command is
          when Help_Command => Plain := To_Unbounded_String (Help_Text);
@@ -584,6 +739,8 @@ package body Improve.CLI is
          when Findings_Command => return Findings_Output (Item, Settings);
          when Plan_Command => return Plan_Output (Item, Settings);
          when Apply_Command => return Apply_Output (Item, Settings);
+         when Verify_Command => return Verify_Output (Item, Settings, Negative);
+         when Refresh_Command => return Refresh_Output (Item, Settings);
          when others =>
             raise Dependency_Error with Message ("phase.pending", [Arg ("command", Name (Item.Command))]);
       end case;
@@ -598,9 +755,14 @@ package body Improve.CLI is
 
    function Execute (Arguments : String_Vectors.Vector) return Outcome is
       Item : Invocation;
+      Negative : Boolean := False;
    begin
       Item := Parse (Arguments);
-      return (Success_Exit, To_Unbounded_String (Dispatch (Item)), Null_Unbounded_String);
+      declare Output : constant String := Dispatch (Item, Negative); begin
+         return
+           ((if Negative then Negative_Exit else Success_Exit),
+            To_Unbounded_String (Output), Null_Unbounded_String);
+      end;
    exception
       when Error : Argument_Error =>
          return (Argument_Exit, Null_Unbounded_String,

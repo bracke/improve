@@ -26,4 +26,10 @@ package Improve.Workflow is
       Dry_Run           : Boolean := False) return Publication_Result;
    --  Validate and publish native candidate tasks in one harness transaction.
    --  Stable origins recover a prior harness commit without duplicating tasks.
+
+   function Reconcile
+     (Project_Directory : String;
+      Published         : Published_Vectors.Vector) return Published_Vectors.Vector;
+   --  Read current harness-owned task states after validating each persisted
+   --  mapping's identity and Improve provenance. No harness state is changed.
 end Improve.Workflow;

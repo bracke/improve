@@ -60,6 +60,8 @@ package body Improve.Text is
      "en.apply.title = Harness publication for {plan}" & LF &
      "en.apply.preview = Preview only; harness and Improve state were not modified." & LF &
      "en.apply.complete = Native harness transaction committed and publication mappings recorded." & LF &
+     "en.verify.title = Quality verification for {plan}" & LF &
+     "en.refresh.title = Reconciliation for {plan}" & LF &
      "en.label.id = ID" & LF &
      "en.label.project = Project" & LF &
      "en.label.enabled = Enabled" & LF &

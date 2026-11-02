@@ -31,6 +31,7 @@ package body Improve.Storage is
    Task_Findings_Table       : constant Positive := 8;
    Task_Dependencies_Table   : constant Positive := 9;
    Publications_Table        : constant Positive := 10;
+   Verifications_Table       : constant Positive := 11;
    Operations_Table          : constant Positive := 12;
 
    Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
@@ -812,4 +813,156 @@ package body Improve.Storage is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
    end Publications;
+
+   procedure Update_Publication_States
+     (Item   : in out Store;
+      Values : Publication_Vectors.Vector) is
+      Tx : Database.Transactions.Transaction;
+   begin
+      if not Item.Opened or else not Item.Writable then
+         raise Data_Error with "Improve state is not open for publication reconciliation";
+      end if;
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      for Value of Values loop
+         declare
+            Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table);
+            Found  : Boolean := False;
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               declare
+                  Row     : Entity := Entity_Tables.Element (Cursor);
+                  Payload : constant String := S (Row.Payload);
+               begin
+                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) then
+                     if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
+                       Field (Payload, "origin") /= To_String (Value.Origin)
+                     then
+                        raise Data_Error with "publication reconciliation identity does not match stored mapping";
+                     end if;
+                     Row.State := WW (To_String (Value.State));
+                     Check
+                       (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Publications_Table), Row),
+                        "update reconciled publication state");
+                     Found := True;
+                     exit;
+                  end if;
+               end;
+               Advance (Item, Tx, Publications_Table, Cursor);
+            end loop;
+            if not Found then
+               raise Data_Error with "publication reconciliation references an unknown Improve task";
+            end if;
+         end;
+      end loop;
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Update_Publication_States;
+
+   procedure Record_Verification
+     (Item    : in out Store;
+      Plan_Id : String;
+      Values  : Verification_Vectors.Vector) is
+      Tx     : Database.Transactions.Transaction;
+      Row_Id : Positive;
+   begin
+      if not Item.Opened or else not Item.Writable then
+         raise Data_Error with "Improve state is not open for verification recording";
+      end if;
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      Row_Id := Next_Id (Item, Tx, Verifications_Table);
+      for Value of Values loop
+         declare
+            Cursor   : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table);
+            Existing : Boolean := False;
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               declare
+                  Row     : constant Entity := Entity_Tables.Element (Cursor);
+                  Payload : constant String := S (Row.Payload);
+               begin
+                  if S (Row.Kind) = To_String (Value.Task_Id) and then Field (Payload, "plan_id") = Plan_Id and then
+                    Field (Payload, "assessment_id") = Number (Value.Assessment_Id)
+                  then
+                     if S (Row.State) /= Improve.Model.Image (Value.Outcome) or else
+                       Field (Payload, "comparable") /= Boolean_Image (Value.Comparable) or else
+                       Field (Payload, "explanation") /= To_String (Value.Explanation)
+                     then
+                        raise Data_Error with "verification evidence conflicts for task and assessment";
+                     end if;
+                     Existing := True;
+                     exit;
+                  end if;
+               end;
+               Advance (Item, Tx, Verifications_Table, Cursor);
+            end loop;
+            if not Existing then
+               Check
+                 (Entity_Tables.Insert
+                    (Tx, Item.DB, Item.Schemas (Verifications_Table),
+                     (Row_Id, 0, WW (To_String (Value.Task_Id)), WW (Improve.Model.Image (Value.Outcome)),
+                      WW (Pair ("plan_id", Plan_Id) & LF &
+                          Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
+                          Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
+                          Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
+                  "record verification evidence");
+               Row_Id := Row_Id + 1;
+            end if;
+         end;
+      end loop;
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Record_Verification;
+
+   function Parse_Outcome (Value : String) return Improve.Model.Quality_Outcome is
+   begin
+      for Outcome in Improve.Model.Quality_Outcome loop
+         if Improve.Model.Image (Outcome) = Value then return Outcome; end if;
+      end loop;
+      raise Data_Error with "stored verification outcome is invalid: " & Value;
+   end Parse_Outcome;
+
+   function Verifications
+     (Item    : in out Store;
+      Plan_Id : String := "";
+      Task_Id : String := "") return Verification_Vectors.Vector is
+      Tx     : Database.Transactions.Transaction;
+      Cursor : Entity_Tables.Cursor;
+      Result : Verification_Vectors.Vector;
+   begin
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      Cursor := Scan (Item, Tx, Verifications_Table);
+      while Entity_Tables.Has_Element (Cursor) loop
+         declare
+            Row     : constant Entity := Entity_Tables.Element (Cursor);
+            Payload : constant String := S (Row.Payload);
+         begin
+            if (Plan_Id = "" or else Field (Payload, "plan_id") = Plan_Id) and then
+              (Task_Id = "" or else S (Row.Kind) = Task_Id)
+            then
+               Result.Append
+                 (Verification_Record'
+                    (Task_Id       => To_Unbounded_String (S (Row.Kind)),
+                     Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
+                     Outcome       => Parse_Outcome (S (Row.State)),
+                     Comparable    => Boolean'Value (Field (Payload, "comparable")),
+                     Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
+            end if;
+         exception
+            when Constraint_Error => raise Data_Error with "stored verification evidence is malformed";
+         end;
+         Advance (Item, Tx, Verifications_Table, Cursor);
+      end loop;
+      Database.Transactions.Rollback (Tx);
+      return Result;
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Verifications;
 end Improve.Storage;

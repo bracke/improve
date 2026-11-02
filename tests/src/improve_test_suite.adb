@@ -45,7 +45,9 @@ package body Improve_Test_Suite is
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
-      Native_Publication_And_Recovery);
+      Native_Publication_And_Recovery, Refresh_Reconciles_State, Verification_Resolved, Verification_Still_Failing,
+      Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
+      Verification_Policy_Changed, Verification_Incomplete_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -96,7 +98,10 @@ package body Improve_Test_Suite is
       Target      : Unbounded_String;
    end record;
 
-   function Build_Fixture (Label : String; Harness_Project : Boolean := False) return Fixture is
+   function Build_Fixture
+     (Label              : String;
+      Harness_Project    : Boolean := False;
+      Multiple_Structure : Boolean := False) return Fixture is
       use Ada_Quality.Types;
       Directory : constant String := "/tmp/improve_phase2_" & Label;
       DB_Path   : constant String := Directory & "/quality.db";
@@ -161,6 +166,17 @@ package body Improve_Test_Suite is
       begin
          Structure.Findings.Append (Finding);
          Structure.Findings.Append (Finding);
+         if Multiple_Structure then
+            Structure.Findings.Append
+              (Ada_Quality.Types.Finding'
+                 (Indicator     => STR_01,
+                  Rule          => To_Unbounded_String ("manifest.invalid"),
+                  Level         => High,
+                  Message       => To_Unbounded_String ("manifest has a second invalid field"),
+                  Relative_Path => To_Unbounded_String ("alire.toml"),
+                  Line          => 2,
+                  Fingerprint   => To_Unbounded_String ("fixture-manifest-second")));
+         end if;
          Value.Results.Replace_Element (Value.Results.First_Index, Structure);
          Toolchain.Execution := Blocked;
          Toolchain.Compliance := Unknown;
@@ -214,6 +230,77 @@ package body Improve_Test_Suite is
    begin
       Project_Tools.Files.Delete_Tree (To_String (Item.Directory));
    end Remove;
+
+   type Followup_State is (All_Pass, Structure_Failing, Structure_Unmeasurable);
+
+   function Publish_Followup
+     (Data            : Fixture;
+      Structure_State : Followup_State := All_Pass;
+      Policy           : String := "policy-a";
+      Source           : String := "source-c";
+      Toolchain        : String := "gnat-15.2.1") return Positive is
+      use Ada_Quality.Types;
+      Store : Ada_Quality.Storage.Store;
+      Run   : Positive;
+      Value : Assessment;
+   begin
+      Ada_Quality.Storage.Open (Store, To_String (Data.Database));
+      Run := Ada_Quality.Storage.Start_Assessment (Store, Data.Project, Source, Policy);
+      Value.Id := Run;
+      Value.Project_Id := Data.Project;
+      Value.Project_Path := Data.Target;
+      Value.Source_Fingerprint := To_Unbounded_String (Source);
+      Value.Policy_Fingerprint := To_Unbounded_String (Policy);
+      Value.Toolchain_Fingerprint := To_Unbounded_String (Toolchain);
+      Value.Status := Assessment_Completed;
+      for Indicator in Indicator_Id loop
+         Value.Results.Append
+           (Indicator_Result'
+              (Indicator  => Indicator,
+               Execution  =>
+                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Blocked
+                  else Succeeded),
+               Compliance =>
+                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then Violation
+                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Unknown
+                  else Pass),
+               Applicable => True,
+               Summary     => To_Unbounded_String
+                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then "violation"
+                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01
+                  then "measurement unavailable"
+                  else "pass"),
+               Evidence    => To_Unbounded_String ("follow-up evidence for " & Image (Indicator)),
+               Measurement =>
+                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01
+                  then (Kind => Unavailable_Value, Reason => To_Unbounded_String ("fixture evidence unavailable"))
+                  else (Kind => Boolean_Value,
+                        Boolean_Data => not (Structure_State = Structure_Failing and then Indicator = STR_01))),
+               Findings => <>));
+      end loop;
+      if Structure_State = Structure_Failing then
+         declare Structure : Indicator_Result := Value.Results.First_Element; begin
+            Structure.Findings.Append
+              (Finding'
+                 (Indicator     => STR_01,
+                Rule          => To_Unbounded_String ("manifest.invalid"),
+                Level         => High,
+                Message       => To_Unbounded_String ("manifest is invalid"),
+                Relative_Path => To_Unbounded_String ("alire.toml"),
+                Line          => 1,
+                Fingerprint   => To_Unbounded_String ("fixture-manifest")));
+            Value.Results.Replace_Element (Value.Results.First_Index, Structure);
+         end;
+      end if;
+      Run := Ada_Quality.Storage.Publish (Store, Value);
+      Ada_Quality.Storage.Close (Store);
+      return Run;
+   end Publish_Followup;
+
+   function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome is
+     (Improve.CLI.Execute
+        (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+               Id_Image (Data.Project) & "|--format|json")));
 
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
@@ -649,6 +736,203 @@ package body Improve_Test_Suite is
                   end;
                   Improve.Storage.Close (Improve_State);
                end;
+               Remove (Data);
+            end;
+         when Refresh_Reconciles_State =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("refresh_state", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : Improve.CLI.Outcome;
+               Applied   : Improve.CLI.Outcome;
+               Refreshed : Improve.CLI.Outcome;
+               Mapping   : Improve.Storage.Publication_Record;
+               Store     : Stores.Store;
+               Recovery  : Stores.Recovery_Report;
+               Change    : Stores.Transaction;
+               Status    : Errors.Error_Info;
+               Run       : Positive;
+            begin
+               Initialize_Harness (To_String (Data.Target));
+               Planned := Prepare_Verification_Plan (Data, State);
+               Assert (Planned.Exit_Code = 0, "refresh fixture plan failed");
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (Applied.Exit_Code = 0, "refresh fixture publication failed");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Mapping := Improve.Storage.Publications (Improve_State, "PLAN-000001").First_Element;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Stores.Open (Store, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "refresh fixture harness open failed");
+               Tasks.Move
+                 (Store, Change, To_String (Mapping.Harness_Task_Id), "accepted", "", Status => Status,
+                  Actor => "improve-test");
+               Assert (Errors.Is_Ok (Status), "refresh fixture task acceptance failed");
+               Stores.Commit (Store, Change, Status);
+               Assert (Errors.Is_Ok (Status), "refresh fixture harness commit failed");
+               Stores.Close (Store);
+               Run := Publish_Followup (Data, Source => "source-remediated", Toolchain => "gnat-16.0");
+               Refreshed := Improve.CLI.Execute
+                 (Args ("refresh|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Run > Data.Run and then Refreshed.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Refreshed.Output), """command"":""refresh""") > 0,
+                       "refresh command did not complete: " & To_String (Refreshed.Errors));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Mapping := Improve.Storage.Publications (Improve_State, "PLAN-000001").First_Element;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Assert (To_String (Mapping.State) = "accepted", "refresh did not synchronize harness state");
+               Remove (Data);
+            end;
+         when Verification_Resolved =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_resolved");
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run    : Positive;
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "verification fixture plan failed");
+               Run := Publish_Followup (Data);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """outcome"":""verified""") > 0,
+                       "resolved verification failed: " & To_String (Result.Errors));
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = 0, "repeated verification was not idempotent");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  declare Values : constant Improve.Storage.Verification_Vectors.Vector :=
+                    Improve.Storage.Verifications (Improve_State, "PLAN-000001");
+                  begin
+                     Assert (Values.Length = 3, "repeated verification duplicated historical evidence");
+                  end;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
+            end;
+         when Verification_Still_Failing =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_failing");
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run    : Positive;
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "verification fixture plan failed");
+               Run := Publish_Followup (Data, Structure_State => Structure_Failing);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """outcome"":""still_failing""") > 0,
+                       "unresolved verification did not return exit 1: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Verification_Partially_Resolved =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_partial", Multiple_Structure => True);
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run    : Positive;
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "partial verification fixture plan failed");
+               Run := Publish_Followup (Data, Structure_State => Structure_Failing);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """outcome"":""partially_resolved""") > 0,
+                       "partial resolution was not preserved: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Verification_Missing_Evidence =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_missing");
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run    : Positive;
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "missing-evidence fixture plan failed");
+               Run := Publish_Followup (Data, Structure_State => Structure_Unmeasurable);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """outcome"":""inconclusive""") > 0,
+                       "unavailable evidence was not inconclusive: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Verification_Regressed =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("verification_regressed");
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan       : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Resolved   : Positive;
+               Returned   : Positive;
+               First_Run  : Improve.CLI.Outcome;
+               Second_Run : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "regression fixture plan failed");
+               Resolved := Publish_Followup (Data, Source => "source-resolved");
+               First_Run := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Resolved) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (First_Run.Exit_Code = 0, "initial resolution was not verified");
+               Returned := Publish_Followup
+                 (Data, Structure_State => Structure_Failing, Source => "source-regressed");
+               Second_Run := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Returned) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Second_Run.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                         (To_String (Second_Run.Output), """outcome"":""regressed""") > 0,
+                       "returned deficiency was not recorded as a regression: " & To_String (Second_Run.Errors));
+               Remove (Data);
+            end;
+         when Verification_Policy_Changed =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_policy");
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run    : Positive;
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "verification fixture plan failed");
+               Run := Publish_Followup (Data, Policy => "policy-b");
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                         (To_String (Result.Output), """outcome"":""inconclusive""") > 0,
+                       "policy change was not inconclusive: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Verification_Incomplete_Rejected =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("verification_incomplete");
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Plan   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Result : Improve.CLI.Outcome;
+            begin
+               Assert (Plan.Exit_Code = 0, "incomplete verification fixture plan failed");
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Data.Interrupted) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0,
+                       "incomplete measurement was not rejected");
                Remove (Data);
             end;
       end case;

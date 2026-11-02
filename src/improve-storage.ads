@@ -37,6 +37,16 @@ package Improve.Storage is
 
    package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
 
+   type Verification_Record is record
+      Task_Id      : Ada.Strings.Unbounded.Unbounded_String;
+      Assessment_Id : Positive;
+      Outcome      : Improve.Model.Quality_Outcome;
+      Comparable   : Boolean;
+      Explanation  : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Verification_Vectors is new Ada.Containers.Vectors (Positive, Verification_Record);
+
    procedure Open (Item : in out Store; Path : String; Writable : Boolean);
    --  Open Improve state. Writable mode creates and initializes a missing
    --  database; read-only mode never creates, migrates, or repairs state.
@@ -64,6 +74,26 @@ package Improve.Storage is
    function Publications
      (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector;
    --  Read publication mappings, optionally for one plan.
+
+   procedure Update_Publication_States
+     (Item   : in out Store;
+      Values : Publication_Vectors.Vector);
+   --  Update only the cached harness-owned runtime state after validating
+   --  that task identity, harness identity, and origin still match.
+
+   procedure Record_Verification
+     (Item    : in out Store;
+      Plan_Id : String;
+      Values  : Verification_Vectors.Vector);
+   --  Append independent measurement outcomes in one transaction. Repeating
+   --  identical task/assessment evidence is idempotent.
+
+   function Verifications
+     (Item    : in out Store;
+      Plan_Id : String := "";
+      Task_Id : String := "") return Verification_Vectors.Vector;
+   --  Read historical evidence in insertion order, optionally filtered by
+   --  plan and Improve task identity.
 
 private
    Logical_Table_Count : constant := 12;

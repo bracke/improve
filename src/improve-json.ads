@@ -3,6 +3,7 @@ with Improve.Model;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Workflow;
+with Improve.Verification;
 
 --  Versioned deterministic JSON serialization of read-only quality evidence.
 package Improve.JSON is
@@ -25,5 +26,10 @@ package Improve.JSON is
    function Publication
      (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String;
    --  Serialize native harness publication or preview results.
+
+   function Verification
+     (Value   : Improve.Verification.Report;
+      Command : String := "verify") return String;
+   --  Serialize an independent quality verification report.
 end Improve.JSON;
 

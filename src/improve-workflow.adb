@@ -202,4 +202,44 @@ package body Improve.Workflow is
          if Stores.Is_Open (Store) then Stores.Close (Store); end if;
          raise;
    end Publish;
+
+   function Reconcile
+     (Project_Directory : String;
+      Published         : Published_Vectors.Vector) return Published_Vectors.Vector is
+      Store  : Stores.Store;
+      Status : Errors.Error_Info;
+      Result : Published_Vectors.Vector;
+   begin
+      if not Stores.Is_Initialized (Project_Directory) then
+         raise Dependency_Error with "model_runner project state is not initialized: " & Project_Directory;
+      end if;
+      Stores.Open_To_Read (Store, Project_Directory, Status);
+      Require_Ok (Status, "open model_runner project state for reconciliation");
+      for Value of Published loop
+         declare
+            Definition : Records.Item;
+            Current    : Published_Task := Value;
+         begin
+            if Length (Value.Harness_Id) = 0 or else Length (Value.Origin) = 0 then
+               raise Data_Error with "publication mapping is incomplete for " & To_String (Value.Improve_Id);
+            end if;
+            Tasks.Definition (Store, To_String (Value.Harness_Id), Definition, Status);
+            Require_Ok (Status, "read published harness task " & To_String (Value.Harness_Id));
+            if Records.Get (Definition, "created_by") /= "improve" or else
+              Records.Get (Definition, "origin") /= To_String (Value.Origin)
+            then
+               raise Data_Error with "published harness task provenance does not match Improve mapping";
+            end if;
+            Current.State := To_Unbounded_String (Tasks.State_Of (Store, To_String (Value.Harness_Id)));
+            Current.Recovered := True;
+            Result.Append (Current);
+         end;
+      end loop;
+      Stores.Close (Store);
+      return Result;
+   exception
+      when others =>
+         if Stores.Is_Open (Store) then Stores.Close (Store); end if;
+         raise;
+   end Reconcile;
 end Improve.Workflow;

@@ -41,6 +41,13 @@ package Improve.Model is
    function Image (Item : Priority) return String;
    --  Return the stable lowercase priority spelling.
 
+   type Quality_Outcome is
+     (Unverified, Verified, Partially_Resolved, Still_Failing, Regressed, Inconclusive, Superseded);
+   --  Improve-owned evidence outcome, independent of harness task state.
+
+   function Image (Item : Quality_Outcome) return String;
+   --  Return the stable lowercase quality outcome spelling.
+
    type Finding_Reference is record
       Project_Id      : Positive;
       Run_Id          : Positive;
@@ -102,4 +109,3 @@ package Improve.Model is
    end record;
    --  Immutable generated plan revision.
 end Improve.Model;
-

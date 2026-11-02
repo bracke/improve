@@ -12,3 +12,8 @@
 
 Every phase must leave the crate compiling and its tests passing. Later phases may extend stored schemas and command
 behavior but must not weaken the ownership boundaries established in the earlier phases.
+
+The executable Phase 6 gate is `tools/check_phase_6.sh`. It performs the warning-clean validation build, runs the full
+AUnit suite (including harness-state reconciliation and resolved, partial, still-failing, unavailable-evidence,
+regression, incomparable-policy, and incomplete-assessment verification scenarios), builds the repository checker, and
+runs it. CI invokes this same entry point.

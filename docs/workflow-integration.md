@@ -36,3 +36,9 @@ validation in an uncommitted transaction opened on read-only harness state.
 
 The resulting native state is normally `candidate`. If project policy auto-accepts the task kind or Improve origin, the
 adapter reports the actual post-commit state and never overrides that policy.
+
+## Reconciliation
+
+`improve refresh` reads each stored native task through the framework, verifies both `created_by=improve` and its exact
+origin, and then updates only Improve's cached copy of the harness state. It never moves a harness task. Missing tasks,
+changed origins, and mismatched creators are integrity failures rather than mappings that Improve silently adopts.
