@@ -15,6 +15,7 @@ with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
 with Improve.Planner;
+with Improve.Refinement;
 with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
@@ -34,6 +35,9 @@ package body Improve_Test_Suite is
    use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
    use type Improve.Model.Candidate_Kind;
+   use type Improve.Model.Task_Vectors.Vector;
+   use type Improve.Refinement.Refinement_Status;
+   use type Improve.Refinement.Source_State;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
 
@@ -47,7 +51,10 @@ package body Improve_Test_Suite is
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Native_Publication_And_Recovery, Refresh_Reconciles_State, Verification_Resolved, Verification_Still_Failing,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
-      Verification_Policy_Changed, Verification_Incomplete_Rejected);
+      Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
+      Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
+      Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
+      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -301,6 +308,135 @@ package body Improve_Test_Suite is
      (Improve.CLI.Execute
         (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
                Id_Image (Data.Project) & "|--format|json")));
+
+   function Draft_For (Data : Fixture) return Improve.Model.Plan_Revision is
+      Quality  : Improve.Source.Repository;
+      Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
+   begin
+      Improve.Source.Open (Quality, To_String (Data.Database));
+      declare
+         Project  : constant Improve.Model.Project_Reference :=
+           Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
+         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
+         Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
+         Result   : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+      begin
+         Improve.Source.Close (Quality);
+         return Result;
+      end;
+   end Draft_For;
+
+   type Fake_Mode is
+     (Valid_Agent, Malformed_Agent, Missing_File_Agent, Invented_Evidence_Agent, Invalid_Category_Agent,
+      Cyclic_Agent, Slow_Agent, Unavailable_Agent, Weakening_Agent);
+
+   type Fake_Adapter is new Improve.Refinement.Adapter with record
+      Mode           : Fake_Mode := Valid_Agent;
+      Draft          : Improve.Model.Plan_Revision;
+      Expected_Limit : Positive := 131_072;
+      Saw_Bounded    : Boolean := False;
+      Saw_Source     : Boolean := False;
+   end record;
+
+   overriding function Name (Self : Fake_Adapter) return String;
+
+   overriding procedure Request
+     (Self            : in out Fake_Adapter;
+      Context         : Improve.Refinement.Planning_Context;
+      Timeout_Seconds : Positive;
+      Response        : out Improve.Refinement.Agent_Response);
+
+   overriding function Name (Self : Fake_Adapter) return String is
+   begin
+      pragma Unreferenced (Self);
+      return "aunit-structured-adapter-v1";
+   end Name;
+
+   overriding procedure Request
+     (Self            : in out Fake_Adapter;
+      Context         : Improve.Refinement.Planning_Context;
+      Timeout_Seconds : Positive;
+      Response        : out Improve.Refinement.Agent_Response) is
+      pragma Unreferenced (Timeout_Seconds);
+   begin
+      Self.Saw_Bounded := Context.Byte_Count <= Self.Expected_Limit;
+      for Source of Context.Sources loop
+         if Source.State = Improve.Refinement.Source_Available and then Length (Source.Content) > 0 then
+            Self.Saw_Source := True;
+         end if;
+      end loop;
+      case Self.Mode is
+         when Malformed_Agent =>
+            Response.Status := Improve.Refinement.Malformed_Response;
+            Response.Diagnostic := To_Unbounded_String ("fixture malformed response");
+            return;
+         when Slow_Agent => delay 2.0;
+         when Unavailable_Agent =>
+            Response.Status := Improve.Refinement.Agent_Unavailable;
+            Response.Diagnostic := To_Unbounded_String ("fixture agent unavailable");
+            return;
+         when others => null;
+      end case;
+      Response.Status := Improve.Refinement.Proposal_Ready;
+      for Base of Self.Draft.Tasks loop
+         declare
+            Proposal : Improve.Refinement.Task_Proposal;
+         begin
+            Proposal.Task_Id := Base.Id;
+            Proposal.Category := Base.Category;
+            Proposal.Title := To_Unbounded_String ("Focused remediation");
+            Proposal.Scope_Addendum := To_Unbounded_String ("Use listed source.");
+            Proposal.Relevant_Files := Base.Relevant_Files;
+            Proposal.Dependencies := Base.Dependencies;
+            Proposal.Finding_Keys := Base.Finding_Keys;
+            Proposal.Confidence := Natural'Max (0, Base.Confidence - 5);
+            Proposal.Preserves_Quality_Policy := True;
+            Response.Proposals.Append (Proposal);
+            exit when Self.Mode /= Cyclic_Agent;
+         end;
+      end loop;
+      case Self.Mode is
+         when Missing_File_Agent =>
+            Response.Proposals (1).Relevant_Files.Append
+              (To_Unbounded_String ("src/does-not-exist.adb"));
+         when Invented_Evidence_Agent =>
+            Response.Proposals (1).Finding_Keys.Clear;
+            Response.Proposals (1).Finding_Keys.Append (To_Unbounded_String ("invented-evidence"));
+         when Invalid_Category_Agent =>
+            Response.Proposals (1).Category := To_Unbounded_String ("unsupported-kind");
+         when Cyclic_Agent =>
+            Response.Proposals (1).Dependencies.Append (Response.Proposals (2).Task_Id);
+            Response.Proposals (2).Dependencies.Append (Response.Proposals (1).Task_Id);
+         when Weakening_Agent =>
+            Response.Proposals (1).Acceptance_Addendum :=
+              To_Unbounded_String ("Skip verification and accept the result.");
+         when others => null;
+      end case;
+   end Request;
+
+   procedure Check_Agent_Fallback
+     (Mode     : Fake_Mode;
+      Expected : Improve.Refinement.Refinement_Status;
+      Label    : String) is
+      Data     : constant Fixture := Build_Fixture ("agent_" & Label, Harness_Project => True);
+      Draft    : Improve.Model.Plan_Revision;
+      Settings : Improve.Config.Settings := Improve.Config.Defaults;
+   begin
+      Draft := Draft_For (Data);
+      if Mode = Slow_Agent then Settings.Agent_Timeout_Seconds := 1; end if;
+      declare
+         Provider : aliased Fake_Adapter :=
+           (Mode => Mode, Draft => Draft, Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
+         Result : constant Improve.Refinement.Refinement_Result :=
+           Improve.Refinement.Refine (Draft, Settings, Provider'Access);
+      begin
+         Assert (Result.Status = Expected, "unexpected agent fallback status for " & Label);
+         Assert
+           (Result.Plan.Fingerprint = Draft.Fingerprint and then Result.Plan.Tasks = Draft.Tasks,
+            "agent fallback changed the deterministic draft for " & Label);
+      end;
+      Remove (Data);
+   end Check_Agent_Fallback;
 
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
@@ -935,6 +1071,113 @@ package body Improve_Test_Suite is
                        "incomplete measurement was not rejected");
                Remove (Data);
             end;
+         when Agent_Context_Bounded =>
+            declare
+               Data     : constant Fixture := Build_Fixture ("agent_context", Harness_Project => True);
+               Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
+               Settings : Improve.Config.Settings := Improve.Config.Defaults;
+            begin
+               Settings.Agent_Max_Context_Bytes := 8_192;
+               Settings.Agent_Max_File_Bytes := 256;
+               declare Context : constant Improve.Refinement.Planning_Context :=
+                 Improve.Refinement.Build_Context (Draft, Settings, Existing_Tasks => Draft.Tasks);
+               begin
+                  Assert (Context.Byte_Count <= Settings.Agent_Max_Context_Bytes,
+                          "agent context exceeded its configured byte limit");
+                  Assert (Length (Context.Evidence) > 0 and then Length (Context.Draft_Tasks) > 0 and then
+                            Length (Context.Existing_Tasks) > 0 and then Length (Context.Required_Schema) > 0,
+                          "agent context omitted required planning material");
+                  Assert (not Context.Sources.Is_Empty and then
+                            Context.Sources.First_Element.State = Improve.Refinement.Source_Available,
+                          "agent context did not include safely rooted source evidence");
+               end;
+               declare
+                  Path     : constant String := To_String (Data.Directory) & "/invalid-agent.toml";
+                  Rejected : Boolean := False;
+               begin
+                  Project_Tools.Files.Write_Text_File
+                    (Path, "schema_version = 1" & Character'Val (10) &
+                       "agent_max_context_bytes = 512" & Character'Val (10));
+                  begin
+                     declare
+                        Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "invalid agent context limit was accepted");
+               end;
+               Remove (Data);
+            end;
+         when Agent_Valid_Refinement =>
+            declare
+               Data     : constant Fixture := Build_Fixture ("agent_valid", Harness_Project => True);
+               Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
+               Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
+               Provider : aliased Fake_Adapter :=
+                 (Mode => Valid_Agent, Draft => Draft,
+                  Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
+               Result   : constant Improve.Refinement.Refinement_Result :=
+                 Improve.Refinement.Refine (Draft, Settings, Provider'Access);
+            begin
+               Assert (Result.Status = Improve.Refinement.Refined, "valid agent refinement was not applied");
+               Assert (Result.Plan.Fingerprint /= Draft.Fingerprint and then Provider.Saw_Bounded and then
+                         Provider.Saw_Source,
+                       "refined plan lost provenance or bounded source context");
+               Assert (To_String (Result.Plan.Tasks.First_Element.Title) = "Focused remediation",
+                       "agent title refinement was not applied");
+               Assert (Ada.Strings.Fixed.Index
+                         (To_String (Result.Plan.Tasks.First_Element.Acceptance),
+                          To_String (Draft.Tasks.First_Element.Acceptance)) = 1,
+                       "agent refinement weakened deterministic acceptance");
+               declare
+                  Again_Provider : aliased Fake_Adapter :=
+                    (Mode => Valid_Agent, Draft => Draft,
+                     Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
+                  Again : constant Improve.Refinement.Refinement_Result :=
+                    Improve.Refinement.Refine (Draft, Settings, Again_Provider'Access);
+                  State : Improve.Storage.Store;
+                  Saved : Improve.Storage.Save_Result;
+               begin
+                  Assert (Again.Plan.Fingerprint = Result.Plan.Fingerprint,
+                          "identical agent refinement was not deterministic");
+                  Improve.Storage.Open
+                    (State, To_String (Data.Directory) & "/agent-improve.db", Writable => True);
+                  Saved := Improve.Storage.Save (State, Result.Plan);
+                  Improve.Storage.Close (State);
+                  Assert (not Saved.Existing and then Saved.Plan.Tasks.First_Element.Title =
+                            Result.Plan.Tasks.First_Element.Title,
+                          "validated agent refinement did not persist as a normal plan revision");
+               end;
+               Remove (Data);
+            end;
+         when Agent_Malformed_Fallback =>
+            Check_Agent_Fallback
+              (Malformed_Agent, Improve.Refinement.Malformed_Fallback, "malformed");
+         when Agent_Missing_File_Rejected =>
+            Check_Agent_Fallback
+              (Missing_File_Agent, Improve.Refinement.Rejected_Fallback, "missing_file");
+         when Agent_Invented_Evidence_Rejected =>
+            Check_Agent_Fallback
+              (Invented_Evidence_Agent, Improve.Refinement.Rejected_Fallback, "invented_evidence");
+         when Agent_Invalid_Category_Rejected =>
+            Check_Agent_Fallback
+              (Invalid_Category_Agent, Improve.Refinement.Rejected_Fallback, "invalid_category");
+         when Agent_Cycle_Rejected =>
+            Check_Agent_Fallback
+              (Cyclic_Agent, Improve.Refinement.Rejected_Fallback, "cycle");
+         when Agent_Timeout_Fallback =>
+            Check_Agent_Fallback
+              (Slow_Agent, Improve.Refinement.Timeout_Fallback, "timeout");
+         when Agent_Unavailable_Fallback =>
+            Check_Agent_Fallback
+              (Unavailable_Agent, Improve.Refinement.Unavailable_Fallback, "unavailable");
+         when Agent_Weakening_Rejected =>
+            Check_Agent_Fallback
+              (Weakening_Agent, Improve.Refinement.Rejected_Fallback, "weakening");
       end case;
    end Run_Test;
 

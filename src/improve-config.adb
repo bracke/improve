@@ -18,6 +18,10 @@ package body Improve.Config is
        Maximum_Findings_Per_Task => 50,
        Allow_Investigation_Tasks => True,
        Require_Review            => True,
+       Agent_Max_Context_Bytes   => 131_072,
+       Agent_Max_File_Bytes      => 32_768,
+       Agent_Max_Response_Bytes  => 131_072,
+       Agent_Timeout_Seconds     => 60,
        Task_Kind                 => To_Unbounded_String ("auto"),
        Publication               => Candidate_Publication,
        Require_Initialized       => True,
@@ -115,6 +119,19 @@ package body Improve.Config is
          end if;
          Result.Allow_Investigation_Tasks := Boolean_Value ("allow_investigation_tasks", True);
          Result.Require_Review := Boolean_Value ("require_review", True);
+         Result.Agent_Max_Context_Bytes := Natural_Value ("agent_max_context_bytes", 131_072);
+         Result.Agent_Max_File_Bytes := Natural_Value ("agent_max_file_bytes", 32_768);
+         Result.Agent_Max_Response_Bytes := Natural_Value ("agent_max_response_bytes", 131_072);
+         Result.Agent_Timeout_Seconds := Natural_Value ("agent_timeout_seconds", 60);
+         if Result.Agent_Max_Context_Bytes < 1_024 or else Result.Agent_Max_Context_Bytes > 10_485_760 then
+            raise Argument_Error with "planning.agent_max_context_bytes must be between 1024 and 10485760";
+         elsif Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
+            raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
+         elsif Result.Agent_Max_Response_Bytes > 1_048_576 then
+            raise Argument_Error with "planning.agent_max_response_bytes exceeds 1048576";
+         elsif Result.Agent_Timeout_Seconds > 3_600 then
+            raise Argument_Error with "planning.agent_timeout_seconds exceeds 3600";
+         end if;
          Result.Task_Kind := To_Unbounded_String (Kind);
          Result.Require_Initialized := Boolean_Value ("require_initialized_project", True);
          Result.Require_Fresh_Measurement := Boolean_Value ("require_fresh_measurement", True);
@@ -148,6 +165,10 @@ package body Improve.Config is
         "planning.maximum_findings_per_task =" & Positive'Image (Item.Maximum_Findings_Per_Task) & LF &
         "planning.allow_investigation_tasks = " & Boolean_Image (Item.Allow_Investigation_Tasks) & LF &
         "planning.require_review = " & Boolean_Image (Item.Require_Review) & LF &
+        "planning.agent_max_context_bytes =" & Positive'Image (Item.Agent_Max_Context_Bytes) & LF &
+        "planning.agent_max_file_bytes =" & Positive'Image (Item.Agent_Max_File_Bytes) & LF &
+        "planning.agent_max_response_bytes =" & Positive'Image (Item.Agent_Max_Response_Bytes) & LF &
+        "planning.agent_timeout_seconds =" & Positive'Image (Item.Agent_Timeout_Seconds) & LF &
         "workflow.task_kind = """ & To_String (Item.Task_Kind) & """" & LF &
         "workflow.publication = ""candidate""" & LF &
         "workflow.require_initialized_project = " & Boolean_Image (Item.Require_Initialized) & LF &

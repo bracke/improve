@@ -11,3 +11,7 @@ The model_runner crate currently exposes its framework packages from the same GP
 The publication adapter is consequently isolated. A lightweight public framework library target remains the desired
 upstream integration improvement; no framework record or transaction behavior is copied here.
 
+Optional planning assistance sits behind `Improve.Refinement.Adapter`. The adapter receives bounded immutable context
+and returns typed proposals; it owns no plan, quality, project, or harness state. Improve validates and fingerprints the
+result before normal persistence. model_runner's interactive `/work` path remains exclusively the execution workflow.
+

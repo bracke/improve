@@ -17,3 +17,7 @@ The executable Phase 6 gate is `tools/check_phase_6.sh`. It performs the warning
 AUnit suite (including harness-state reconciliation and resolved, partial, still-failing, unavailable-evidence,
 regression, incomparable-policy, and incomplete-assessment verification scenarios), builds the repository checker, and
 runs it. CI invokes this same entry point.
+
+The executable Phase 7 gate is `tools/check_phase_7.sh`. It retains every earlier check and adds bounded-context,
+valid-refinement, deterministic-persistence, malformed-response, missing-file, invented-evidence, invalid-category,
+dependency-cycle, enforced-timeout, unavailable-agent, and quality-policy weakening scenarios. CI invokes this gate.

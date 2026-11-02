@@ -10,4 +10,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: alire-project/setup-alire@v5
-      - run: tools/check_phase_6.sh
+      - run: tools/check_phase_7.sh

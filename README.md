@@ -10,6 +10,7 @@ It has three strict ownership boundaries:
 - model_runner owns published task definitions, execution state, readiness, and agent workflow.
 
 Improve never measures or edits a target project and does not execute remediation agents.
+Optional planning refinement is available through a bounded typed adapter; deterministic planning remains the fallback.
 
 ## Build
 

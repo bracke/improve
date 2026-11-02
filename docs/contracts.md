@@ -12,3 +12,10 @@ Improve discovers task kinds and their required/allowed fields from the open pro
 `Model_Runner.Framework.Tasks.Create` and commits them with `Model_Runner.Framework.Stores.Commit`. Quality indicator
 IDs are evidence labels, never fabricated harness requirement IDs.
 
+## Optional refinement
+
+`Improve.Refinement.Adapter` is the only agent-planning boundary. It receives bounded `Planning_Context` and returns
+typed proposals under a deadline. The validator, not the adapter, controls evidence identity, quality policy, paths,
+dependencies, task limits, and persistence. The interactive model_runner `/work` workflow is not an automation API and
+is never invoked for planning.
+
