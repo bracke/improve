@@ -47,6 +47,11 @@ package body Improve.Text is
      "en.projects.none = No active projects are registered." & LF &
      "en.findings.title = Remediation findings for {project}, assessment {run}" & LF &
      "en.findings.none = No eligible findings or unavailable evidence." & LF &
+     "en.plan.title = Remediation plan for {project}, assessment {run}" & LF &
+     "en.plan.dry_run = Preview only; this plan has not been stored." & LF &
+     "en.plan.identity = Deterministic draft identity: {id}" & LF &
+     "en.plan.none = No remediation tasks are required." & LF &
+     "en.plan.persistence.pending = persistent plans become available in implementation phase 4; use --dry-run" & LF &
      "en.label.id = ID" & LF &
      "en.label.project = Project" & LF &
      "en.label.enabled = Enabled" & LF &

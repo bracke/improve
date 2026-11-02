@@ -13,5 +13,8 @@ package Improve.JSON is
      (Selected : Improve.Source.Selection;
       Values   : Improve.Model.Finding_Vectors.Vector) return String;
    --  Serialize normalized remediation candidates.
+
+   function Plan (Value : Improve.Model.Plan_Revision; Dry_Run : Boolean) return String;
+   --  Serialize a generated plan and its complete task specifications.
 end Improve.JSON;
 

@@ -11,8 +11,11 @@ with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
 with Improve.Config;
+with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
+with Improve.Planner;
+with Improve.Rules;
 with Improve.Source;
 with Improve.Text;
 with Project_Tools.Files;
@@ -23,13 +26,17 @@ package body Improve_Test_Suite is
    use type Improve.CLI.Command_Kind;
    use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
+   use type Improve.Model.Candidate_Kind;
    use type Ada.Containers.Count_Type;
+   use type Ada_Quality.Types.Indicator_Id;
 
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
       JSON_Disables_Color, Help_Smoke, Version_Smoke, Config_Smoke, Invalid_Smoke, Catalog, Digest,
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
-      Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI);
+      Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
+      Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
+      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -314,6 +321,120 @@ package body Improve_Test_Suite is
             begin
                Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output),
                        "fixture-manifest") > 0, "findings JSON inspection failed: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Complete_Strategy_Registry =>
+            for Indicator in Ada_Quality.Types.Indicator_Id loop
+               declare Strategy : constant Improve.Rules.Remediation_Strategy :=
+                 Improve.Rules.Strategy_For (Indicator);
+               begin
+                  Assert (Strategy.Indicator = Indicator, "strategy registry returned the wrong indicator");
+                  Assert (Length (Strategy.Title) > 0 and then Length (Strategy.Acceptance) > 0 and then
+                          Length (Strategy.Verification) > 0,
+                          "strategy metadata is incomplete for " & Ada_Quality.Types.Image (Indicator));
+               end;
+            end loop;
+         when Deterministic_Planner =>
+            declare
+               Data  : constant Fixture := Build_Fixture ("deterministic_plan");
+               Store : Improve.Source.Repository;
+            begin
+               Improve.Source.Open (Store, To_String (Data.Database));
+               declare
+                  Project  : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Store, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
+                  Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
+                  First    : constant Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+                  Second   : constant Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+               begin
+                  Assert (First.Fingerprint = Second.Fingerprint, "equivalent planning was not deterministic");
+                  Assert (First.Tasks.Length = 3, "fixture did not create three bounded tasks");
+                  declare Coverage_Is_Investigation : Boolean := False; begin
+                     for Spec of First.Tasks loop
+                        if To_String (Spec.Title) = "Investigate missing coverage evidence" then
+                           Coverage_Is_Investigation := Spec.Kind = Improve.Model.Investigation_Candidate;
+                        end if;
+                     end loop;
+                     Assert (Coverage_Is_Investigation, "aggregate coverage invented an implementation scope");
+                  end;
+                  for Spec of First.Tasks loop
+                     Assert (Length (Spec.Acceptance) > 0 and then Length (Spec.Scope) > 0,
+                             "planner produced an underspecified task");
+                  end loop;
+               end;
+               Improve.Source.Close (Store);
+               Remove (Data);
+            end;
+         when Planner_Grouping_And_Splitting =>
+            declare
+               Data  : constant Fixture := Build_Fixture ("planner_split");
+               Store : Improve.Source.Repository;
+            begin
+               Improve.Source.Open (Store, To_String (Data.Database));
+               declare
+                  Project  : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Store, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
+                  Original : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
+                  Values   : Improve.Model.Finding_Vectors.Vector;
+                  Duplicate : Improve.Model.Finding_Reference := Original.First_Element;
+                  Grouped_Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
+                  Split_Settings   : Improve.Config.Settings := Improve.Config.Defaults;
+               begin
+                  Duplicate.Fingerprint := To_Unbounded_String ("second-manifest-finding");
+                  Values.Append (Original.First_Element);
+                  Values.Append (Duplicate);
+                  Split_Settings.Maximum_Findings_Per_Task := 1;
+                  declare
+                     Grouped : constant Improve.Model.Plan_Revision :=
+                       Improve.Planner.Generate (Selected, Values, Grouped_Settings);
+                     Split : constant Improve.Model.Plan_Revision :=
+                       Improve.Planner.Generate (Selected, Values, Split_Settings);
+                  begin
+                     Assert (Grouped.Tasks.Length = 1, "related findings were not consolidated");
+                     Assert (Grouped.Tasks.First_Element.Finding_Keys.Length = 2,
+                             "grouped task lost a finding relationship");
+                     Assert (Split.Tasks.Length = 2, "oversized work was not split at the configured limit");
+                  end;
+               end;
+               Improve.Source.Close (Store);
+               Remove (Data);
+            end;
+         when Dependency_Cycle_Rejected =>
+            declare
+               Values   : Improve.Model.Task_Vectors.Vector;
+               First    : Improve.Model.Task_Specification;
+               Second   : Improve.Model.Task_Specification;
+               Rejected : Boolean := False;
+            begin
+               First.Id := To_Unbounded_String ("IMP-A");
+               First.Dependencies.Append (To_Unbounded_String ("IMP-B"));
+               Second.Id := To_Unbounded_String ("IMP-B");
+               Second.Dependencies.Append (To_Unbounded_String ("IMP-A"));
+               Values.Append (First);
+               Values.Append (Second);
+               begin
+                  Improve.Dependencies.Validate (Values);
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "dependency cycle was accepted");
+            end;
+         when Plan_Dry_Run_CLI =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("plan_cli");
+               Result : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute
+                   (Args ("plan|--dry-run|--database|" & To_String (Data.Database) & "|--project|" &
+                          Id_Image (Data.Project) & "|--format|json"));
+            begin
+               Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output),
+                       """dry_run"":true") > 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output),
+                       "Investigate missing coverage evidence") > 0,
+                       "plan JSON dry-run failed: " & To_String (Result.Errors));
                Remove (Data);
             end;
       end case;

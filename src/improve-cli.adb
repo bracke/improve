@@ -9,6 +9,7 @@ with Ada_Quality.Types;
 with Improve.Findings;
 with Improve.JSON;
 with Improve.Model;
+with Improve.Planner;
 with Improve.Presentation;
 with Improve.Source;
 with Improve.Text;
@@ -361,6 +362,53 @@ package body Improve.CLI is
       end;
    end Findings_Output;
 
+   function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      Store : Improve.Source.Repository;
+   begin
+      if Item.Plan_Action /= Create_Plan then
+         raise Dependency_Error with Message ("phase.pending", [Arg ("command", "plan " &
+           (if Item.Plan_Action = List_Plans then "list" else "show"))]);
+      elsif not Item.Dry_Run then
+         raise Dependency_Error with Message ("plan.persistence.pending");
+      end if;
+      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      declare
+         Project  : constant Improve.Model.Project_Reference :=
+           Improve.Source.Resolve_Project (Store, To_String (Item.Project));
+         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project, Item.Run_Id);
+         Findings : constant Improve.Model.Finding_Vectors.Vector :=
+           Improve.Findings.Normalize
+             (Selected, Quality_Severity (Settings.Minimum_Severity), Settings.Allow_Investigation_Tasks);
+         Plan     : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+         Result   : Unbounded_String;
+      begin
+         if Item.Format = JSON_Format then
+            Result := To_Unbounded_String (Improve.JSON.Plan (Plan, Dry_Run => True));
+         else
+            Append
+              (Result,
+               Improve.Presentation.Header
+                 (Message
+                    ("plan.title",
+                     [Arg ("project", To_String (Project.Name)), Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
+            Append (Result, Message ("plan.dry_run") & LF);
+            Append (Result, Message ("plan.identity", [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
+            if Plan.Tasks.Is_Empty then
+               Append (Result, Message ("plan.none") & LF);
+            else
+               for Spec of Plan.Tasks loop
+                  Append
+                    (Result,
+                     To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
+                     To_String (Spec.Title) & LF & "  " & To_String (Spec.Acceptance) & LF);
+               end loop;
+            end if;
+         end if;
+         Improve.Source.Close (Store);
+         return To_String (Result);
+      end;
+   end Plan_Output;
+
    function Dispatch (Item : Invocation) return String is
       Plain : Unbounded_String;
       Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path);
@@ -379,6 +427,7 @@ package body Improve.CLI is
             end if;
          when Projects_Command => return Projects_Output (Item, Settings);
          when Findings_Command => return Findings_Output (Item, Settings);
+         when Plan_Command => return Plan_Output (Item, Settings);
          when others =>
             raise Dependency_Error with Message ("phase.pending", [Arg ("command", Name (Item.Command))]);
       end case;
