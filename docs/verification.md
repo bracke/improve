@@ -29,6 +29,9 @@ When configured, a new critical finding also makes the report regressed. A task 
 linked deficiency has comparable evidence and is resolved. Overall outcome precedence is regression, inconclusive,
 still failing, partial resolution, then verified.
 
+An unrelated new critical finding regresses the project assessment and command result, while the complete plan outcome
+continues to describe only its linked remediation work.
+
 Verification records identify their scope, optional task, completed assessment, comparability decision, outcome, and
 explanation. They are append-only and idempotent for the same scope and assessment evidence. JSON output is
 schema-versioned and verification returns exit code 1 for every requested outcome other than `verified`; invalid or

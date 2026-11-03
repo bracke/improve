@@ -138,7 +138,6 @@ package body Improve.Verification is
       procedure Set_Complete_Outcomes is
       begin
          if Task_Id = "" then
-            Result.Plan_Outcome := Result.Outcome;
             Result.Project_Outcome := Complete_Project_Outcome;
             if Result.New_Critical > 0 then Result.Project_Outcome := Improve.Model.Regressed; end if;
          end if;
@@ -245,6 +244,7 @@ package body Improve.Verification is
             end if;
          end loop;
       end if;
+      if Task_Id = "" then Result.Plan_Outcome := Result.Outcome; end if;
       if Result.New_Critical > 0 then
          Result.Outcome := Improve.Model.Regressed;
          Result.Explanation := To_Unbounded_String

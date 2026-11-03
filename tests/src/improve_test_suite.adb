@@ -1661,8 +1661,8 @@ package body Improve_Test_Suite is
                            "task verification outcome was not preserved");
                      elsif Evidence.Scope = Improve.Storage.Plan_Evaluation then
                         Assert
-                          (Evidence.Outcome = Improve.Model.Regressed,
-                           "plan regression outcome was not persisted separately");
+                          (Evidence.Outcome = Improve.Model.Verified,
+                           "unrelated project regression changed the resolved plan outcome");
                      else
                         Assert
                           (Evidence.Outcome = Improve.Model.Regressed,
