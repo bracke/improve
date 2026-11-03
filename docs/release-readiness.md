@@ -39,7 +39,7 @@ The gate requires all of the following:
 
 The coverage driver inventories production units through Ada Quality, requires gcov records for every unit, and rejects
 missing objects. It does not hide uncovered packages or count test sources as production. The current Phase 9
-implementation measures 3,480 of 3,852 production lines, or 90.34%.
+implementation measures 3,487 of 3,852 production lines, or 90.52%.
 
 ## Publication dependency gate
 

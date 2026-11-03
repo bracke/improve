@@ -32,6 +32,7 @@
   without losing logical task continuity and reusing native tasks only for demonstrably identical work.
 - Preserve the complete goal, problem, evidence, relevant files, scope, exclusions, requirements, acceptance, and
   verification contract in native model_runner task definitions.
+- Exercise contract-qualified task and status reporting with distinct historical and replacement native states.
 - Add an Ada-only Phase 9 gate covering warning-clean builds, 80 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted

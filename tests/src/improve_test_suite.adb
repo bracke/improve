@@ -1618,8 +1618,20 @@ package body Improve_Test_Suite is
                Republished : Improve.Workflow.Publication_Result;
                Mappings   : Improve.Storage.Publication_Vectors.Vector;
                Harness    : Stores.Store;
+               Recovery   : Stores.Recovery_Report;
                Status     : Errors.Error_Info;
                Definition : Records.Item;
+
+               procedure Move_Task (Id, Next : String; Gates_Passed : Boolean := False) is
+                  Change : Stores.Transaction;
+               begin
+                  Tasks.Move
+                    (Harness, Change, Id, Next, "", Gates_Passed => Gates_Passed,
+                     Status => Status, Actor => "improve-test");
+                  Assert (Errors.Is_Ok (Status), "could not move native task to " & Next);
+                  Stores.Commit (Harness, Change, Status);
+                  Assert (Errors.Is_Ok (Status), "could not commit native task state " & Next);
+               end Move_Task;
             begin
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => True);
@@ -1666,6 +1678,56 @@ package body Improve_Test_Suite is
                     (Records.Get (Definition, "notes"), "expanded scope contract marker") > 0,
                   "changed task contract silently reused an obsolete native task");
                Stores.Close (Harness);
+               declare Replacement_Mappings : Improve.Storage.Publication_Vectors.Vector; begin
+                  for Value of Republished.Tasks loop
+                     Replacement_Mappings.Append
+                       (Improve.Storage.Publication_Record'
+                          (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
+                           Value.State, Second.Plan.Revision));
+                  end loop;
+                  declare Improve_State : Improve.Storage.Store; begin
+                     Improve.Storage.Open (Improve_State, State, Writable => True);
+                     Improve.Storage.Record_Publications
+                       (Improve_State, To_String (Second.Plan.Plan_Id), Replacement_Mappings);
+                     Improve.Storage.Close (Improve_State);
+                  end;
+               end;
+               Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "could not open harness to establish distinct task states");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "accepted");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "running");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "verification");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "complete", Gates_Passed => True);
+               Move_Task (To_String (Republished.Tasks (1).Harness_Id), "accepted");
+               Move_Task (To_String (Republished.Tasks (1).Harness_Id), "running");
+               Stores.Close (Harness);
+               declare
+                  Refreshed : constant Improve.CLI.Outcome := Improve.CLI.Execute
+                    (Args ("refresh|--project|" & Id_Image (Data.Project) & "|--database|" &
+                           To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+                  Listed : constant Improve.CLI.Outcome := Improve.CLI.Execute
+                    (Args ("tasks|--project|" & Id_Image (Data.Project) & "|--database|" &
+                           To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+                  Summary : constant Improve.CLI.Outcome := Improve.CLI.Execute
+                    (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                           To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+                  New_Id : constant String := To_String (Republished.Tasks (1).Harness_Id);
+                  Old_Id : constant String := To_String (Published.Tasks (1).Harness_Id);
+               begin
+                  Assert (Refreshed.Exit_Code = 0, "replacement task state reconciliation failed");
+                  Assert
+                    (Listed.Exit_Code = 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Listed.Output), New_Id) > 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Listed.Output), Old_Id) = 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Listed.Output), """status"":""in_progress""") > 0,
+                     "task JSON selected the obsolete native contract mapping");
+                  Assert
+                    (Summary.Exit_Code = 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Summary.Output), New_Id) > 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Summary.Output), Old_Id) = 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Summary.Output), """harness_state"":""running""") > 0,
+                     "status JSON selected the obsolete native contract mapping");
+               end;
                Remove (Data);
             end;
          when Selective_Publication_Resolves_Dependency =>
