@@ -1,5 +1,7 @@
 with Ada.Command_Line;
+with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada_Quality.Checks;
@@ -28,6 +30,24 @@ procedure Check_Release_Candidate is
       Project_Tools.Processes.Run
         (Label, Directory, Alr, Project_Tools.Processes.Arguments (Arguments));
    end Run_Alr;
+
+   procedure Resolve_Dependencies (Label, Directory : String) is
+      Run : constant Project_Tools.Processes.Captured_Process :=
+        Project_Tools.Processes.Capture
+          (Label, Directory, Alr,
+           Project_Tools.Processes.Arguments ([1 => Project_Tools.Processes.Argument ("update")]),
+           Quiet => True);
+      Output : constant String := To_String (Run.Output);
+      Lower  : constant String := Ada.Characters.Handling.To_Lower (Output);
+   begin
+      Ada.Text_IO.Put_Line (ASCII.LF & "==> " & Label);
+      Ada.Text_IO.Put_Line (Output);
+      if Run.Status /= 0 or else Ada.Strings.Fixed.Index (Lower, "solution is incomplete") > 0 or else
+        Ada.Strings.Fixed.Index (Lower, "missing:") > 0
+      then
+         raise Program_Error with "pin-free dependency solution is incomplete";
+      end if;
+   end Resolve_Dependencies;
 
    procedure Require_Passing_Assessment (Value : Ada_Quality.Types.Assessment) is
       Failed : Boolean := False;
@@ -75,19 +95,12 @@ begin
      (Root & "/tests/alire.release.toml", Stage & "/tests/alire.toml");
    Project_Tools.Alire_Manifests.Require_Pin_Free_Crate_Manifest
      (Stage & "/alire.toml", "improve");
-   Run_Alr
-     ("pin-free dependency resolution", Stage,
-      [1 => Project_Tools.Processes.Argument ("update")]);
-   if not Project_Tools.Files.File_Contains (Stage & "/alire/alire.lock", "solved = true") then
-      raise Program_Error with "pin-free dependency lock is incomplete";
-   end if;
+   Resolve_Dependencies ("pin-free dependency resolution", Stage);
    Run_Alr
      ("pin-free release build", Stage,
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),
        Project_Tools.Processes.Argument ("--"), Project_Tools.Processes.Argument ("-j1")]);
-   Run_Alr
-     ("release test dependency resolution", Stage & "/tests",
-      [1 => Project_Tools.Processes.Argument ("update")]);
+   Resolve_Dependencies ("release test dependency resolution", Stage & "/tests");
    Run_Alr
      ("release test build", Stage & "/tests",
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),
