@@ -62,6 +62,7 @@ package body Improve_Test_Suite is
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
+      Measurement_Source_Mismatch_Blocks_Plan,
       Native_Publication_And_Recovery, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
@@ -299,7 +300,7 @@ package body Improve_Test_Suite is
      (Data            : Fixture;
       Structure_State : Followup_State := All_Pass;
       Policy           : String := "policy-a";
-      Source           : String := "source-c";
+      Source           : String := "";
       Toolchain        : String := "gnat-15.2.1";
       Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High;
       New_Critical     : Boolean := False) return Positive is
@@ -307,13 +308,15 @@ package body Improve_Test_Suite is
       Store : Ada_Quality.Storage.Store;
       Run   : Positive;
       Value : Assessment;
+      Effective_Source : constant String :=
+        (if Source = "" then Ada_Quality.Checks.Source_Fingerprint (To_String (Data.Target)) else Source);
    begin
       Ada_Quality.Storage.Open (Store, To_String (Data.Database));
-      Run := Ada_Quality.Storage.Start_Assessment (Store, Data.Project, Source, Policy);
+      Run := Ada_Quality.Storage.Start_Assessment (Store, Data.Project, Effective_Source, Policy);
       Value.Id := Run;
       Value.Project_Id := Data.Project;
       Value.Project_Path := Data.Target;
-      Value.Source_Fingerprint := To_Unbounded_String (Source);
+      Value.Source_Fingerprint := To_Unbounded_String (Effective_Source);
       Value.Policy_Fingerprint := To_Unbounded_String (Policy);
       Value.Toolchain_Fingerprint := To_Unbounded_String (Toolchain);
       Value.Status := Assessment_Completed;
@@ -1117,7 +1120,7 @@ package body Improve_Test_Suite is
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
                Assert (Applied.Exit_Code = 0, "approved plan did not publish");
-               Run := Publish_Followup (Data, Source => "source-approval-r2");
+               Run := Publish_Followup (Data);
                Replanned := Improve.CLI.Execute
                  (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
@@ -1162,6 +1165,25 @@ package body Improve_Test_Suite is
                  (Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
                   "stale-source rejection modified harness state");
                Stores.Close (Harness);
+               Remove (Data);
+            end;
+         when Measurement_Source_Mismatch_Blocks_Plan =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("measurement_source_mismatch", Harness_Project => True);
+               State  : constant String := To_String (Data.Directory) & "/improve.db";
+               Result : Improve.CLI.Outcome;
+            begin
+               Project_Tools.Files.Write_Text_File
+                 (To_String (Data.Target) & "/new_source.adb",
+                  "procedure New_Source is begin null; end New_Source;" & ASCII.LF);
+               Result := Improve.CLI.Execute
+                 (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
+                        Id_Image (Data.Project) & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Failure_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Errors), "does not match the selected assessment") > 0 and
+                  then not Ada.Directories.Exists (State),
+                  "planning silently combined measured evidence with unmeasured source");
                Remove (Data);
             end;
          when Historical_Task_Lookup =>
@@ -1249,11 +1271,11 @@ package body Improve_Test_Suite is
                   end;
                   Assert (Rejected, "reconciliation accepted uninitialized harness state");
                end;
-               Initialize_Harness (To_String (Data.Target));
                Plan_Result := Improve.CLI.Execute
                  (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
                         Id_Image (Data.Project) & "|--format|json"));
                Assert (Plan_Result.Exit_Code = 0, "publication fixture plan failed: " & To_String (Plan_Result.Errors));
+               Initialize_Harness (To_String (Data.Target));
                Preview_Result := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--dry-run|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
@@ -1322,9 +1344,9 @@ package body Improve_Test_Suite is
                Status    : Errors.Error_Info;
                Run       : Positive;
             begin
-               Initialize_Harness (To_String (Data.Target));
                Planned := Prepare_Verification_Plan (Data, State);
                Assert (Planned.Exit_Code = 0, "refresh fixture plan failed");
+               Initialize_Harness (To_String (Data.Target));
                Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
@@ -1971,7 +1993,7 @@ package body Improve_Test_Suite is
                begin
                   Assert (Published.Tasks.Length = 3, "interrupted exact-revision publication failed");
                end;
-               Run := Publish_Followup (Data, Source => "source-newer-plan");
+               Run := Publish_Followup (Data);
                Replanned := Improve.CLI.Execute
                  (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
@@ -2249,9 +2271,10 @@ package body Improve_Test_Suite is
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Root      : constant String := "/tmp/improve_phase9_end_to_end";
-               Database  : constant String := Root & "/quality.db";
-               State     : constant String := Root & "/improve.db";
+               Work      : constant String := "/tmp/improve_phase9_end_to_end";
+               Root      : constant String := Work & "/project";
+               Database  : constant String := Work & "/quality.db";
+               State     : constant String := Work & "/improve.db";
                Source    : constant String := Root & "/src/e2e_fixture.adb";
                Quality   : Ada_Quality.Storage.Store;
                Project   : Positive;
@@ -2270,7 +2293,7 @@ package body Improve_Test_Suite is
                Prior_Ids    : Improve.Model.UString_Vectors.Vector;
                Mapping      : Improve.Storage.Publication_Record;
             begin
-               Project_Tools.Files.Delete_Tree (Root);
+               Project_Tools.Files.Delete_Tree (Work);
                Ada.Directories.Create_Path (Root & "/src");
                Project_Tools.Files.Write_Text_File
                  (Root & "/alire.toml",
@@ -2434,7 +2457,7 @@ package body Improve_Test_Suite is
                      "real assessment history was not preserved");
                   Ada_Quality.Reporting.Close (Snapshot);
                end;
-               Project_Tools.Files.Delete_Tree (Root);
+               Project_Tools.Files.Delete_Tree (Work);
             end;
       end case;
    end Run_Test;

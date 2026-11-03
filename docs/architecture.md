@@ -7,6 +7,10 @@ The assessment database is never created, migrated, recovered, or written by Imp
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.
 
+Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
+assessment. Publication applies a second, harness-state-aware fingerprint to detect authored changes after planning
+without treating model_runner's own operational state as a source edit.
+
 The model_runner crate currently exposes its framework packages from the same GPR project as its inference engine.
 The publication adapter is consequently isolated. A lightweight public framework library target remains the desired
 upstream integration improvement; no framework record or transaction behavior is copied here.

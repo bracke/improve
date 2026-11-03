@@ -17,6 +17,11 @@ build trees, runtime databases, and `.model_runner` state are excluded because t
 Changes to project source, manifests, documentation, or other authored inputs invalidate publication until the project
 is remeasured and replanned.
 
+Before generating a plan, Improve also recomputes `Ada_Quality.Checks.Source_Fingerprint` and requires it to equal the
+selected assessment's persisted source identity. This is separate from publication staleness: measurement evidence
+cannot be combined with source that changed before planning. Mutable quality and state databases should live outside
+the registered project root so their own transactions do not invalidate authoritative source comparison.
+
 ## Optional refinement
 
 `Improve.Refinement.Adapter` is the only agent-planning boundary. It receives bounded `Planning_Context` and returns

@@ -2,6 +2,7 @@ with Ada.Calendar;
 with Ada.Containers;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Ada_Quality.Checks;
 with Ada_Quality.Types;
 with Improve.Dependencies;
 with Improve.Rules;
@@ -128,7 +129,13 @@ package body Improve.Planner is
       Groups : Group_Vectors.Vector;
       Result : Improve.Model.Plan_Revision;
       Config_Id : constant String := Configuration_Fingerprint (Settings);
+      Current_Measured_Source : constant String :=
+        Ada_Quality.Checks.Source_Fingerprint (To_String (Selected.Project.Path));
    begin
+      if Current_Measured_Source /= To_String (Selected.Baseline.Source_Id) then
+         raise Data_Error with
+           "current project source does not match the selected assessment; remeasure before planning";
+      end if;
       for Finding of Findings loop
          declare
             Key   : constant String := Group_Key (Finding);
