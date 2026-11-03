@@ -299,12 +299,40 @@ package body Improve.JSON is
             Doc.Insert
               (Item, "plan_quality",
                Doc.New_String
-                 (if Value.Has_Plan_Verification then Improve.Model.Image (Value.Plan_Quality)
+                 (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run
+                  then Improve.Model.Image (Value.Plan_Quality)
+                  else "unverified"));
+            Doc.Insert
+              (Item, "plan_verification_run",
+               Doc.New_Integer (Long_Long_Integer (Value.Plan_Verification_Run)));
+            Doc.Insert
+              (Item, "plan_verification_current",
+               Doc.New_Boolean
+                 (Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run));
+            Doc.Insert
+              (Item, "previous_plan_quality",
+               Doc.New_String
+                 (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run /= Value.Latest_Run
+                  then Improve.Model.Image (Value.Plan_Quality)
                   else "unverified"));
             Doc.Insert
               (Item, "project_quality",
                Doc.New_String
-                 (if Value.Has_Project_Verification then Improve.Model.Image (Value.Project_Quality)
+                 (if Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run
+                  then Improve.Model.Image (Value.Project_Quality)
+                  else "unverified"));
+            Doc.Insert
+              (Item, "project_verification_run",
+               Doc.New_Integer (Long_Long_Integer (Value.Project_Verification_Run)));
+            Doc.Insert
+              (Item, "project_verification_current",
+               Doc.New_Boolean
+                 (Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run));
+            Doc.Insert
+              (Item, "previous_project_quality",
+               Doc.New_String
+                 (if Value.Has_Project_Verification and then Value.Project_Verification_Run /= Value.Latest_Run
+                  then Improve.Model.Image (Value.Project_Quality)
                   else "unverified"));
             for View of Value.Tasks loop Append_Task (Doc, Tasks, View); end loop;
             Doc.Insert (Item, "tasks", Tasks);

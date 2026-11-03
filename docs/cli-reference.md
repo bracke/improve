@@ -55,6 +55,11 @@ complete evaluation exists; it never promotes one successful task to a project-w
 the newest completed assessment. `improve status --all` produces the same deterministic summary for every registered
 project. A newer failed or incomplete assessment does not replace the most recent completed run.
 
+Plan and project quality are current only when their verification assessment is that newest completed run. Otherwise
+terminal output reports `unverified`, the last verification assessment, and its previous historical result. JSON adds
+`plan_verification_run`, `plan_verification_current`, `previous_plan_quality`, and equivalent project fields. This
+freshness decision is made independently for every project in `status --all`.
+
 Both queries are bounded by `output.maximum_output_items`. They open Improve state read-only and never initialize,
 migrate, or repair it.
 

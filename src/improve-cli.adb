@@ -780,18 +780,24 @@ package body Improve.CLI is
                Latest_Plan_Run : Natural := 0;
             begin
                for Evidence of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-                  if Evidence.Scope = Improve.Storage.Project_Evaluation and then
+                  if Evidence.Plan_Revision = Plan.Revision and then
+                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
+                    Evidence.Scope = Improve.Storage.Project_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Project_Run
                   then
                      Latest_Project_Run := Evidence.Assessment_Id;
                      Value.Project_Quality := Evidence.Outcome;
                      Value.Has_Project_Verification := True;
-                  elsif Evidence.Scope = Improve.Storage.Plan_Evaluation and then
+                     Value.Project_Verification_Run := Evidence.Assessment_Id;
+                  elsif Evidence.Plan_Revision = Plan.Revision and then
+                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
+                    Evidence.Scope = Improve.Storage.Plan_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Plan_Run
                   then
                      Latest_Plan_Run := Evidence.Assessment_Id;
                      Value.Plan_Quality := Evidence.Outcome;
                      Value.Has_Plan_Verification := True;
+                     Value.Plan_Verification_Run := Evidence.Assessment_Id;
                   end if;
                end loop;
                Value.Tasks.Append_Vector (Plan_Views);
@@ -855,11 +861,29 @@ package body Improve.CLI is
                Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
                Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF &
                "Plan quality: " &
-               (if Value.Has_Plan_Verification then Improve.Model.Image (Value.Plan_Quality)
+               (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run
+                then Improve.Model.Image (Value.Plan_Quality)
                 else "unverified") & LF &
                "Project quality: " &
-               (if Value.Has_Project_Verification then Improve.Model.Image (Value.Project_Quality)
+               (if Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run
+                then Improve.Model.Image (Value.Project_Quality)
                 else "unverified") & LF);
+            if Value.Has_Plan_Verification then
+               Append
+                 (Result,
+                  "Last plan verification assessment: " & Number (Value.Plan_Verification_Run) & LF);
+               if Value.Plan_Verification_Run /= Value.Latest_Run then
+                  Append (Result, "Previous plan result: " & Improve.Model.Image (Value.Plan_Quality) & LF);
+               end if;
+            end if;
+            if Value.Has_Project_Verification then
+               Append
+                 (Result,
+                  "Last project verification assessment: " & Number (Value.Project_Verification_Run) & LF);
+               if Value.Project_Verification_Run /= Value.Latest_Run then
+                  Append (Result, "Previous project result: " & Improve.Model.Image (Value.Project_Quality) & LF);
+               end if;
+            end if;
             for Status in Improve.Tasks.Operational_Status loop
                declare Count : Natural := 0; begin
                   for View of Value.Tasks loop

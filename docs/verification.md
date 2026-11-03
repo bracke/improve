@@ -38,3 +38,7 @@ Records are append-only and idempotent for the same scope, revision, contract, a
 revisions can therefore be evaluated independently against the same completed assessment. JSON output is
 schema-versioned and verification returns exit code 1 for every requested outcome other than `verified`; invalid or
 incomplete assessment selection returns the normal unavailable-evidence error instead.
+
+Status never presents a historical conclusion as current quality. It compares the assessment named by the most recent
+exact-revision plan and project verification records with the latest completed assessment, reporting older evidence
+as a previous result and leaving the current assessment unverified.

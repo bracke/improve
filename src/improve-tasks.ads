@@ -116,8 +116,10 @@ package Improve.Tasks is
       Plan_Count    : Natural := 0;
       Plan_Quality  : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Has_Plan_Verification : Boolean := False;
+      Plan_Verification_Run : Natural := 0;
       Project_Quality : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Has_Project_Verification : Boolean := False;
+      Project_Verification_Run : Natural := 0;
       Tasks         : View_Vectors.Vector;
       Findings      : Finding_Summary;
    end record;
@@ -129,8 +131,10 @@ package Improve.Tasks is
    --  @field Plan_Count Number of remediation plans.
    --  @field Plan_Quality Latest complete plan-level verification outcome.
    --  @field Has_Plan_Verification Whether a complete plan outcome has been recorded.
+   --  @field Plan_Verification_Run Assessment evaluated by Plan_Quality.
    --  @field Project_Quality Latest independently persisted project-level outcome.
    --  @field Has_Project_Verification Whether a project-level outcome has been recorded.
+   --  @field Project_Verification_Run Assessment evaluated by Project_Quality.
    --  @field Tasks Joined task views.
    --  @field Findings Aggregate finding disposition.
 

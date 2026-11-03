@@ -74,7 +74,8 @@ package body Improve_Test_Suite is
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
-      Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Interrupted_Publication_Recovery,
+      Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Status_Verification_Freshness,
+      Status_All_Mixed_Freshness, Interrupted_Publication_Recovery,
       Recovery_Rejects_Stale_Uncommitted,
       Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision,
       Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
@@ -226,6 +227,70 @@ package body Improve_Test_Suite is
         (To_Unbounded_String (Directory), To_Unbounded_String (DB_Path), Project, Run, Later,
          To_Unbounded_String (Target));
    end Build_Fixture;
+
+   function Add_Fixture_Project (Data : Fixture; Label : String) return Fixture is
+      use Ada_Quality.Types;
+      Target  : constant String := To_String (Data.Directory) & "/" & Label;
+      Store   : Ada_Quality.Storage.Store;
+      Project : Positive;
+      Run     : Positive;
+      Later   : Positive;
+      Value   : Assessment;
+   begin
+      Ada.Directories.Create_Directory (Target);
+      Project_Tools.Files.Write_Text_File
+        (Target & "/alire.toml",
+         "name = ""improve_fixture_" & Label & """" & ASCII.LF &
+         "version = ""0.1.0-dev""" & ASCII.LF &
+         "licenses = ""MIT""" & ASCII.LF);
+      Ada_Quality.Storage.Open (Store, To_String (Data.Database));
+      Project := Ada_Quality.Storage.Add_Project (Store, Target);
+      declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
+         Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
+         Value.Source_Fingerprint := To_Unbounded_String (Source);
+      end;
+      Value.Id := Run;
+      Value.Project_Id := Project;
+      Value.Project_Path := To_Unbounded_String (Target);
+      Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
+      Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
+      Value.Status := Assessment_Completed;
+      for Indicator in Indicator_Id loop
+         Value.Results.Append
+           (Indicator_Result'
+              (Indicator  => Indicator,
+               Execution  => Succeeded,
+               Compliance => (if Indicator = STR_01 then Violation else Pass),
+               Applicable => True,
+               Summary     => To_Unbounded_String (if Indicator = STR_01 then "violation" else "pass"),
+               Evidence    => To_Unbounded_String ("fixture evidence for " & Image (Indicator)),
+               Measurement => (Kind => Boolean_Value, Boolean_Data => Indicator /= STR_01),
+               Findings    => <>));
+      end loop;
+      declare Structure : Indicator_Result := Value.Results.First_Element; begin
+         Structure.Findings.Append
+           (Finding'
+              (Indicator     => STR_01,
+               Rule          => To_Unbounded_String ("manifest.invalid"),
+               Level         => High,
+               Message       => To_Unbounded_String ("manifest is invalid"),
+               Relative_Path => To_Unbounded_String ("alire.toml"),
+               Line          => 1,
+               Fingerprint   => To_Unbounded_String ("fixture-" & Label & "-manifest")));
+         Value.Results.Replace_Element (Value.Results.First_Index, Structure);
+      end;
+      Run := Ada_Quality.Storage.Publish (Store, Value);
+      Later := Ada_Quality.Storage.Start_Assessment (Store, Project, "interrupted-source", "policy-a");
+      Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
+      Ada_Quality.Storage.Close (Store);
+      return
+        (Directory => Data.Directory,
+         Database => Data.Database,
+         Project => Project,
+         Run => Run,
+         Interrupted => Later,
+         Target => To_Unbounded_String (Target));
+   end Add_Fixture_Project;
 
    procedure Initialize_Harness (Directory : String) is
       package Config renames Model_Runner.Framework.Configurations;
@@ -1994,6 +2059,99 @@ package body Improve_Test_Suite is
                          (To_String (All_Of.Output), """command"":""status""") > 0,
                        "project or all-project status summary is invalid");
                Remove (Data);
+            end;
+         when Status_Verification_Freshness =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("status_freshness", Harness_Project => True);
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned    : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Verified   : Positive;
+               Latest     : Positive;
+               Checked    : Improve.CLI.Outcome;
+               JSON_View  : Improve.CLI.Outcome;
+               Text_View  : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "status-freshness fixture plan failed");
+               Verified := Publish_Followup (Data);
+               Checked := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Verified) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Checked.Exit_Code = 0, "status-freshness verification failed");
+               Latest := Publish_Followup (Data, Structure_State => Structure_Failing);
+               JSON_View := Improve.CLI.Execute
+                 (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Text_View := Improve.CLI.Execute
+                 (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--color|never"));
+               Assert
+                 (JSON_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """latest_run"":" & Id_Image (Latest)) > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """project_quality"":""unverified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """project_verification_run"":" & Id_Image (Verified)) > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """project_verification_current"":false") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """previous_project_quality"":""verified""") > 0,
+                  "status presented historical verification as current quality");
+               Assert
+                 (Text_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Text_View.Output), "Project quality: unverified") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Text_View.Output),
+                     "Last project verification assessment: " & Id_Image (Verified)) > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Text_View.Output), "Previous project result: verified") > 0,
+                  "terminal status did not label historical verification");
+               Remove (Data);
+            end;
+         when Status_All_Mixed_Freshness =>
+            declare
+               First       : constant Fixture := Build_Fixture ("status_all_mixed", Harness_Project => True);
+               Second      : constant Fixture := Add_Fixture_Project (First, "second");
+               State       : constant String := To_String (First.Directory) & "/improve.db";
+               First_Plan  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State);
+               Second_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Second, State);
+               First_Run   : Positive;
+               First_Latest : Positive;
+               Second_Run  : Positive;
+               Checked     : Improve.CLI.Outcome;
+               All_Of      : Improve.CLI.Outcome;
+            begin
+               Assert
+                 (First_Plan.Exit_Code = 0 and then Second_Plan.Exit_Code = 0,
+                  "mixed-freshness plans failed");
+               First_Run := Publish_Followup (First);
+               Checked := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (First.Project) & "|--run|" & Id_Image (First_Run) &
+                        "|--database|" & To_String (First.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Checked.Exit_Code = 0, "first mixed-freshness verification failed");
+               First_Latest := Publish_Followup (First, Structure_State => Structure_Failing);
+               Second_Run := Publish_Followup (Second);
+               Checked := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Second.Project) & "|--run|" & Id_Image (Second_Run) &
+                        "|--database|" & To_String (Second.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Checked.Exit_Code = 0, "second mixed-freshness verification failed");
+               All_Of := Improve.CLI.Execute
+                 (Args ("status|--all|--database|" & To_String (First.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (All_Of.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (All_Of.Output), """latest_run"":" & Id_Image (First_Latest) &
+                     ",""plan_count"":1,""plan_quality"":""unverified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (All_Of.Output), """latest_run"":" & Id_Image (Second_Run) &
+                     ",""plan_count"":1,""plan_quality"":""verified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (All_Of.Output), """project_verification_run"":" & Id_Image (First_Run) &
+                     ",""project_verification_current"":false") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (All_Of.Output), """project_verification_run"":" & Id_Image (Second_Run) &
+                     ",""project_verification_current"":true") > 0,
+                  "status --all did not preserve per-project verification freshness");
+               Remove (First);
             end;
          when Interrupted_Publication_Recovery =>
             declare
