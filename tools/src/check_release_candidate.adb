@@ -78,8 +78,8 @@ begin
    Run_Alr
      ("pin-free dependency resolution", Stage,
       [1 => Project_Tools.Processes.Argument ("update")]);
-   if not Project_Tools.Files.File_Exists (Stage & "/alire/alire.lock") then
-      raise Program_Error with "pin-free dependency resolution did not produce a complete lock file";
+   if not Project_Tools.Files.File_Contains (Stage & "/alire/alire.lock", "solved = true") then
+      raise Program_Error with "pin-free dependency lock is incomplete";
    end if;
    Run_Alr
      ("pin-free release build", Stage,
