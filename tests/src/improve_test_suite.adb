@@ -2151,6 +2151,14 @@ package body Improve_Test_Suite is
                     (To_String (JSON_View.Output), """previous_project_quality"":""verified""") > 0,
                   "status presented historical verification as current quality");
                Assert
+                 (Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """quality_outcome"":""verified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """verification_run"":" & Id_Image (Verified)) > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """verification_current"":false") > 0,
+                  "task status did not distinguish historical verification from current evidence");
+               Assert
                  (Text_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                     (To_String (Text_View.Output), "Project quality: unverified") > 0 and then
                   Ada.Strings.Fixed.Index
@@ -2636,7 +2644,7 @@ package body Improve_Test_Suite is
                            Assessment_Id => 2, Outcome => Outcome, Comparable => True,
                            Explanation => To_Unbounded_String ("matrix")));
                   end if;
-                  Views := Improve.Tasks.Build (Plan, Publications, Evidence);
+                  Views := Improve.Tasks.Build (Plan, Publications, Evidence, Current_Assessment => 2);
                   Assert (Views.First_Element.Status = Expected, "unexpected operational task status");
                end Check;
             begin

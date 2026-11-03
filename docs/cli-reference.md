@@ -60,6 +60,10 @@ terminal output reports `unverified`, the last verification assessment, and its 
 `plan_verification_run`, `plan_verification_current`, `previous_plan_quality`, and equivalent project fields. This
 freshness decision is made independently for every project in `status --all`.
 
+Each JSON task view likewise reports `verification_run` and `verification_current`. Its historical `quality_outcome`
+is retained for audit, but the derived task status does not treat it as verified when a newer completed assessment is
+current or when the current assessment is unknown.
+
 Both queries are bounded by `output.maximum_output_items`. They open Improve state read-only and never initialize,
 migrate, or repair it.
 

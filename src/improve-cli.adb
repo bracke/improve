@@ -678,15 +678,18 @@ package body Improve.CLI is
 
    function Views_For
      (State : in out Improve.Storage.Store;
-      Plan  : Improve.Model.Plan_Revision) return Improve.Tasks.View_Vectors.Vector is
+      Plan  : Improve.Model.Plan_Revision;
+      Current_Assessment : Natural := 0) return Improve.Tasks.View_Vectors.Vector is
      (Improve.Tasks.Build
         (Plan,
          Improve.Storage.Publications (State, To_String (Plan.Plan_Id)),
-         Improve.Storage.Verifications (State, To_String (Plan.Plan_Id))));
+         Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)),
+         Current_Assessment));
 
    function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       State      : Improve.Storage.Store;
       Project_Id : Natural := 0;
+      Current_Assessment : Natural := 0;
       Filtered   : Improve.Tasks.View_Vectors.Vector;
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
       Found_Task : Boolean := not Item.Has_Task;
@@ -697,7 +700,14 @@ package body Improve.CLI is
       if Item.Has_Project then
          declare Quality : Improve.Source.Repository; begin
             Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-            Project_Id := Improve.Source.Resolve_Project (Quality, To_String (Item.Project)).Id;
+            declare
+               Project : constant Improve.Model.Project_Reference :=
+                 Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
+               Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
+            begin
+               Project_Id := Project.Id;
+               Current_Assessment := Selected.Baseline.Run_Id;
+            end;
             Improve.Source.Close (Quality);
          end;
       end if;
@@ -706,7 +716,8 @@ package body Improve.CLI is
          declare
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Storage.Load_Task (State, To_String (Item.Task_Id), Item.Revision);
-            Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+            Plan_Views : constant Improve.Tasks.View_Vectors.Vector :=
+              Views_For (State, Plan, Current_Assessment);
          begin
             if Project_Id /= 0 and then Plan.Project.Id /= Project_Id then
                raise Argument_Error with "task does not belong to selected project";
@@ -729,7 +740,8 @@ package body Improve.CLI is
                declare
                   Plan : constant Improve.Model.Plan_Revision :=
                     Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-                  Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+                  Plan_Views : constant Improve.Tasks.View_Vectors.Vector :=
+                    Views_For (State, Plan, Current_Assessment);
                begin
                   for View of Plan_Views loop
                      if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
@@ -787,7 +799,7 @@ package body Improve.CLI is
             declare
                Plan : constant Improve.Model.Plan_Revision :=
                  Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan, Latest_Run);
                Latest_Project_Run : Natural := 0;
                Latest_Plan_Run : Natural := 0;
             begin

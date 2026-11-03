@@ -53,7 +53,8 @@ package body Improve.Tasks is
    function Build
      (Plan          : Improve.Model.Plan_Revision;
       Publications  : Improve.Storage.Publication_Vectors.Vector;
-      Verifications : Improve.Storage.Verification_Vectors.Vector) return View_Vectors.Vector is
+      Verifications : Improve.Storage.Verification_Vectors.Vector;
+      Current_Assessment : Natural := 0) return View_Vectors.Vector is
       Result : View_Vectors.Vector;
    begin
       for Spec of Plan.Tasks loop
@@ -84,9 +85,13 @@ package body Improve.Tasks is
                   Latest_Run := Verification.Assessment_Id;
                   View.Quality := Verification.Outcome;
                   View.Has_Verification := True;
+                  View.Verification_Run := Verification.Assessment_Id;
                end if;
             end loop;
-            View.Status := Status_Of (To_String (View.Harness_State), View.Quality, View.Has_Verification);
+            View.Verification_Current :=
+              View.Has_Verification and then Current_Assessment > 0 and then Latest_Run = Current_Assessment;
+            View.Status := Status_Of
+              (To_String (View.Harness_State), View.Quality, View.Verification_Current);
             Result.Append (View);
          end;
       end loop;

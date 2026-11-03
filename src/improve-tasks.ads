@@ -44,6 +44,8 @@ package Improve.Tasks is
       Harness_State  : UString;
       Quality        : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Has_Verification : Boolean := False;
+      Verification_Run : Natural := 0;
+      Verification_Current : Boolean := False;
       Status         : Operational_Status := Proposed;
    end record;
    --  Joined inspection view for one Improve task.
@@ -56,6 +58,8 @@ package Improve.Tasks is
    --  @field Harness_State Cached harness-owned state.
    --  @field Quality Latest independent quality outcome.
    --  @field Has_Verification Whether quality evidence has been recorded.
+   --  @field Verification_Run Assessment evaluated by the historical quality outcome.
+   --  @field Verification_Current Whether that assessment is the selected current assessment.
    --  @field Status Derived inspection status.
 
    package View_Vectors is new Ada.Containers.Vectors (Positive, Task_View);
@@ -64,11 +68,13 @@ package Improve.Tasks is
    function Build
      (Plan          : Improve.Model.Plan_Revision;
       Publications  : Improve.Storage.Publication_Vectors.Vector;
-      Verifications : Improve.Storage.Verification_Vectors.Vector) return View_Vectors.Vector;
+      Verifications : Improve.Storage.Verification_Vectors.Vector;
+      Current_Assessment : Natural := 0) return View_Vectors.Vector;
    --  Build one stable view per task in plan order.
    --  @param Plan Immutable plan revision.
    --  @param Publications Publication mappings for the plan.
    --  @param Verifications Historical verification evidence.
+   --  @param Current_Assessment Latest applicable completed assessment, or zero when unknown.
    --  @return Joined task views.
 
    procedure Sort (Values : in out View_Vectors.Vector);
