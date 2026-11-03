@@ -194,7 +194,43 @@ package body Improve.Planner is
          Add ("working_source", To_String (Result.Working_Source_Id));
          Add ("policy", To_String (Selected.Baseline.Policy_Id));
          Add ("toolchain", To_String (Selected.Baseline.Toolchain_Id));
-         Add ("snapshot", To_String (Selected.Baseline.Snapshot_Id));
+         Add ("assessment_result_count", Natural'Image (Natural (Selected.Assessment.Results.Length)));
+         for Indicator_Result of Selected.Assessment.Results loop
+            Add ("assessment.indicator", Ada_Quality.Types.Image (Indicator_Result.Indicator));
+            Add ("assessment.execution", Ada_Quality.Types.Execution_Status'Image (Indicator_Result.Execution));
+            Add ("assessment.compliance", Ada_Quality.Types.Compliance_Status'Image (Indicator_Result.Compliance));
+            Add ("assessment.applicable", Boolean'Image (Indicator_Result.Applicable));
+            Add ("assessment.summary", To_String (Indicator_Result.Summary));
+            Add ("assessment.evidence", To_String (Indicator_Result.Evidence));
+            Add ("assessment.measurement.kind", Ada_Quality.Types.Value_Kind'Image (Indicator_Result.Measurement.Kind));
+            case Indicator_Result.Measurement.Kind is
+               when Ada_Quality.Types.Unavailable_Value =>
+                  Add ("assessment.measurement.value", To_String (Indicator_Result.Measurement.Reason));
+               when Ada_Quality.Types.Boolean_Value =>
+                  Add
+                    ("assessment.measurement.value", Boolean'Image (Indicator_Result.Measurement.Boolean_Data));
+               when Ada_Quality.Types.Integer_Value =>
+                  Add
+                    ("assessment.measurement.value",
+                     Long_Long_Integer'Image (Indicator_Result.Measurement.Integer_Data));
+               when Ada_Quality.Types.Decimal_Value =>
+                  Add
+                    ("assessment.measurement.value",
+                     Long_Long_Integer'Image (Indicator_Result.Measurement.Basis_Points));
+               when Ada_Quality.Types.Text_Value | Ada_Quality.Types.Enum_Value =>
+                  Add ("assessment.measurement.value", To_String (Indicator_Result.Measurement.Text_Data));
+            end case;
+            Add ("assessment.finding_count", Natural'Image (Natural (Indicator_Result.Findings.Length)));
+            for Finding of Indicator_Result.Findings loop
+               Add ("assessment.finding.indicator", Ada_Quality.Types.Image (Finding.Indicator));
+               Add ("assessment.finding.rule", To_String (Finding.Rule));
+               Add ("assessment.finding.severity", Ada_Quality.Types.Severity'Image (Finding.Level));
+               Add ("assessment.finding.message", To_String (Finding.Message));
+               Add ("assessment.finding.path", To_String (Finding.Relative_Path));
+               Add ("assessment.finding.line", Natural'Image (Finding.Line));
+               Add ("assessment.finding.fingerprint", To_String (Finding.Fingerprint));
+            end loop;
+         end loop;
          Add ("finding_count", Natural'Image (Natural (Result.Findings.Length)));
          for Finding of Result.Findings loop
             Add ("finding.project", Positive'Image (Finding.Project_Id));

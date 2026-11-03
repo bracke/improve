@@ -60,7 +60,8 @@ package body Improve_Test_Suite is
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
-      Plan_Fingerprint_Severity_Sensitive, Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
+      Plan_Fingerprint_Severity_Sensitive, Plan_Fingerprint_Ignores_Unrelated_Snapshot,
+      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
@@ -1032,6 +1033,62 @@ package body Improve_Test_Suite is
                      Second.Plan.Findings.Length = High_Findings.Length,
                      "changed severity threshold silently returned an older plan revision");
                end;
+               Remove (Data);
+            end;
+         when Plan_Fingerprint_Ignores_Unrelated_Snapshot =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("unrelated_snapshot", Harness_Project => True);
+               Quality    : Improve.Source.Repository;
+               State_Path : constant String := To_String (Data.Directory) & "/snapshot-improve.db";
+               First_Plan : Improve.Model.Plan_Revision;
+               First_Save : Improve.Storage.Save_Result;
+               Second_Save : Improve.Storage.Save_Result;
+               First_Snapshot : Unbounded_String;
+            begin
+               Improve.Source.Open (Quality, To_String (Data.Database));
+               declare
+                  Project : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection :=
+                    Improve.Source.Select_Assessment (Quality, Project, Data.Run);
+                  Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
+               begin
+                  First_Plan := Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+                  First_Snapshot := Selected.Baseline.Snapshot_Id;
+               end;
+               Improve.Source.Close (Quality);
+               declare State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (State, State_Path, Writable => True);
+                  First_Save := Improve.Storage.Save (State, First_Plan);
+                  Improve.Storage.Close (State);
+               end;
+               declare Other : constant Fixture := Add_Fixture_Project (Data, "unrelated_project"); begin
+                  Assert (Other.Project /= Data.Project, "unrelated project did not receive a separate identity");
+               end;
+               Improve.Source.Open (Quality, To_String (Data.Database));
+               declare
+                  Project : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection :=
+                    Improve.Source.Select_Assessment (Quality, Project, Data.Run);
+                  Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
+                  Second_Plan : constant Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+               begin
+                  Assert
+                    (Selected.Baseline.Snapshot_Id /= First_Snapshot and then
+                     Second_Plan.Fingerprint = First_Plan.Fingerprint,
+                     "unrelated quality database state changed semantic plan identity");
+                  Improve.Source.Close (Quality);
+                  declare State : Improve.Storage.Store; begin
+                     Improve.Storage.Open (State, State_Path, Writable => True);
+                     Second_Save := Improve.Storage.Save (State, Second_Plan);
+                     Improve.Storage.Close (State);
+                  end;
+               end;
+               Assert
+                 (not First_Save.Existing and then Second_Save.Existing and then Second_Save.Plan.Revision = 1,
+                  "unrelated assessment created an unnecessary plan revision");
                Remove (Data);
             end;
          when Dependency_Cycle_Rejected =>

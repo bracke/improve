@@ -25,8 +25,9 @@ can be produced only from findings that establish those subjects.
 
 `Improve.Dependencies.Validate` rejects missing targets, self-dependencies, duplicate identities, duplicate edges, and
 cycles. The plan content fingerprint uses a length-delimited canonical encoding of the planner version, every effective
-configuration setting, project and assessment provenance, normalized findings, complete task contracts, and
-dependencies. Creation timestamps are deliberately excluded from deterministic identity.
+configuration setting, project provenance, the selected assessment's complete typed indicator evidence, normalized
+findings, complete task contracts, and dependencies. The database-wide reporting snapshot remains audit provenance but
+does not affect semantic plan identity. Creation timestamps are deliberately excluded from deterministic identity.
 
 Persistent numeric plan and task identities are assigned by the Improve database in Phase 4. Until then, only
 `plan --dry-run` is enabled; attempting to create a persistent plan fails without modifying state.

@@ -33,7 +33,9 @@
 - Preserve the complete goal, problem, evidence, relevant files, scope, exclusions, requirements, acceptance, and
   verification contract in native model_runner task definitions.
 - Exercise contract-qualified task and status reporting with distinct historical and replacement native states.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 80 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Keep database-wide reporting snapshot identity as audit provenance while deriving semantic plan identity from the
+  selected project's complete typed assessment evidence, preventing unrelated measurements from creating revisions.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 81 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.
