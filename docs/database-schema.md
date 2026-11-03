@@ -47,6 +47,11 @@ Task rows form a persistent logical-task-to-revision index. Historical lookup se
 the requested `IMP-NNNNNN` identity, or an explicitly requested revision, even when the task is absent from the plan's
 current revision.
 
+Verification identity includes the stable plan ID, immutable plan revision, completed assessment, evaluation scope,
+and acceptance-contract fingerprint. Task-scoped records fingerprint the complete persisted task definition; plan and
+project records retain the immutable plan fingerprint. Thus two revisions can be evaluated against one assessment
+without conflicting, while an identical evaluation remains idempotent.
+
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
 perform recovery. Writable open initializes a missing version-1 database; an existing database with missing or different
 schema metadata is rejected rather than guessed or silently migrated.

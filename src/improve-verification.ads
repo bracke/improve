@@ -25,6 +25,11 @@ package Improve.Verification is
    package Result_Vectors is new Ada.Containers.Vectors (Positive, Task_Result);
    --  Ordered task verification results.
 
+   function Contract_Fingerprint (Item : Improve.Model.Task_Specification) return String;
+   --  Identify the complete immutable task definition and acceptance contract.
+   --  @param Item Task definition to identify.
+   --  @return Stable deterministic contract fingerprint.
+
    type Report is record
       Plan_Id          : Ada.Strings.Unbounded.Unbounded_String;
       Baseline_Run     : Positive;

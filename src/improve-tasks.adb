@@ -1,3 +1,5 @@
+with Improve.Verification;
+
 package body Improve.Tasks is
    use Ada.Strings.Unbounded;
    use type Improve.Model.Quality_Outcome;
@@ -73,7 +75,11 @@ package body Improve.Tasks is
             end loop;
             for Verification of Verifications loop
                if Verification.Scope = Improve.Storage.Task_Evaluation and then
-                 Verification.Task_Id = Spec.Id and then Verification.Assessment_Id >= Latest_Run
+                 Verification.Task_Id = Spec.Id and then
+                 Verification.Plan_Revision = Plan.Revision and then
+                 To_String (Verification.Contract_Fingerprint) =
+                   Improve.Verification.Contract_Fingerprint (Spec) and then
+                 Verification.Assessment_Id >= Latest_Run
                then
                   Latest_Run := Verification.Assessment_Id;
                   View.Quality := Verification.Outcome;

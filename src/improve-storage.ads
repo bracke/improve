@@ -70,6 +70,8 @@ package Improve.Storage is
    type Verification_Record is record
       Scope         : Verification_Scope := Task_Evaluation;
       Task_Id       : Ada.Strings.Unbounded.Unbounded_String;
+      Plan_Revision : Positive := 1;
+      Contract_Fingerprint : Ada.Strings.Unbounded.Unbounded_String;
       Assessment_Id : Positive;
       Outcome       : Improve.Model.Quality_Outcome;
       Comparable    : Boolean;
@@ -78,6 +80,8 @@ package Improve.Storage is
    --  Append-only independent verification evidence.
    --  @field Scope Evaluation identity and aggregation level.
    --  @field Task_Id Improve task identity.
+   --  @field Plan_Revision Exact immutable plan revision evaluated.
+   --  @field Contract_Fingerprint Exact task acceptance contract or plan fingerprint evaluated.
    --  @field Assessment_Id Completed assessment identity.
    --  @field Outcome Quality outcome at Scope.
    --  @field Comparable Whether baseline and current evidence are comparable.

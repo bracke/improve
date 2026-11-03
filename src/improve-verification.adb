@@ -8,6 +8,35 @@ package body Improve.Verification is
 
    type Evidence_State is (Resolved_Evidence, Outstanding_Evidence, Inconclusive_Evidence);
 
+   function Contract_Fingerprint (Item : Improve.Model.Task_Specification) return String is
+      Material : Ada.Strings.Unbounded.Unbounded_String;
+
+      procedure Add (Value : String) is
+      begin
+         Append (Material, Natural'Image (Value'Length));
+         Append (Material, ":" & Value & ASCII.LF);
+      end Add;
+   begin
+      Add (To_String (Item.Title));
+      Add (To_String (Item.Category));
+      Add (Improve.Model.Image (Item.Task_Priority));
+      Add (To_String (Item.Goal));
+      Add (To_String (Item.Problem));
+      Add (To_String (Item.Evidence));
+      for Value of Item.Relevant_Files loop Add (To_String (Value)); end loop;
+      Add (To_String (Item.Scope));
+      Add (To_String (Item.Out_Of_Scope));
+      Add (To_String (Item.Requirements));
+      Add (To_String (Item.Acceptance));
+      Add (To_String (Item.Verification));
+      for Value of Item.Dependencies loop Add (To_String (Value)); end loop;
+      for Value of Item.Finding_Keys loop Add (To_String (Value)); end loop;
+      Add (Natural'Image (Item.Confidence));
+      Add (Boolean'Image (Item.Requires_Review));
+      Add (Improve.Model.Image (Item.Kind));
+      return Stable_Digest (To_String (Material));
+   end Contract_Fingerprint;
+
    function Was_Verified
      (Task_Id : Ada.Strings.Unbounded.Unbounded_String;
       Values  : Improve.Model.UString_Vectors.Vector) return Boolean is

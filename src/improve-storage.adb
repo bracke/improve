@@ -1044,7 +1044,9 @@ package body Improve.Storage is
                   Payload : constant String := S (Row.Payload);
                begin
                   if S (Row.Kind) = Key and then Field (Payload, "plan_id") = Plan_Id and then
-                    Field (Payload, "assessment_id") = Number (Value.Assessment_Id)
+                    Field (Payload, "assessment_id") = Number (Value.Assessment_Id) and then
+                    Field_Or (Payload, "plan_revision", "1") = Number (Value.Plan_Revision) and then
+                    Field_Or (Payload, "contract", "") = To_String (Value.Contract_Fingerprint)
                   then
                      if S (Row.State) /= Improve.Model.Image (Value.Outcome) or else
                        Field_Or (Payload, "scope", "task") /= Scope_Image (Value.Scope) or else
@@ -1066,6 +1068,8 @@ package body Improve.Storage is
                      (Row_Id, 0, WW (Key), WW (Improve.Model.Image (Value.Outcome)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
+                          Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
+                          Pair ("contract", To_String (Value.Contract_Fingerprint)) & LF &
                           Pair ("scope", Scope_Image (Value.Scope)) & LF &
                           Pair ("task_id", To_String (Value.Task_Id)) & LF &
                           Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
@@ -1124,6 +1128,8 @@ package body Improve.Storage is
                  (Verification_Record'
                     (Scope         => Scope,
                      Task_Id       => To_Unbounded_String (Stored_Task),
+                     Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")),
+                     Contract_Fingerprint => To_Unbounded_String (Field_Or (Payload, "contract", "")),
                      Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
                      Outcome       => Parse_Outcome (S (Row.State)),
                      Comparable    => Boolean'Value (Field (Payload, "comparable")),

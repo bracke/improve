@@ -26,6 +26,7 @@ with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
+with Improve.Verification;
 with Improve.Workflow;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Configurations;
@@ -68,7 +69,8 @@ package body Improve_Test_Suite is
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
       Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
-      Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
+      Verification_Policy_Changed, Verification_Incomplete_Rejected, Verification_Revisions_Coexist,
+      Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
@@ -1742,6 +1744,81 @@ package body Improve_Test_Suite is
                        "incomplete measurement was not rejected");
                Remove (Data);
             end;
+         when Verification_Revisions_Coexist =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("verification_revisions");
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               First      : Improve.Model.Plan_Revision := Draft_For (Data);
+               Second     : Improve.Model.Plan_Revision;
+               Store      : Improve.Storage.Store;
+               Saved      : Improve.Storage.Save_Result;
+               Removed_Id : Unbounded_String;
+               Run        : Positive;
+               Revision_1 : Improve.CLI.Outcome;
+               Revision_2 : Improve.CLI.Outcome;
+               Plan_Count : Natural := 0;
+            begin
+               for Index in 1 .. Natural (First.Tasks.Length) loop
+                  if First.Tasks (Index).Finding_Keys.Contains (To_Unbounded_String ("fixture-manifest")) then
+                     Removed_Id := First.Tasks (Index).Id;
+                     First.Tasks.Delete (Index);
+                     exit;
+                  end if;
+               end loop;
+               Assert (Length (Removed_Id) > 0, "revision fixture did not identify the structure task");
+               for Task_Index in 1 .. Natural (First.Tasks.Length) loop
+                  for Index in reverse 1 .. Natural (First.Tasks (Task_Index).Dependencies.Length) loop
+                     if First.Tasks (Task_Index).Dependencies (Index) = Removed_Id then
+                        First.Tasks (Task_Index).Dependencies.Delete (Index);
+                     end if;
+                  end loop;
+               end loop;
+               First.Fingerprint := To_Unbounded_String
+                 (Improve.Stable_Digest ("revision-one-without-structure-task"));
+               Improve.Storage.Open (Store, State, Writable => True);
+               Saved := Improve.Storage.Save (Store, First);
+               Assert (not Saved.Existing and then Saved.Plan.Revision = 1, "first revision was not persisted");
+               Second := Draft_For (Data);
+               Saved := Improve.Storage.Save (Store, Second);
+               Assert (not Saved.Existing and then Saved.Plan.Revision = 2, "second revision was not persisted");
+               Improve.Storage.Close (Store);
+               Run := Publish_Followup (Data, Structure_State => Structure_Failing);
+               Revision_1 := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--revision|1|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Revision_2 := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--revision|2|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Revision_1.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Revision_1.Output), """outcome"":""verified""") > 0,
+                  "first historical revision did not retain its valid outcome");
+               Assert
+                 (Revision_2.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Revision_2.Output), """outcome"":""still_failing""") > 0,
+                  "second historical revision did not retain its distinct outcome");
+               Revision_1 := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--revision|1|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Revision_2 := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--revision|2|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Revision_1.Exit_Code = 0 and then Revision_2.Exit_Code = Improve.CLI.Negative_Exit,
+                  "exact-revision verification was not idempotent");
+               Improve.Storage.Open (Store, State, Writable => False);
+               for Evidence of Improve.Storage.Verifications (Store, "PLAN-000001") loop
+                  if Evidence.Scope = Improve.Storage.Plan_Evaluation then
+                     Assert
+                       (Evidence.Plan_Revision in 1 | 2 and then Length (Evidence.Contract_Fingerprint) > 0,
+                        "plan verification lost immutable revision provenance");
+                     Plan_Count := Plan_Count + 1;
+                  end if;
+               end loop;
+               Improve.Storage.Close (Store);
+               Assert (Plan_Count = 2, "verification revisions conflicted or duplicated");
+               Remove (Data);
+            end;
          when Agent_Context_Bounded =>
             declare
                Data     : constant Fixture := Build_Fixture ("agent_context", Harness_Project => True);
@@ -2341,6 +2418,9 @@ package body Improve_Test_Suite is
                      Evidence.Append
                        (Improve.Storage.Verification_Record'
                           (Scope => Improve.Storage.Task_Evaluation, Task_Id => Only.Id,
+                           Plan_Revision => Plan.Revision,
+                           Contract_Fingerprint => To_Unbounded_String
+                             (Improve.Verification.Contract_Fingerprint (Only)),
                            Assessment_Id => 2, Outcome => Outcome, Comparable => True,
                            Explanation => To_Unbounded_String ("matrix")));
                   end if;

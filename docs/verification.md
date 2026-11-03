@@ -33,6 +33,8 @@ An unrelated new critical finding regresses the project assessment and command r
 continues to describe only its linked remediation work.
 
 Verification records identify their scope, optional task, completed assessment, comparability decision, outcome, and
-explanation. They are append-only and idempotent for the same scope and assessment evidence. JSON output is
+explanation. They also identify the exact immutable plan revision and task or plan acceptance-contract fingerprint.
+Records are append-only and idempotent for the same scope, revision, contract, and assessment evidence. Distinct plan
+revisions can therefore be evaluated independently against the same completed assessment. JSON output is
 schema-versioned and verification returns exit code 1 for every requested outcome other than `verified`; invalid or
 incomplete assessment selection returns the normal unavailable-evidence error instead.

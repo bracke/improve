@@ -27,6 +27,10 @@ revision; `tasks --task IMP-ID --revision N` and `verify --task IMP-ID --revisio
 the persistent cross-revision index rather than substituting the plan's latest revision. Omitting `--revision` selects
 the newest revision that actually contains that logical task.
 
+`verify --project PROJECT --revision N --run RUN` evaluates an exact historical plan revision. Task, plan, and project
+evidence records retain that revision and its immutable acceptance-contract fingerprint, so valid evaluations of two
+revisions against the same assessment coexist while repeated evaluation of either exact revision remains idempotent.
+
 `improve apply PLAN-ID` rejects an unapproved revision before opening or modifying harness state. `--dry-run` remains
 available for publication preflight without approval because it cannot create tasks or publication journal records.
 `improve apply PLAN-ID --task IMP-ID` publishes only that task. Its prerequisites are resolved from existing native

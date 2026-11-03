@@ -14,10 +14,11 @@
 - Preserve direct inspection and verification of tasks omitted from newer revisions, with exact `--revision` lookup.
 - Require both harness completion and independent quality resolution before reporting a task as fully verified.
 - Persist task, plan, and project verification at separate scopes and match current findings without severity filters.
+- Attribute verification evidence to an exact plan revision and immutable task or plan acceptance contract.
 - Require the current authoritative Ada Quality source identity to match the selected assessment before planning.
 - Resolve selective-publication prerequisites through the complete plan and existing native task mappings.
 - Prevent recovery from creating missing native tasks after approval or source preconditions become stale.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 65 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 71 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

@@ -221,9 +221,10 @@ package body Improve.CLI is
          Fail ("--run is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Revision and then
         not (Result.Command = Plan_Command and then Result.Plan_Action = Show_Plan) and then
-        not (Result.Command in Tasks_Command | Verify_Command and then Result.Has_Task)
+        not (Result.Command = Tasks_Command and then Result.Has_Task) and then
+        Result.Command /= Verify_Command
       then
-         Fail ("--revision requires plan show, tasks --task, or verify --task");
+         Fail ("--revision requires plan show, tasks --task, or verify");
       elsif Result.Dry_Run and then Result.Command not in Plan_Command | Apply_Command then
          Fail ("--dry-run is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Task and then Result.Command not in Apply_Command | Tasks_Command | Verify_Command then
@@ -922,7 +923,11 @@ package body Improve.CLI is
               Improve.Storage.List (State, Project.Id);
             begin
                if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
-               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
+               Plan :=
+                 (if Item.Has_Revision then
+                     Improve.Storage.Load
+                       (State, To_String (Values.Last_Element.Plan_Id), Positive (Item.Revision))
+                  else Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id)));
             end;
          end;
       end if;
@@ -957,20 +962,30 @@ package body Improve.CLI is
                Records : Improve.Storage.Verification_Vectors.Vector;
             begin
                for Result of Report.Tasks loop
-                  Records.Append
-                    (Improve.Storage.Verification_Record'
-                       (Scope           => Improve.Storage.Task_Evaluation,
-                        Task_Id         => Result.Task_Id,
-                        Assessment_Id   => Report.Verification_Run,
-                        Outcome         => Result.Outcome,
-                        Comparable      => Report.Comparable,
-                        Explanation     => Result.Explanation));
+                  for Spec of Plan.Tasks loop
+                     if Spec.Id = Result.Task_Id then
+                        Records.Append
+                          (Improve.Storage.Verification_Record'
+                             (Scope           => Improve.Storage.Task_Evaluation,
+                              Task_Id         => Result.Task_Id,
+                              Plan_Revision   => Plan.Revision,
+                              Contract_Fingerprint => To_Unbounded_String
+                                (Improve.Verification.Contract_Fingerprint (Spec)),
+                              Assessment_Id   => Report.Verification_Run,
+                              Outcome         => Result.Outcome,
+                              Comparable      => Report.Comparable,
+                              Explanation     => Result.Explanation));
+                        exit;
+                     end if;
+                  end loop;
                end loop;
                if not Item.Has_Task then
                   Records.Append
                     (Improve.Storage.Verification_Record'
                        (Scope         => Improve.Storage.Plan_Evaluation,
                         Task_Id       => Null_Unbounded_String,
+                        Plan_Revision => Plan.Revision,
+                        Contract_Fingerprint => Plan.Fingerprint,
                         Assessment_Id => Report.Verification_Run,
                         Outcome       => Report.Plan_Outcome,
                         Comparable    => Report.Comparable,
@@ -979,6 +994,8 @@ package body Improve.CLI is
                     (Improve.Storage.Verification_Record'
                        (Scope         => Improve.Storage.Project_Evaluation,
                         Task_Id       => Null_Unbounded_String,
+                        Plan_Revision => Plan.Revision,
+                        Contract_Fingerprint => Plan.Fingerprint,
                         Assessment_Id => Report.Verification_Run,
                         Outcome       => Report.Project_Outcome,
                         Comparable    => Report.Comparable,
