@@ -914,7 +914,9 @@ package body Improve.Storage is
          begin
             while Entity_Tables.Has_Element (Cursor) loop
                declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) then
+                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) and then
+                    Field_Or (S (Row.Payload), "contract", "") = To_String (Value.Contract)
+                  then
                      if Field (S (Row.Payload), "harness_id") /= To_String (Value.Harness_Task_Id) or else
                        Field (S (Row.Payload), "origin") /= To_String (Value.Origin)
                      then
@@ -934,6 +936,7 @@ package body Improve.Storage is
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
                           Pair ("origin", To_String (Value.Origin)) & LF &
+                          Pair ("contract", To_String (Value.Contract)) & LF &
                           Pair ("plan_revision", Number (Value.Plan_Revision))), True, Publications_Table)),
                   "record publication mapping");
                Row_Id := Row_Id + 1;
@@ -966,6 +969,7 @@ package body Improve.Storage is
                     (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
                      Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
                      Origin          => To_Unbounded_String (Field (Payload, "origin")),
+                     Contract        => To_Unbounded_String (Field_Or (Payload, "contract", "")),
                      State           => To_Unbounded_String (S (Row.State)),
                      Plan_Revision   => Positive'Value (Field_Or (Payload, "plan_revision", "1"))));
             end if;
@@ -999,7 +1003,9 @@ package body Improve.Storage is
                   Row     : Entity := Entity_Tables.Element (Cursor);
                   Payload : constant String := S (Row.Payload);
                begin
-                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) then
+                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) and then
+                    Field_Or (Payload, "contract", "") = To_String (Value.Contract)
+                  then
                      if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
                        Field (Payload, "origin") /= To_String (Value.Origin)
                      then

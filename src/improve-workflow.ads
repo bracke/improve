@@ -11,6 +11,7 @@ package Improve.Workflow is
       Improve_Id : Ada.Strings.Unbounded.Unbounded_String;
       Harness_Id : Ada.Strings.Unbounded.Unbounded_String;
       Origin     : Ada.Strings.Unbounded.Unbounded_String;
+      Contract   : Ada.Strings.Unbounded.Unbounded_String;
       State      : Ada.Strings.Unbounded.Unbounded_String;
       Recovered  : Boolean := False;
    end record;
@@ -18,6 +19,7 @@ package Improve.Workflow is
    --  @field Improve_Id Stable Improve task identity.
    --  @field Harness_Id Native model_runner task identity.
    --  @field Origin Stable authenticated Improve provenance.
+   --  @field Contract Complete execution contract represented by the native task.
    --  @field State Harness-owned runtime state.
    --  @field Recovered Whether an existing task was safely adopted.
 

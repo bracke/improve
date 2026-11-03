@@ -48,6 +48,7 @@ package Improve.Storage is
       Improve_Task_Id : Ada.Strings.Unbounded.Unbounded_String;
       Harness_Task_Id : Ada.Strings.Unbounded.Unbounded_String;
       Origin          : Ada.Strings.Unbounded.Unbounded_String;
+      Contract        : Ada.Strings.Unbounded.Unbounded_String;
       State           : Ada.Strings.Unbounded.Unbounded_String;
       Plan_Revision   : Positive := 1;
    end record;
@@ -55,6 +56,7 @@ package Improve.Storage is
    --  @field Improve_Task_Id Stable Improve task identity.
    --  @field Harness_Task_Id Native model_runner task identity.
    --  @field Origin Authenticated stable Improve origin.
+   --  @field Contract Complete execution contract represented by the native task.
    --  @field State Cached harness-owned runtime state.
    --  @field Plan_Revision Immutable revision that first published the task.
 

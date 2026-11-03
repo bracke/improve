@@ -78,6 +78,7 @@ package body Improve.Recovery is
                        (Improve_Task_Id => Value.Improve_Id,
                         Harness_Task_Id => Value.Harness_Id,
                         Origin          => Value.Origin,
+                        Contract        => Value.Contract,
                         State           => Value.State,
                         Plan_Revision   => Plan.Revision));
                end loop;

@@ -27,13 +27,16 @@ field schemas, component inference, task identifiers, auto-accept policy, lifecy
 Every task is created with `created_by=improve` and an origin of the form:
 
 ```text
-improve:<project-path-digest>:task:<improve-task-id>
+improve:<project-path-digest>:task:<improve-task-id>:contract:<task-contract-digest>
 ```
 
-Before staging work, publication scans native task definitions for that exact authenticated provenance. A task found
-there is adopted, not recreated. This handles the non-atomic boundary where the harness commit succeeded but recording
-the mapping in Improve state failed. Improve records the verified `IMP-` to `TASK-` mapping in a separate database
-transaction after the harness commit; conflicting reuse is rejected.
+Before staging work, publication scans native task definitions for that exact authenticated provenance and compares the
+complete title, kind, priority, acceptance, notes, and native dependency definition. A matching task is adopted, not
+recreated. The notes preserve the goal, problem, evidence, relevant files, scope, exclusions, requirements, verification
+instructions, and canonical contract digest. This handles the non-atomic boundary where the harness commit succeeded
+but recording the mapping in Improve state failed. Improve records the contract-qualified `IMP-` to `TASK-` mapping in
+a separate database transaction after the harness commit; conflicting reuse is rejected. A logical Improve task may
+continue across revisions, but a changed execution contract receives a distinct native origin and replacement task.
 
 Recovery first runs an existing-only provenance probe. A completely committed harness transaction is adopted without
 replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current

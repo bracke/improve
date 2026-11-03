@@ -65,7 +65,8 @@ package body Improve_Test_Suite is
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
-      Native_Publication_And_Recovery, Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
+      Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
+      Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
@@ -1550,6 +1551,123 @@ package body Improve_Test_Suite is
                end;
                Remove (Data);
             end;
+         when Native_Task_Contract_Fidelity =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data       : constant Fixture := Build_Fixture ("native_contract", Harness_Project => True);
+               Plan       : Improve.Model.Plan_Revision := Draft_For (Data);
+               Spec       : Improve.Model.Task_Specification := Plan.Tasks (1);
+               Published  : Improve.Workflow.Publication_Result;
+               Harness    : Stores.Store;
+               Status     : Errors.Error_Info;
+               Definition : Records.Item;
+            begin
+               Spec.Goal := To_Unbounded_String ("contract goal marker");
+               Spec.Problem := To_Unbounded_String ("contract problem marker");
+               Spec.Evidence := To_Unbounded_String ("contract evidence marker");
+               Spec.Relevant_Files.Clear;
+               Spec.Relevant_Files.Append (To_Unbounded_String ("src/contract_entry.adb"));
+               Spec.Relevant_Files.Append (To_Unbounded_String ("tests/contract_entry_tests.adb"));
+               Spec.Scope := To_Unbounded_String ("contract scope marker");
+               Spec.Out_Of_Scope := To_Unbounded_String ("contract exclusion marker");
+               Spec.Requirements := To_Unbounded_String ("contract requirement marker");
+               Spec.Acceptance := To_Unbounded_String ("contract acceptance marker");
+               Spec.Verification := To_Unbounded_String ("contract verification marker");
+               Plan.Tasks.Replace_Element (1, Spec);
+               Initialize_Harness (To_String (Data.Target));
+               Published := Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Tasks.Definition
+                 (Harness, To_String (Published.Tasks (1).Harness_Id), Definition, Status);
+               declare Notes : constant String := Records.Get (Definition, "notes"); begin
+                  Assert
+                    (Errors.Is_Ok (Status) and then
+                     Records.Get (Definition, "title") = To_String (Spec.Title) and then
+                     Records.Get (Definition, "priority") = "75" and then
+                     Records.Get (Definition, "acceptance") = "contract acceptance marker" and then
+                     Ada.Strings.Fixed.Index (Notes, Improve.Model.Task_Contract_Fingerprint (Spec)) > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract goal marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract problem marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract evidence marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "src/contract_entry.adb") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "tests/contract_entry_tests.adb") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract scope marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract exclusion marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract requirement marker") > 0 and then
+                     Ada.Strings.Fixed.Index (Notes, "contract verification marker") > 0,
+                     "native task omitted execution-relevant Improve contract fields");
+               end;
+               Stores.Close (Harness);
+               Remove (Data);
+            end;
+         when Changed_Task_Contract_Replaced =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data       : constant Fixture := Build_Fixture ("changed_contract", Harness_Project => True);
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               First      : Improve.Storage.Save_Result;
+               Second     : Improve.Storage.Save_Result;
+               Draft      : Improve.Model.Plan_Revision := Draft_For (Data);
+               Published  : Improve.Workflow.Publication_Result;
+               Republished : Improve.Workflow.Publication_Result;
+               Mappings   : Improve.Storage.Publication_Vectors.Vector;
+               Harness    : Stores.Store;
+               Status     : Errors.Error_Info;
+               Definition : Records.Item;
+            begin
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  First := Improve.Storage.Save (Improve_State, Draft);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Initialize_Harness (To_String (Data.Target));
+               Published := Improve.Workflow.Publish (To_String (Data.Target), First.Plan, "auto");
+               for Value of Published.Tasks loop
+                  Mappings.Append
+                    (Improve.Storage.Publication_Record'
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
+                        Value.State, First.Plan.Revision));
+               end loop;
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Improve.Storage.Record_Publications
+                    (Improve_State, To_String (First.Plan.Plan_Id), Mappings);
+                  Improve.Storage.Close (Improve_State);
+               end;
+
+               Draft.Tasks (1).Scope := To_Unbounded_String ("expanded scope contract marker");
+               Draft.Fingerprint := To_Unbounded_String
+                 (Improve.Stable_Digest (To_String (Draft.Fingerprint) & ":expanded-scope"));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Second := Improve.Storage.Save (Improve_State, Draft);
+                  Mappings := Improve.Storage.Publications (Improve_State, To_String (First.Plan.Plan_Id));
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Assert
+                 (Second.Plan.Tasks (1).Id = First.Plan.Tasks (1).Id and then
+                  Second.Plan.Tasks (2).Id = First.Plan.Tasks (2).Id,
+                  "logical task continuity was not preserved across a changed contract");
+               Republished := Improve.Workflow.Publish
+                 (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Tasks.Definition
+                 (Harness, To_String (Republished.Tasks (1).Harness_Id), Definition, Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 4 and then
+                  Republished.Tasks (1).Harness_Id /= Published.Tasks (1).Harness_Id and then
+                  Ada.Strings.Fixed.Index
+                    (Records.Get (Definition, "notes"), "expanded scope contract marker") > 0,
+                  "changed task contract silently reused an obsolete native task");
+               Stores.Close (Harness);
+               Remove (Data);
+            end;
          when Selective_Publication_Resolves_Dependency =>
             declare
                package Errors renames Model_Runner.Errors;
@@ -2783,6 +2901,8 @@ package body Improve_Test_Suite is
                           (Improve_Task_Id => Only.Id,
                            Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
                            Origin => To_Unbounded_String ("improve:test"),
+                           Contract => To_Unbounded_String
+                             (Improve.Model.Task_Contract_Fingerprint (Only)),
                            State => To_Unbounded_String (Harness_State),
                            Plan_Revision => Plan.Revision));
                   end if;

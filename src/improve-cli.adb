@@ -643,7 +643,7 @@ package body Improve.CLI is
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.Storage.Publication_Record'
-                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.State, Plan.Revision));
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract, Value.State, Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path (Item), Writable => True);
                Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
@@ -1131,6 +1131,7 @@ package body Improve.CLI is
                     (Improve_Id => Value.Improve_Task_Id,
                      Harness_Id => Value.Harness_Task_Id,
                      Origin     => Value.Origin,
+                     Contract   => Value.Contract,
                      State      => Value.State,
                      Recovered  => True));
             end loop;
@@ -1141,6 +1142,7 @@ package body Improve.CLI is
                     (Improve_Task_Id => Value.Improve_Id,
                      Harness_Task_Id => Value.Harness_Id,
                      Origin          => Value.Origin,
+                     Contract        => Value.Contract,
                      State           => Value.State,
                      Plan_Revision   => Plan.Revision));
             end loop;

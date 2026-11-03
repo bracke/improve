@@ -62,8 +62,9 @@ schema metadata is rejected rather than guessed or silently migrated.
 Verification evidence is append-only by evaluation scope and completed assessment. Task, complete-plan, and
 complete-project records use distinct identities. Repeating an evaluation at the same scope is idempotent; a
 conflicting outcome at that exact scope is rejected without preventing another valid scope from evaluating the same
-assessment. Publication mappings preserve immutable Improve, harness, and origin identities while allowing only their
-cached harness-owned runtime state to be reconciled.
+assessment. Publication mappings are qualified by the complete task-contract fingerprint. They preserve immutable
+Improve, harness, contract, and origin identities while allowing only their cached harness-owned runtime state to be
+reconciled. Different contracts for one continuing logical task therefore retain separate historical native mappings.
 
 Mandatory review approval is an append-only `operations` event keyed by stable plan identity and exact revision. The
 event also stores the immutable revision fingerprint. Publication accepts the approval only when all three values

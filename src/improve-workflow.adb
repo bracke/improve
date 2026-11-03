@@ -44,8 +44,11 @@ package body Improve.Workflow is
       end if;
    end Resolve_Kind;
 
-   function Origin_Of (Plan : Improve.Model.Plan_Revision; Improve_Id : String) return String is
-     ("improve:" & Stable_Digest (To_String (Plan.Project.Path)) & ":task:" & Improve_Id);
+   function Origin_Of
+     (Plan : Improve.Model.Plan_Revision;
+      Spec : Improve.Model.Task_Specification) return String is
+     ("improve:" & Stable_Digest (To_String (Plan.Project.Path)) & ":task:" & To_String (Spec.Id) &
+      ":contract:" & Improve.Model.Task_Contract_Fingerprint (Spec));
 
    function Harness_Priority (Value : Improve.Model.Priority) return String is
      (case Value is
@@ -53,21 +56,6 @@ package body Improve.Workflow is
          when Improve.Model.High_Priority => "75",
          when Improve.Model.Normal_Priority => "50",
          when Improve.Model.Low_Priority => "25");
-
-   function Existing_By_Origin (Store : Stores.Store; Origin : String) return String is
-      Status : Errors.Error_Info;
-      Value  : Records.Item;
-   begin
-      for Id of Tasks.List (Store) loop
-         Tasks.Definition (Store, Id, Value, Status);
-         if Errors.Is_Ok (Status) and then Records.Get (Value, "created_by") = "improve" and then
-           Records.Get (Value, "origin") = Origin
-         then
-            return Id;
-         end if;
-      end loop;
-      return "";
-   end Existing_By_Origin;
 
    function Join (Values : Improve.Model.UString_Vectors.Vector) return String is
       Result : Unbounded_String;
@@ -78,6 +66,58 @@ package body Improve.Workflow is
       end loop;
       return To_String (Result);
    end Join;
+
+   function Native_Notes (Spec : Improve.Model.Task_Specification) return String is
+     ("Improve task: " & To_String (Spec.Id) & ASCII.LF &
+      "Contract: " & Improve.Model.Task_Contract_Fingerprint (Spec) & ASCII.LF &
+      "Goal: " & To_String (Spec.Goal) & ASCII.LF &
+      "Problem: " & To_String (Spec.Problem) & ASCII.LF &
+      "Evidence:" & ASCII.LF & To_String (Spec.Evidence) & ASCII.LF &
+      "Relevant files: " & Join (Spec.Relevant_Files) & ASCII.LF &
+      "Scope: " & To_String (Spec.Scope) & ASCII.LF &
+      "Out of scope: " & To_String (Spec.Out_Of_Scope) & ASCII.LF &
+      "Requirements: " & To_String (Spec.Requirements) & ASCII.LF &
+      "Verification: " & To_String (Spec.Verification));
+
+   procedure Require_Compatible_Definition
+     (Value  : Records.Item;
+      Spec   : Improve.Model.Task_Specification;
+      Kind   : String;
+      Origin : String) is
+   begin
+      if Records.Get (Value, "created_by") /= "improve" or else Records.Get (Value, "origin") /= Origin then
+         raise Data_Error with "native task provenance does not match Improve publication identity";
+      end if;
+      if Records.Get (Value, "title") /= To_String (Spec.Title) or else
+        Records.Get (Value, "kind") /= Kind or else
+        Records.Get (Value, "priority") /= Harness_Priority (Spec.Task_Priority) or else
+        Records.Get (Value, "acceptance") /= To_String (Spec.Acceptance) or else
+        Records.Get (Value, "notes") /= Native_Notes (Spec)
+      then
+         raise Data_Error with
+           "native task definition differs from the complete Improve contract for " & To_String (Spec.Id);
+      end if;
+   end Require_Compatible_Definition;
+
+   function Existing_By_Origin
+     (Store  : Stores.Store;
+      Origin : String;
+      Spec   : Improve.Model.Task_Specification;
+      Kind   : String) return String is
+      Status : Errors.Error_Info;
+      Value  : Records.Item;
+   begin
+      for Id of Tasks.List (Store) loop
+         Tasks.Definition (Store, Id, Value, Status);
+         if Errors.Is_Ok (Status) and then Records.Get (Value, "created_by") = "improve" and then
+           Records.Get (Value, "origin") = Origin
+         then
+            Require_Compatible_Definition (Value, Spec, Kind, Origin);
+            return Id;
+         end if;
+      end loop;
+      return "";
+   end Existing_By_Origin;
 
    function Publish
      (Project_Directory : String;
@@ -101,11 +141,21 @@ package body Improve.Workflow is
       function Is_Known (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
         (for some Spec of Plan.Tasks => Spec.Id = Task_Id);
 
+      function Contract_Of (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return String is
+      begin
+         for Spec of Plan.Tasks loop
+            if Spec.Id = Task_Id then return Improve.Model.Task_Contract_Fingerprint (Spec); end if;
+         end loop;
+         return "";
+      end Contract_Of;
+
       function Published_Dependency
         (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Ada.Strings.Unbounded.Unbounded_String is
       begin
          for Mapping of Existing loop
-            if Mapping.Improve_Task_Id = Task_Id then
+            if Mapping.Improve_Task_Id = Task_Id and then
+              To_String (Mapping.Contract) = Contract_Of (Task_Id)
+            then
                declare Definition : Records.Item; begin
                   Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
                   Require_Ok (Status, "read prerequisite harness task " & To_String (Task_Id));
@@ -143,20 +193,22 @@ package body Improve.Workflow is
          Result.Task_Kind := To_Unbounded_String (Kind);
          for Spec of Selected loop
             declare
-               Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, To_String (Spec.Id)));
+               Contract    : constant Unbounded_String :=
+                 To_Unbounded_String (Improve.Model.Task_Contract_Fingerprint (Spec));
+               Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec));
                Harness_Id  : Unbounded_String;
                Was_Mapped  : Boolean := False;
             begin
                for Mapping of Existing loop
-                  if Mapping.Improve_Task_Id = Spec.Id then
+                  if Mapping.Improve_Task_Id = Spec.Id and then Mapping.Contract = Contract then
                      declare Definition : Records.Item; begin
                         Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
                         Require_Ok (Status, "read previously published harness task " & To_String (Spec.Id));
-                        if Records.Get (Definition, "created_by") /= "improve" or else
-                          Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
-                        then
-                           raise Data_Error with "stored publication mapping has invalid harness provenance";
+                        if Mapping.Origin /= Origin then
+                           raise Data_Error with "stored publication mapping has an incompatible stable origin";
                         end if;
+                        Require_Compatible_Definition
+                          (Definition, Spec, Kind, To_String (Mapping.Origin));
                      end;
                      Origin := Mapping.Origin;
                      Harness_Id := Mapping.Harness_Task_Id;
@@ -165,18 +217,62 @@ package body Improve.Workflow is
                   end if;
                end loop;
                if not Was_Mapped then
-                  Harness_Id := To_Unbounded_String (Existing_By_Origin (Store, To_String (Origin)));
+                  Harness_Id := To_Unbounded_String
+                    (Existing_By_Origin (Store, To_String (Origin), Spec, Kind));
                end if;
                Result.Tasks.Append
                  (Published_Task'
                     (Improve_Id => Spec.Id,
                      Harness_Id => Harness_Id,
                      Origin     => Origin,
+                     Contract   => Contract,
                      State      => To_Unbounded_String
                        (if Length (Harness_Id) = 0 then (if Dry_Run then "candidate" else "")
                         else Tasks.State_Of (Store, To_String (Harness_Id))),
                      Recovered  => Length (Harness_Id) > 0));
             end;
+         end loop;
+         for Index in 1 .. Natural (Result.Tasks.Length) loop
+            if Length (Result.Tasks (Index).Harness_Id) > 0 then
+               declare
+                  Spec         : constant Improve.Model.Task_Specification := Selected (Index);
+                  Definition   : Records.Item;
+                  Dependencies : Improve.Model.UString_Vectors.Vector;
+               begin
+                  for Dependency of Spec.Dependencies loop
+                     declare Found : Boolean := False; begin
+                        for Other of Result.Tasks loop
+                           if Other.Improve_Id = Dependency then
+                              Found := True;
+                              if Length (Other.Harness_Id) = 0 then
+                                 raise Data_Error with
+                                   "existing native task depends on unpublished selected task " &
+                                   To_String (Dependency);
+                              end if;
+                              Dependencies.Append (Other.Harness_Id);
+                              exit;
+                           end if;
+                        end loop;
+                        if not Found then
+                           declare Published : constant Unbounded_String := Published_Dependency (Dependency); begin
+                              if Length (Published) = 0 then
+                                 raise Data_Error with
+                                   "existing native task has unpublished prerequisite " & To_String (Dependency);
+                              end if;
+                              Dependencies.Append (Published);
+                           end;
+                        end if;
+                     end;
+                  end loop;
+                  Tasks.Definition
+                    (Store, To_String (Result.Tasks (Index).Harness_Id), Definition, Status);
+                  Require_Ok (Status, "read complete native task definition " & To_String (Spec.Id));
+                  if Records.Get (Definition, "depends_on") /= Join (Dependencies) then
+                     raise Data_Error with
+                       "native dependency definition differs from the Improve contract for " & To_String (Spec.Id);
+                  end if;
+               end;
+            end if;
          end loop;
          if Existing_Only then
             Stores.Close (Store);
@@ -230,13 +326,7 @@ package body Improve.Workflow is
                            declare
                               Fields : Tasks.Field_Map;
                               Id     : Unbounded_String;
-                              Notes  : constant String :=
-                                "Improve task " & To_String (Spec.Id) & ASCII.LF &
-                                "Goal: " & To_String (Spec.Goal) & ASCII.LF &
-                                "Evidence:" & ASCII.LF & To_String (Spec.Evidence) & ASCII.LF &
-                                "Scope: " & To_String (Spec.Scope) & ASCII.LF &
-                                "Out of scope: " & To_String (Spec.Out_Of_Scope) & ASCII.LF &
-                                "Verification: " & To_String (Spec.Verification);
+                              Notes  : constant String := Native_Notes (Spec);
                            begin
                               Fields.Include ("title", To_String (Spec.Title));
                               Fields.Include ("kind", Kind);

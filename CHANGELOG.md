@@ -28,7 +28,11 @@
 - Scope finding summaries to current verification and expose historical resolution separately.
 - Canonically fingerprint every planning input, finding, generated task contract, dependency, and planner version so
   configuration or evidence changes cannot collide with an earlier immutable revision.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 78 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Qualify native origins and publication mappings by the complete execution contract, replacing changed definitions
+  without losing logical task continuity and reusing native tasks only for demonstrably identical work.
+- Preserve the complete goal, problem, evidence, relevant files, scope, exclusions, requirements, acceptance, and
+  verification contract in native model_runner task definitions.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 80 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.
