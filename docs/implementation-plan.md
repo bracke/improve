@@ -22,3 +22,8 @@ configuration and operational CLI paths, documentation generation, SPARK proof, 
 The gate is deliberately not a shell script. All repository check and coverage orchestration lives in Ada and invokes
 tools with explicit argument vectors. CI and `alr test` build and invoke this same entry point. See
 `docs/release-readiness.md` for the exact checks and current evidence.
+
+Publication adds a final clean-source gate, `tools/bin/check_release_candidate`. It activates the pin-free release
+manifests in a temporary source tree, performs fresh builds and coverage, and requires all 33 native Ada Quality
+results to pass or be validly not applicable. A missing indexed dependency release blocks publication rather than
+silently falling back to a workspace pin.

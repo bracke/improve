@@ -1,5 +1,8 @@
 with Ada.Command_Line;
+with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Strings.Fixed;
+with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Project_Tools.Files;
 with Project_Tools.Processes;
@@ -35,17 +38,32 @@ begin
    Project_Tools.Processes.Run
      ("repository release checks", Root, Project_Tools.Files.Join (Tools, "check_all"),
       Project_Tools.Processes.No_Arguments);
-   Project_Tools.Processes.Run
-     ("GNATdoc public API audit", Root, Alr,
-      Project_Tools.Processes.Arguments
-        ([Project_Tools.Processes.Argument ("exec"),
-          Project_Tools.Processes.Argument ("--"),
-          Project_Tools.Processes.Argument ("gnatdoc"),
-          Project_Tools.Processes.Argument ("-P"),
-          Project_Tools.Processes.Argument ("improve_docs.gpr"),
-          Project_Tools.Processes.Argument ("-O"),
-          Project_Tools.Processes.Argument (Docs),
-          Project_Tools.Processes.Argument ("--warnings")]));
+   Ada.Text_IO.Put_Line (ASCII.LF & "==> GNATdoc public API audit");
+   declare
+      Run : constant Project_Tools.Processes.Captured_Process :=
+        Project_Tools.Processes.Capture_Command
+          (Alr,
+           Project_Tools.Processes.Arguments
+             ([Project_Tools.Processes.Argument ("exec"),
+               Project_Tools.Processes.Argument ("--"),
+               Project_Tools.Processes.Argument ("gnatdoc"),
+               Project_Tools.Processes.Argument ("-P"),
+               Project_Tools.Processes.Argument ("improve.gpr"),
+               Project_Tools.Processes.Argument ("-O"),
+               Project_Tools.Processes.Argument (Docs),
+               Project_Tools.Processes.Argument ("--generate"),
+               Project_Tools.Processes.Argument ("public"),
+               Project_Tools.Processes.Argument ("--warnings")]),
+           Err_To_Out => True);
+      Output : constant String := Ada.Strings.Unbounded.To_String (Run.Output);
+   begin
+      if Run.Status /= 0 or else
+        Ada.Strings.Fixed.Index (Ada.Characters.Handling.To_Lower (Output), "warning:") > 0
+      then
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Output);
+         raise Program_Error with "GNATdoc public API audit emitted diagnostics";
+      end if;
+   end;
    Project_Tools.Processes.Run
      ("GNATprove digest proof", Root, Alr,
       Project_Tools.Processes.Arguments

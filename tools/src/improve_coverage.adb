@@ -3,7 +3,9 @@ with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Ada_Quality.Checks;
 with Ada_Quality.Coverage;
+with Improve;
 with Project_Tools.Files;
 with Project_Tools.Gcov;
 with Project_Tools.Processes;
@@ -124,6 +126,33 @@ begin
         ("coverage " & Trim (Covered) & "/" & Trim (Total) & " (" &
          Project_Tools.Gcov.Percent_Image (Summary) & ")");
       if Errors > 0 then Fail ("production coverage is below 90.00%"); end if;
+      declare
+         Toolchain : constant Project_Tools.Processes.Captured_Process :=
+           Project_Tools.Processes.Capture
+             ("GNAT toolchain identity", Root, Alr,
+              Project_Tools.Processes.Arguments
+                ([Project_Tools.Processes.Argument ("exec"),
+                  Project_Tools.Processes.Argument ("--"),
+                  Project_Tools.Processes.Argument ("gnatls"),
+                  Project_Tools.Processes.Argument ("--version")]));
+         Digest : constant String := Improve.Stable_Digest (To_String (Toolchain.Output));
+         Evidence_Dir : constant String := Project_Tools.Files.Join (Root, "coverage");
+         Evidence : constant String := Project_Tools.Files.Join (Evidence_Dir, "gcov-summary.txt");
+      begin
+         if Toolchain.Status /= 0 then Fail ("GNAT toolchain identity is unavailable"); end if;
+         if not Project_Tools.Files.Directory_Exists (Evidence_Dir) then
+            Ada.Directories.Create_Directory (Evidence_Dir);
+         end if;
+         Project_Tools.Files.Write_Text_File
+           (Evidence,
+            "Lines executed:" & Project_Tools.Gcov.Percent_Image (Summary) & " of " & Trim (Total) & ASCII.LF &
+            "covered=" & Trim (Covered) & ASCII.LF &
+            "total=" & Trim (Total) & ASCII.LF &
+            "complete=true" & ASCII.LF &
+            "inventory=gcov-production-lines-v2" & ASCII.LF &
+            "source_fingerprint=" & Ada_Quality.Checks.Source_Fingerprint (Root) & ASCII.LF &
+            "toolchain_fingerprint=" & Digest (9 .. Digest'Last) & ASCII.LF);
+      end;
    end;
    Project_Tools.Test_Fixtures.Cleanup (Scratch);
 exception

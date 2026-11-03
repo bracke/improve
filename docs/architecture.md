@@ -15,3 +15,9 @@ Optional planning assistance sits behind `Improve.Refinement.Adapter`. The adapt
 and returns typed proposals; it owns no plan, quality, project, or harness state. Improve validates and fingerprints the
 result before normal persistence. model_runner's interactive `/work` path remains exclusively the execution workflow.
 
+Improve is distributed as a CLI executable, not as an Alire library crate. Its supported external interface is the CLI
+and its versioned JSON documents. The root `Improve` unit provides shared versioning and deterministic identity support;
+child package specifications are implementation contracts used by the executable and tests, not a compatibility-stable
+third-party Ada API. GNATdoc therefore audits the root unit, while the complete CLI and JSON contracts are maintained in
+`docs/cli-reference.md` and exercised by golden and schema-oriented tests.
+

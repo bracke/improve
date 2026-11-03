@@ -9,6 +9,25 @@ with "hostkit";
 with "model_runner";
 
 project Improve is
+   Database_Root := external ("DATABASE_ALIRE_PREFIX", "../database");
+   Ada_Quality_Root := external ("ADA_QUALITY_ALIRE_PREFIX", "../ada_quality");
+   Jsonlib_Root := external ("JSONLIB_ALIRE_PREFIX", "../jsonlib");
+   Messages_Root := external ("MESSAGES_ALIRE_PREFIX", "../messages");
+   Terminal_Styles_Root := external ("TERMINAL_STYLES_ALIRE_PREFIX", "../terminal_styles");
+   Project_Tools_Root := external ("PROJECT_TOOLS_ALIRE_PREFIX", "../project_tools");
+   Hostkit_Root := external ("HOSTKIT_ALIRE_PREFIX", "../hostkit");
+   Model_Runner_Root := external ("MODEL_RUNNER_ALIRE_PREFIX", "../model_runner");
+   Cryptolib_Root := external ("CRYPTOLIB_ALIRE_PREFIX", "../cryptolib");
+   I18n_Root := external ("I18N_ALIRE_PREFIX", "../i18n");
+   Regexp_Root := external ("REGEXP_ALIRE_PREFIX", "../regexp");
+   Truststores_Root := external ("TRUSTSTORES_ALIRE_PREFIX", "../truststores");
+   Ssl_Root := external ("SSLLIB_ALIRE_PREFIX", "../ssllib");
+   Zlib_Root := external ("ZLIB_ALIRE_PREFIX", "../zlib");
+   Httpclient_Root := external ("HTTPCLIENT_ALIRE_PREFIX", "../httpclient");
+   Jpeglib_Root := external ("JPEGLIB_ALIRE_PREFIX", "../jpeglib");
+   Ssh_Root := external ("SSH_LIB_ALIRE_PREFIX", "../sshlib");
+   Versionlib_Root := external ("VERSIONLIB_ALIRE_PREFIX", "../versionlib");
+
    type Boolean_Text is ("false", "true");
    Warnings_As_Errors : Boolean_Text := external ("IMPROVE_WARNINGS_AS_ERRORS", "false");
    Warning_Switches := ();
@@ -41,5 +60,30 @@ project Improve is
    package Builder is
       for Executable ("improve_main.adb") use "improve";
    end Builder;
+
+   package Documentation is
+      for Excluded_Project_Files use
+        ("config/improve_config.gpr",
+         Database_Root & "/database.gpr", Database_Root & "/config/database_config.gpr",
+         Ada_Quality_Root & "/ada_quality.gpr",
+         Jsonlib_Root & "/jsonlib.gpr", Jsonlib_Root & "/config/jsonlib_config.gpr",
+         Messages_Root & "/messages.gpr", Messages_Root & "/config/messages_config.gpr",
+         Terminal_Styles_Root & "/terminal_styles.gpr",
+         Terminal_Styles_Root & "/config/terminal_styles_config.gpr",
+         Project_Tools_Root & "/project_tools.gpr",
+         Project_Tools_Root & "/config/project_tools_config.gpr",
+         Hostkit_Root & "/hostkit.gpr", Hostkit_Root & "/config/hostkit_config.gpr",
+         Model_Runner_Root & "/model_runner.gpr", Model_Runner_Root & "/config/model_runner_config.gpr",
+         Cryptolib_Root & "/cryptolib.gpr", Cryptolib_Root & "/config/cryptolib_config.gpr",
+         I18n_Root & "/i18n.gpr", I18n_Root & "/config/i18n_config.gpr",
+         Regexp_Root & "/regexp.gpr", Regexp_Root & "/config/regexp_config.gpr",
+         Truststores_Root & "/truststores.gpr", Truststores_Root & "/config/truststores_config.gpr",
+         Ssl_Root & "/ssllib.gpr", Ssl_Root & "/config/ssllib_config.gpr",
+         Zlib_Root & "/zlib.gpr", Zlib_Root & "/config/zlib_config.gpr",
+         Httpclient_Root & "/httpclient.gpr", Httpclient_Root & "/config/httpclient_config.gpr",
+         Jpeglib_Root & "/jpeglib.gpr",
+         Ssh_Root & "/SSH_Lib.gpr", Ssh_Root & "/config/ssh_lib_config.gpr",
+         Versionlib_Root & "/versionlib.gpr", Versionlib_Root & "/config/versionlib_config.gpr");
+   end Documentation;
 end Improve;
 

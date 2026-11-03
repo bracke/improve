@@ -1,6 +1,6 @@
 --  Deterministic remediation planning over immutable Ada Quality evidence.
 package Improve with SPARK_Mode is
-   Version : constant String := "0.1.0-dev";
+   Version : constant String := "0.1.0";
    --  Application version.
 
    JSON_Format_Version : constant := 1;

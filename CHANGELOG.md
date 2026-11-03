@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-dev
+## 0.1.0 — 2026-11-03
 
 - Establish the standalone Ada 2022 crate, strict CLI contract, typed quality ingestion, and deterministic indicator
   strategy registry.
@@ -9,4 +9,6 @@
 - Preserve logical Improve task identities for unchanged work across immutable plan revisions.
 - Add an Ada-only Phase 9 gate covering warning-clean builds, 58 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
+- Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
+  coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.
 

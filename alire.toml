@@ -1,6 +1,6 @@
 name = "improve"
 description = "Deterministic quality remediation planning for Ada projects"
-version = "0.1.0-dev"
+version = "0.1.0"
 licenses = "MIT"
 authors = ["Bent Bracke"]
 maintainers = ["Bent Bracke <bent@bracke.dk>"]

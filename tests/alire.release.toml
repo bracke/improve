@@ -1,0 +1,19 @@
+name = "improve_tests"
+description = "AUnit acceptance tests for Improve"
+version = "0.1.0"
+executables = ["improve_tests"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+aunit = "^26.0.0"
+
+[[depends-on]]
+improve = "*"
+
+[[pins]]
+improve = { path = ".." }
+
+[build-profiles]
+"*" = "validation"

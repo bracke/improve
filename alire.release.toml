@@ -1,0 +1,52 @@
+name = "improve"
+description = "Deterministic quality remediation planning for Ada projects"
+version = "0.1.0"
+licenses = "MIT"
+authors = ["Bent Bracke"]
+maintainers = ["Bent Bracke <bent@bracke.dk>"]
+maintainers-logins = ["bracke"]
+website = "https://github.com/bracke/improve"
+tags = ["ada", "quality", "planning", "cli"]
+project-files = ["improve.gpr"]
+executables = ["improve"]
+
+# Pin-free publication manifest. The development manifest uses sibling checkout pins; release resolution requires the
+# compatible dependency releases listed here to be available from the selected Alire index.
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+database = "^0.14.0"
+
+[[depends-on]]
+ada_quality = "^0.1.0"
+
+[[depends-on]]
+jsonlib = "^0.1.0"
+
+[[depends-on]]
+messages = "^0.1.0"
+
+[[depends-on]]
+terminal_styles = "^0.1.0"
+
+[[depends-on]]
+project_tools = "^0.1.0"
+
+[[depends-on]]
+hostkit = "^0.1.0"
+
+[[depends-on]]
+model_runner = "^0.1.0"
+
+[build-profiles]
+"*" = "release"
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tools/improve_tools.gpr", "-p", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tools/bin/check_phase_9"]
