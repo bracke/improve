@@ -76,9 +76,15 @@ begin
    Project_Tools.Alire_Manifests.Require_Pin_Free_Crate_Manifest
      (Stage & "/alire.toml", "improve");
    Run_Alr
+     ("pin-free dependency resolution", Stage,
+      [1 => Project_Tools.Processes.Argument ("update")]);
+   Run_Alr
      ("pin-free release build", Stage,
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),
        Project_Tools.Processes.Argument ("--"), Project_Tools.Processes.Argument ("-j1")]);
+   Run_Alr
+     ("release test dependency resolution", Stage & "/tests",
+      [1 => Project_Tools.Processes.Argument ("update")]);
    Run_Alr
      ("release test build", Stage & "/tests",
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),
