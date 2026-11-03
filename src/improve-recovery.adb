@@ -30,10 +30,15 @@ package body Improve.Recovery is
          Improve.Storage.Open (State, State_Path, Writable => False);
          declare
             Plan : Improve.Model.Plan_Revision :=
-              Improve.Storage.Load (State, To_String (Operation.Plan_Id));
+              Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision);
             Selected : Improve.Model.Task_Vectors.Vector;
+            Existing : constant Improve.Storage.Publication_Vectors.Vector :=
+              Improve.Storage.Publications (State, To_String (Operation.Plan_Id));
          begin
             Improve.Storage.Close (State);
+            if Length (Operation.Fingerprint) > 0 and then Plan.Fingerprint /= Operation.Fingerprint then
+               raise Data_Error with "pending publication revision fingerprint does not match durable state";
+            end if;
             for Spec of Plan.Tasks loop
                if Operation.Task_Ids.Contains (Spec.Id) then Selected.Append (Spec); end if;
             end loop;
@@ -43,7 +48,8 @@ package body Improve.Recovery is
             Plan.Tasks := Selected;
             declare
                Published : constant Improve.Workflow.Publication_Result :=
-                 Improve.Workflow.Publish (To_String (Plan.Project.Path), Plan, Requested_Kind);
+                 Improve.Workflow.Publish
+                   (To_String (Plan.Project.Path), Plan, Requested_Kind, Existing => Existing);
                Mappings  : Improve.Storage.Publication_Vectors.Vector;
             begin
                for Value of Published.Tasks loop
@@ -52,7 +58,8 @@ package body Improve.Recovery is
                        (Improve_Task_Id => Value.Improve_Id,
                         Harness_Task_Id => Value.Harness_Id,
                         Origin          => Value.Origin,
-                        State           => Value.State));
+                        State           => Value.State,
+                        Plan_Revision   => Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path, Writable => True);
                Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);

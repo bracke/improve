@@ -66,6 +66,7 @@ package body Improve_Test_Suite is
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
       Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Interrupted_Publication_Recovery,
+      Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision,
       Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
       Operational_Terminal_Paths, Task_Status_Matrix, Real_End_To_End_Workflow);
 
@@ -1536,7 +1537,7 @@ package body Improve_Test_Suite is
                   Improve.Storage.Open (Improve_State, State, Writable => True);
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
-                  Operation := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", Task_Ids);
+                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
                   Improve.Storage.Close (Improve_State);
                end;
                declare Published : constant Improve.Workflow.Publication_Result :=
@@ -1563,6 +1564,110 @@ package body Improve_Test_Suite is
                end;
                Remove (Data);
             end;
+         when Published_Task_Reused_Across_Revisions =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data       : constant Fixture := Build_Fixture ("revision_reuse", Harness_Project => True);
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               First_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Applied    : Improve.CLI.Outcome;
+               Replanned  : Improve.CLI.Outcome;
+               Run        : Positive;
+               Old_Map    : Improve.Storage.Publication_Record;
+               New_Map    : Improve.Storage.Publication_Record;
+               Harness    : Stores.Store;
+               Status     : Errors.Error_Info;
+            begin
+               Assert (First_Plan.Exit_Code = 0, "initial cross-revision plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (Applied.Exit_Code = 0, "initial cross-revision publication failed");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  for Mapping of Improve.Storage.Publications (Improve_State, "PLAN-000001") loop
+                     if To_String (Mapping.Improve_Task_Id) = "IMP-000001" then Old_Map := Mapping; exit; end if;
+                  end loop;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Run := Publish_Followup (Data, Structure_State => Structure_Failing, Source => "source-revision-2");
+               Replanned := Improve.CLI.Execute
+                 (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Replanned.Exit_Code = 0, "cross-revision replanning failed");
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Applied.Output), """recovered"":true") > 0,
+                  "unchanged cross-revision task was not recovered");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  for Mapping of Improve.Storage.Publications (Improve_State, "PLAN-000001") loop
+                     if Mapping.Improve_Task_Id = Old_Map.Improve_Task_Id then New_Map := Mapping; exit; end if;
+                  end loop;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 3 and then
+                  New_Map.Harness_Task_Id = Old_Map.Harness_Task_Id and then New_Map.Origin = Old_Map.Origin,
+                  "unchanged task was duplicated or remapped across revisions");
+               Stores.Close (Harness);
+               Remove (Data);
+            end;
+         when Recovery_Uses_Exact_Revision =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("recovery_revision", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Plan      : Improve.Model.Plan_Revision;
+               Task_Ids  : Improve.Model.UString_Vectors.Vector;
+               Operation : Positive;
+               Run       : Positive;
+               Replanned : Improve.CLI.Outcome;
+               Recovered : Improve.Recovery.Recovery_Report;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+               pragma Unreferenced (Operation);
+            begin
+               Assert (Planned.Exit_Code = 0, "exact-revision recovery plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               declare Published : constant Improve.Workflow.Publication_Result :=
+                 Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+               begin
+                  Assert (Published.Tasks.Length = 3, "interrupted exact-revision publication failed");
+               end;
+               Run := Publish_Followup (Data, Source => "source-newer-plan");
+               Replanned := Improve.CLI.Execute
+                 (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Replanned.Exit_Code = 0, "newer recovery fixture plan failed");
+               Recovered := Improve.Recovery.Recover (State, "auto", Maximum => 10);
+               Assert
+                 (Recovered.Operations_Recovered = 1 and then Recovered.Tasks_Recovered = 3,
+                  "recovery substituted a newer plan revision");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 3,
+                  "exact-revision recovery duplicated or lost native tasks");
+               Stores.Close (Harness);
+               Remove (Data);
+            end;
          when Recovery_Limit_Enforced =>
             declare
                Data      : constant Fixture := Build_Fixture ("recover_limit", Harness_Project => True);
@@ -1579,8 +1684,8 @@ package body Improve_Test_Suite is
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   for Spec of Plan.Tasks loop All_Tasks.Append (Spec.Id); end loop;
                   One_Task.Append (Plan.Tasks.First_Element.Id);
-                  First := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", All_Tasks);
-                  Second := Improve.Storage.Begin_Publication (Improve_State, "PLAN-000001", One_Task);
+                  First := Improve.Storage.Begin_Publication (Improve_State, Plan, All_Tasks);
+                  Second := Improve.Storage.Begin_Publication (Improve_State, Plan, One_Task);
                   Assert (First /= Second, "distinct recovery operations reused an identity");
                   Improve.Storage.Close (Improve_State);
                end;
@@ -1775,7 +1880,8 @@ package body Improve_Test_Suite is
                           (Improve_Task_Id => Only.Id,
                            Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
                            Origin => To_Unbounded_String ("improve:test"),
-                           State => To_Unbounded_String (Harness_State)));
+                           State => To_Unbounded_String (Harness_State),
+                           Plan_Revision => Plan.Revision));
                   end if;
                   if Verified then
                      Evidence.Append

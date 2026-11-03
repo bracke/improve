@@ -45,7 +45,7 @@ package body Improve.Workflow is
    end Resolve_Kind;
 
    function Origin_Of (Plan : Improve.Model.Plan_Revision; Improve_Id : String) return String is
-     ("improve:" & To_String (Plan.Fingerprint) & ":" & Improve_Id);
+     ("improve:" & Stable_Digest (To_String (Plan.Project.Path)) & ":task:" & Improve_Id);
 
    function Harness_Priority (Value : Improve.Model.Priority) return String is
      (case Value is
@@ -83,6 +83,8 @@ package body Improve.Workflow is
      (Project_Directory : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
+      Existing          : Improve.Storage.Publication_Vectors.Vector :=
+        Improve.Storage.Publication_Vectors.Empty_Vector;
       Dry_Run           : Boolean := False) return Publication_Result is
       Store  : Stores.Store;
       Report : Stores.Recovery_Report;
@@ -102,18 +104,39 @@ package body Improve.Workflow is
          Result.Task_Kind := To_Unbounded_String (Kind);
          for Spec of Plan.Tasks loop
             declare
-               Origin   : constant String := Origin_Of (Plan, To_String (Spec.Id));
-               Existing : constant String := Existing_By_Origin (Store, Origin);
+               Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, To_String (Spec.Id)));
+               Harness_Id  : Unbounded_String;
+               Was_Mapped  : Boolean := False;
             begin
+               for Mapping of Existing loop
+                  if Mapping.Improve_Task_Id = Spec.Id then
+                     declare Definition : Records.Item; begin
+                        Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+                        Require_Ok (Status, "read previously published harness task " & To_String (Spec.Id));
+                        if Records.Get (Definition, "created_by") /= "improve" or else
+                          Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+                        then
+                           raise Data_Error with "stored publication mapping has invalid harness provenance";
+                        end if;
+                     end;
+                     Origin := Mapping.Origin;
+                     Harness_Id := Mapping.Harness_Task_Id;
+                     Was_Mapped := True;
+                     exit;
+                  end if;
+               end loop;
+               if not Was_Mapped then
+                  Harness_Id := To_Unbounded_String (Existing_By_Origin (Store, To_String (Origin)));
+               end if;
                Result.Tasks.Append
                  (Published_Task'
                     (Improve_Id => Spec.Id,
-                     Harness_Id => To_Unbounded_String (Existing),
-                     Origin     => To_Unbounded_String (Origin),
+                     Harness_Id => Harness_Id,
+                     Origin     => Origin,
                      State      => To_Unbounded_String
-                       (if Existing = "" then (if Dry_Run then "candidate" else "")
-                        else Tasks.State_Of (Store, Existing)),
-                     Recovered  => Existing /= ""));
+                       (if Length (Harness_Id) = 0 then (if Dry_Run then "candidate" else "")
+                        else Tasks.State_Of (Store, To_String (Harness_Id))),
+                     Recovered  => Length (Harness_Id) > 0));
             end;
          end loop;
          declare

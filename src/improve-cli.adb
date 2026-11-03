@@ -504,10 +504,12 @@ package body Improve.CLI is
    function Apply_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
+      Existing     : Improve.Storage.Publication_Vectors.Vector;
       Operation_Id : Natural := 0;
    begin
       Improve.Storage.Open (State, State_Path (Item), Writable => False);
       Plan := Improve.Storage.Load (State, To_String (Item.Target));
+      Existing := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
       Improve.Storage.Close (State);
       if Item.Has_Task then
          declare
@@ -543,28 +545,27 @@ package body Improve.CLI is
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=
               Improve.Workflow.Publish
-                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Dry_Run => True);
+                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing, Dry_Run => True);
             pragma Unreferenced (Preflight);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
          begin
             for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
             Improve.Storage.Open (State, State_Path (Item), Writable => True);
-            Operation_Id := Improve.Storage.Begin_Publication
-              (State, To_String (Plan.Plan_Id), Task_Ids);
+            Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids);
             Improve.Storage.Close (State);
          end;
       end if;
       declare
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
-             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Item.Dry_Run);
+             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing, Item.Dry_Run);
       begin
          if not Item.Dry_Run then
             declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.Storage.Publication_Record'
-                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.State));
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.State, Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path (Item), Writable => True);
                Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
@@ -941,7 +942,8 @@ package body Improve.CLI is
                     (Improve_Task_Id => Value.Improve_Id,
                      Harness_Task_Id => Value.Harness_Id,
                      Origin          => Value.Origin,
-                     State           => Value.State));
+                     State           => Value.State,
+                     Plan_Revision   => Plan.Revision));
             end loop;
             Improve.Storage.Open (State, State_Path (Item), Writable => True);
             Improve.Storage.Update_Publication_States (State, Updates);

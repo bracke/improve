@@ -183,6 +183,13 @@ package body Improve.Storage is
       raise Data_Error with "missing persisted field " & Name;
    end Field;
 
+   function Field_Or (Payload, Name, Default : String) return String is
+   begin
+      return Field (Payload, Name);
+   exception
+      when Data_Error => return Default;
+   end Field_Or;
+
    function Pair (Name, Value : String) return String is (Name & "=" & Escape (Value));
 
    function Number (Value : Natural) return String is
@@ -725,6 +732,45 @@ package body Improve.Storage is
          raise;
    end Load;
 
+   function Load
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Revision : Positive) return Improve.Model.Plan_Revision is
+      Tx          : Database.Transactions.Transaction;
+      Plan_Row    : Natural := 0;
+      Revision_Id : Natural := 0;
+   begin
+      if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
+         raise Argument_Error with "invalid plan identity " & Plan_Id;
+      end if;
+      Plan_Row := Natural'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
+      if Plan_Row = 0 then raise Constraint_Error; end if;
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               if Row.Parent_Id = Plan_Row and then
+                 Positive'Value (Field (S (Row.Payload), "revision")) = Revision
+               then
+                  Revision_Id := Row.Id;
+                  exit;
+               end if;
+            end;
+            Advance (Item, Tx, Revisions_Table, Cursor);
+         end loop;
+      end;
+      Database.Transactions.Rollback (Tx);
+      if Revision_Id = 0 then
+         raise Argument_Error with "unknown plan revision " & Plan_Id & " r" & Number (Revision);
+      end if;
+      return Load_Revision (Item, Positive (Revision_Id));
+   exception
+      when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Load;
+
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
@@ -807,7 +853,8 @@ package body Improve.Storage is
                      (Row_Id, 0, WW (To_String (Value.Improve_Task_Id)), WW (To_String (Value.State)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
-                          Pair ("origin", To_String (Value.Origin))), True, Publications_Table)),
+                          Pair ("origin", To_String (Value.Origin)) & LF &
+                          Pair ("plan_revision", Number (Value.Plan_Revision))), True, Publications_Table)),
                   "record publication mapping");
                Row_Id := Row_Id + 1;
             end if;
@@ -839,7 +886,8 @@ package body Improve.Storage is
                     (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
                      Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
                      Origin          => To_Unbounded_String (Field (Payload, "origin")),
-                     State           => To_Unbounded_String (S (Row.State))));
+                     State           => To_Unbounded_String (S (Row.State)),
+                     Plan_Revision   => Positive'Value (Field_Or (Payload, "plan_revision", "1"))));
             end if;
          end;
          Advance (Item, Tx, Publications_Table, Cursor);
@@ -1006,22 +1054,26 @@ package body Improve.Storage is
 
    function Begin_Publication
      (Item     : in out Store;
-      Plan_Id  : String;
+      Plan     : Improve.Model.Plan_Revision;
       Task_Ids : Improve.Model.UString_Vectors.Vector) return Positive is
-      Plan    : constant Improve.Model.Plan_Revision := Load (Item, Plan_Id);
+      Stored  : constant Improve.Model.Plan_Revision :=
+        Load (Item, To_String (Plan.Plan_Id), Plan.Revision);
       Tx      : Database.Transactions.Transaction;
       Packed  : constant String := Pack (Task_Ids);
-      Key     : constant String := "publish:" & Plan_Id & ":" & Stable_Digest (Packed);
+      Key     : constant String :=
+        "publish:" & To_String (Plan.Plan_Id) & ":" & Number (Plan.Revision) & ":" & Stable_Digest (Packed);
       Row_Id  : Positive;
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for publication journaling";
       elsif Task_Ids.Is_Empty then
          raise Argument_Error with "publication operation has no tasks";
+      elsif Stored.Fingerprint /= Plan.Fingerprint then
+         raise Data_Error with "publication plan revision fingerprint does not match durable state";
       end if;
       for Task_Id of Task_Ids loop
          declare Found : Boolean := False; begin
-            for Spec of Plan.Tasks loop
+            for Spec of Stored.Tasks loop
                if Spec.Id = Task_Id then Found := True; exit; end if;
             end loop;
             if not Found then raise Data_Error with "publication operation references an unknown task"; end if;
@@ -1051,7 +1103,10 @@ package body Improve.Storage is
         (Entity_Tables.Insert
            (Tx, Item.DB, Item.Schemas (Operations_Table),
             (Row_Id, 0, WW (Key), WW ("started"),
-             WW (Pair ("plan_id", Plan_Id) & LF & Pair ("task_ids", Packed)), True, Operations_Table)),
+             WW (Pair ("plan_id", To_String (Plan.Plan_Id)) & LF &
+                 Pair ("revision", Number (Plan.Revision)) & LF &
+                 Pair ("fingerprint", To_String (Plan.Fingerprint)) & LF &
+                 Pair ("task_ids", Packed)), True, Operations_Table)),
          "journal publication start");
       Database.Transactions.Commit (Tx);
       return Row_Id;
@@ -1129,6 +1184,8 @@ package body Improve.Storage is
                              (Id       => Row.Id,
                               Key      => To_Unbounded_String (S (Row.Kind)),
                               Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
+                              Revision => Positive'Value (Field_Or (Payload, "revision", "1")),
+                              Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
                               Task_Ids => Unpack (Field (Payload, "task_ids"))));
                      end;
                   end if;

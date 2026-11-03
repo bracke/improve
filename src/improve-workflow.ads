@@ -1,6 +1,7 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Improve.Model;
+with Improve.Storage;
 
 --  Native model_runner task publication adapter.
 package Improve.Workflow is
@@ -35,12 +36,15 @@ package Improve.Workflow is
      (Project_Directory : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
+      Existing          : Improve.Storage.Publication_Vectors.Vector :=
+        Improve.Storage.Publication_Vectors.Empty_Vector;
       Dry_Run           : Boolean := False) return Publication_Result;
    --  Validate and publish native candidate tasks in one harness transaction.
    --  Stable origins recover a prior harness commit without duplicating tasks.
    --  @param Project_Directory Initialized model_runner project directory.
    --  @param Plan Immutable plan revision to publish.
    --  @param Requested_Kind Configured task kind or `auto`.
+   --  @param Existing Previously verified publication mappings for reused logical tasks.
    --  @param Dry_Run Whether to validate without changing harness state.
    --  @return Resolved task kind and native mappings.
 

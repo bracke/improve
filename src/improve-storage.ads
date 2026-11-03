@@ -49,12 +49,14 @@ package Improve.Storage is
       Harness_Task_Id : Ada.Strings.Unbounded.Unbounded_String;
       Origin          : Ada.Strings.Unbounded.Unbounded_String;
       State           : Ada.Strings.Unbounded.Unbounded_String;
+      Plan_Revision   : Positive := 1;
    end record;
    --  Verified mapping from Improve work to a native harness task.
    --  @field Improve_Task_Id Stable Improve task identity.
    --  @field Harness_Task_Id Native model_runner task identity.
    --  @field Origin Authenticated stable Improve origin.
    --  @field State Cached harness-owned runtime state.
+   --  @field Plan_Revision Immutable revision that first published the task.
 
    package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
    --  Ordered publication mappings.
@@ -80,12 +82,16 @@ package Improve.Storage is
       Id       : Positive;
       Key      : Ada.Strings.Unbounded.Unbounded_String;
       Plan_Id  : Ada.Strings.Unbounded.Unbounded_String;
+      Revision : Positive;
+      Fingerprint : Ada.Strings.Unbounded.Unbounded_String;
       Task_Ids : Improve.Model.UString_Vectors.Vector;
    end record;
    --  Pending durable publication authorization.
    --  @field Id Journal operation identity.
    --  @field Key Stable idempotency key.
    --  @field Plan_Id Authorized plan identity.
+   --  @field Revision Exact authorized immutable revision.
+   --  @field Fingerprint Exact authorized revision fingerprint.
    --  @field Task_Ids Exact authorized task identities.
 
    package Operation_Vectors is new Ada.Containers.Vectors (Positive, Operation_Record);
@@ -114,6 +120,16 @@ package Improve.Storage is
    --  @param Item Open store.
    --  @param Plan_Id Stable plan identity.
    --  @return Latest immutable revision.
+
+   function Load
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Revision : Positive) return Improve.Model.Plan_Revision;
+   --  Load one exact immutable plan revision.
+   --  @param Item Open store.
+   --  @param Plan_Id Stable plan identity.
+   --  @param Revision Immutable revision ordinal.
+   --  @return Exact plan revision.
 
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector;
@@ -170,12 +186,12 @@ package Improve.Storage is
 
    function Begin_Publication
      (Item     : in out Store;
-      Plan_Id  : String;
+      Plan     : Improve.Model.Plan_Revision;
       Task_Ids : Improve.Model.UString_Vectors.Vector) return Positive;
    --  Durably record deliberate publication authorization before touching
    --  harness state. Repeating the same plan/task set returns the same ID.
    --  @param Item Writable store.
-   --  @param Plan_Id Authorized plan identity.
+   --  @param Plan Exact authorized immutable plan revision.
    --  @param Task_Ids Exact authorized Improve task identities.
    --  @return Durable operation identity.
 
