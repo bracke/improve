@@ -23,6 +23,7 @@
 - Restrict regression history to prior verification of the exact immutable task contract.
 - Require replanning when a newer completed assessment changes quality policy before publication.
 - Qualify project history by Ada Quality database identity and canonical project path, rejecting cross-database ID reuse.
+- Apply database-qualified project identity to task lists and individual task ownership checks.
 - Add an Ada-only Phase 9 gate covering warning-clean builds, 77 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted

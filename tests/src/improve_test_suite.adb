@@ -1293,6 +1293,9 @@ package body Improve_Test_Suite is
                First_Plan  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State_Path);
                Second_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Second, State_Path);
                Store       : Improve.Storage.Store;
+               Second_Task : Unbounded_String;
+               Listed      : Improve.CLI.Outcome;
+               Rejected    : Improve.CLI.Outcome;
             begin
                Assert
                  (First.Project = Second.Project and then First_Plan.Exit_Code = 0 and then Second_Plan.Exit_Code = 0,
@@ -1305,7 +1308,23 @@ package body Improve_Test_Suite is
                   Improve.Storage.List
                     (Store, Draft_For (Second).Project).Length = 1,
                   "same numeric project IDs shared remediation history");
+               Second_Task := Improve.Storage.Load (Store, "PLAN-000002").Tasks.First_Element.Id;
                Improve.Storage.Close (Store);
+               Listed := Improve.CLI.Execute
+                 (Args ("tasks|--project|" & Id_Image (First.Project) & "|--database|" &
+                        To_String (First.Database) & "|--state|" & State_Path & "|--format|json"));
+               Rejected := Improve.CLI.Execute
+                 (Args ("tasks|--task|" & To_String (Second_Task) & "|--project|" & Id_Image (First.Project) &
+                        "|--database|" & To_String (First.Database) & "|--state|" & State_Path & "|--format|json"));
+               Assert
+                 (Listed.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Listed.Output), """plan_id"":""PLAN-000001""") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Listed.Output), "PLAN-000002") = 0,
+                  "tasks --project mixed equal numeric IDs from independent databases");
+               Assert
+                 (Rejected.Exit_Code = Improve.CLI.Argument_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Rejected.Errors), "does not belong to selected project") > 0,
+                  "tasks --task accepted ownership from another quality database");
                Remove (First);
                Remove (Second);
             end;

@@ -38,8 +38,10 @@ publication mappings; an unpublished prerequisite is reported explicitly and is 
 
 ## Operational inspection
 
-`improve tasks --project PROJECT` lists every stored Improve task for the selected registered project. `--task ID`
-selects one task without requiring the Ada Quality registry, and `--status STATUS` filters the result. Supported
+`improve tasks --project PROJECT` lists every stored Improve task for the exact database-qualified registered project;
+equal numeric IDs in independent quality databases never share results. `--task ID` selects one task without requiring
+the Ada Quality registry, while combining `--task` and `--project` validates full ownership. `--status STATUS` filters
+the result. Supported
 statuses are `proposed`, `published`, `in_progress`, `awaiting_verification`, `verified`, `blocked`, `failed`,
 `cancelled`, `rejected`, `partially_resolved`, `still_failing`, `inconclusive`, `regressed`, and `superseded`.
 Results have stable task-ID ordering and include the mapped harness task identity when publication has occurred.

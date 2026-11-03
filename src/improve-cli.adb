@@ -694,6 +694,8 @@ package body Improve.CLI is
    function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       State      : Improve.Storage.Store;
       Project_Id : Natural := 0;
+      Selected_Project : Improve.Model.Project_Reference :=
+        (Id => 1, Name | Path | Database_Id => Null_Unbounded_String);
       Current_Assessment : Natural := 0;
       Filtered   : Improve.Tasks.View_Vectors.Vector;
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
@@ -711,6 +713,7 @@ package body Improve.CLI is
                Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
             begin
                Project_Id := Project.Id;
+               Selected_Project := Project;
                Current_Assessment := Selected.Baseline.Run_Id;
             end;
             Improve.Source.Close (Quality);
@@ -724,8 +727,12 @@ package body Improve.CLI is
             Plan_Views : constant Improve.Tasks.View_Vectors.Vector :=
               Views_For (State, Plan, Current_Assessment);
          begin
-            if Project_Id /= 0 and then Plan.Project.Id /= Project_Id then
-               raise Argument_Error with "task does not belong to selected project";
+            if Project_Id /= 0 then
+               begin
+                  Require_Project_Identity (Plan.Project, Selected_Project);
+               exception
+                  when Data_Error => raise Argument_Error with "task does not belong to selected project";
+               end;
             end if;
             for View of Plan_Views loop
                if View.Improve_Id = Item.Task_Id then
@@ -736,7 +743,8 @@ package body Improve.CLI is
          end;
       else
          declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           Improve.Storage.List (State, Project_Id);
+           (if Project_Id = 0 then Improve.Storage.List (State)
+            else Improve.Storage.List (State, Selected_Project));
          begin
             if Summaries.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
                raise Data_Error with "task query exceeds output.maximum_output_items";
