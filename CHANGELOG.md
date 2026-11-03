@@ -7,7 +7,10 @@
 - Complete the real Ada Quality and model_runner end-to-end release workflow, including remeasurement and independent
   verification without duplicate plans or harness tasks.
 - Preserve logical Improve task identities for unchanged work across immutable plan revisions.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 58 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Separate project-level regression outcomes from task-level resolution and constrain regression history by assessment
+  order.
+- Enforce append-only approval of exact immutable plan revisions before native task publication.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 63 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

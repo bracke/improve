@@ -27,11 +27,12 @@ package Improve.CLI is
    --  @enum Help_Command Display usage help.
    --  @enum Version_Command Display the application version.
 
-   type Plan_Operation is (Create_Plan, List_Plans, Show_Plan);
+   type Plan_Operation is (Create_Plan, List_Plans, Show_Plan, Approve_Plan);
    --  Plan subcommand selected by the parser.
    --  @enum Create_Plan Generate a plan.
    --  @enum List_Plans List persisted plans.
    --  @enum Show_Plan Inspect one persisted plan.
+   --  @enum Approve_Plan Approve one exact immutable revision for publication.
 
    function Name (Command : Command_Kind) return String;
    --  Return the stable CLI command word.

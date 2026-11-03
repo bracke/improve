@@ -15,6 +15,16 @@ succeeds even when quality findings exist; verification returns one when its req
 Exit codes are 0 for success, 1 for a completed negative verification, 2 for invalid input, 3 for unavailable
 evidence or project state, and 4 for storage, integrity, publication, or internal failure.
 
+## Planning and approval
+
+`improve plan --project PROJECT` stores an immutable plan revision. `improve plan show PLAN-ID` inspects the latest
+revision and `improve plan list --project PROJECT` lists stable plan identities. When planning policy requires review,
+`improve plan approve PLAN-ID` records approval for the exact current revision and fingerprint. Approval is idempotent
+and never transfers to a newer revision.
+
+`improve apply PLAN-ID` rejects an unapproved revision before opening or modifying harness state. `--dry-run` remains
+available for publication preflight without approval because it cannot create tasks or publication journal records.
+
 ## Operational inspection
 
 `improve tasks --project PROJECT` lists every stored Improve task for the selected registered project. `--task ID`

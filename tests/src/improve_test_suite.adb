@@ -60,7 +60,8 @@ package body Improve_Test_Suite is
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
-      Native_Publication_And_Recovery, Refresh_Reconciles_State, Verification_Resolved, Verification_Still_Failing,
+      Plan_Approval_Required, Native_Publication_And_Recovery, Refresh_Reconciles_State,
+      Verification_Resolved, Verification_Still_Failing,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
       Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
       Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
@@ -378,6 +379,16 @@ package body Improve_Test_Suite is
      (Improve.CLI.Execute
         (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
                Id_Image (Data.Project) & "|--format|json")));
+
+   procedure Approve_Latest (State : String) is
+      Result : constant Improve.CLI.Outcome :=
+        Improve.CLI.Execute (Args ("plan|approve|PLAN-000001|--state|" & State & "|--format|json"));
+   begin
+      Assert
+        (Result.Exit_Code = 0 and then
+         Ada.Strings.Fixed.Index (To_String (Result.Output), """approved"":true") > 0,
+         "plan approval failed: " & To_String (Result.Errors));
+   end Approve_Latest;
 
    function Draft_For (Data : Fixture) return Improve.Model.Plan_Revision is
       Quality  : Improve.Source.Repository;
@@ -1067,6 +1078,52 @@ package body Improve_Test_Suite is
                        "read-only plan inspection initialized missing state");
                Project_Tools.Files.Delete_Tree (Directory);
             end;
+         when Plan_Approval_Required =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("approval_required", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Applied   : Improve.CLI.Outcome;
+               Replanned : Improve.CLI.Outcome;
+               Run       : Positive;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+            begin
+               Assert (Planned.Exit_Code = 0, "approval fixture planning failed");
+               Initialize_Harness (To_String (Data.Target));
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = Improve.CLI.Argument_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Applied.Errors), "plan approve") > 0,
+                  "pending review did not block publication");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
+                  "rejected pending plan modified harness state");
+               Stores.Close (Harness);
+               Approve_Latest (State);
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert (Applied.Exit_Code = 0, "approved plan did not publish");
+               Run := Publish_Followup (Data, Source => "source-approval-r2");
+               Replanned := Improve.CLI.Execute
+                 (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Replanned.Exit_Code = 0, "approval fixture replanning failed");
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = Improve.CLI.Argument_Exit,
+                  "new plan revision inherited prior approval");
+               Remove (Data);
+            end;
          when Native_Publication_And_Recovery =>
             declare
                package Errors renames Model_Runner.Errors;
@@ -1129,6 +1186,7 @@ package body Improve_Test_Suite is
                Assert (Errors.Is_Ok (Status) and then Tasks.List (Store).Is_Empty,
                        "publication preview modified harness state");
                Stores.Close (Store);
+               Approve_Latest (State);
                Apply_Result := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
@@ -1189,6 +1247,7 @@ package body Improve_Test_Suite is
                Initialize_Harness (To_String (Data.Target));
                Planned := Prepare_Verification_Plan (Data, State);
                Assert (Planned.Exit_Code = 0, "refresh fixture plan failed");
+               Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
@@ -1671,6 +1730,7 @@ package body Improve_Test_Suite is
             begin
                Assert (First_Plan.Exit_Code = 0, "initial cross-revision plan failed");
                Initialize_Harness (To_String (Data.Target));
+               Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
@@ -1687,6 +1747,7 @@ package body Improve_Test_Suite is
                  (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
                Assert (Replanned.Exit_Code = 0, "cross-revision replanning failed");
+               Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));
@@ -2098,6 +2159,7 @@ package body Improve_Test_Suite is
                end loop;
                Assert (Length (Hygiene_Task) > 0, "planner did not create a traceable hygiene task");
                Initialize_Harness (Root);
+               Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args
                     ("apply|PLAN-000001|--task|" & To_String (Hygiene_Task) & "|--database|" & Database &
@@ -2173,6 +2235,7 @@ package body Improve_Test_Suite is
                  ((for some Id of Prior_Ids =>
                     (for some Spec of New_Plan.Tasks => Spec.Id = Id)),
                   "unrelated remediation task identities were not preserved across assessment revisions");
+               Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args
                     ("apply|PLAN-000001|--database|" & Database & "|--state|" & State & "|--format|json"));

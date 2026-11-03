@@ -186,6 +186,26 @@ package Improve.Storage is
    --  @param Task_Id Task identity or empty for every task.
    --  @return Historical verification records.
 
+   procedure Approve
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Revision : Positive);
+   --  Append an idempotent approval for one exact immutable plan revision.
+   --  Approval never transfers to a different revision or fingerprint.
+   --  @param Item Writable store.
+   --  @param Plan_Id Stable plan identity.
+   --  @param Revision Exact immutable revision to approve.
+
+   function Is_Approved
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Revision : Positive) return Boolean;
+   --  Test whether one exact immutable plan revision has durable approval.
+   --  @param Item Open store.
+   --  @param Plan_Id Stable plan identity.
+   --  @param Revision Exact immutable revision to inspect.
+   --  @return True only for an approval matching the revision fingerprint.
+
    function Begin_Publication
      (Item     : in out Store;
       Plan     : Improve.Model.Plan_Revision;

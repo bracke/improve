@@ -38,6 +38,11 @@ package Improve.JSON is
    --  @param Values Persisted plan summaries.
    --  @return One versioned JSON document.
 
+   function Plan_Approval (Value : Improve.Model.Plan_Revision) return String;
+   --  Serialize durable approval of one exact immutable plan revision.
+   --  @param Value Approved plan revision.
+   --  @return One versioned JSON document.
+
    function Publication
      (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String;
    --  Serialize native harness publication or preview results.

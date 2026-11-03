@@ -161,6 +161,22 @@ package body Improve.JSON is
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end Plans;
 
+   function Plan_Approval (Value : Improve.Model.Plan_Revision) return String is
+      Doc  : Document;
+      Root : constant Node := Doc.New_Object;
+      Data : constant Node := Doc.New_Object;
+   begin
+      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Root, "command", Doc.New_String ("plan approve"));
+      Doc.Insert (Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
+      Doc.Insert (Data, "revision", Doc.New_Integer (Long_Long_Integer (Value.Revision)));
+      Doc.Insert (Data, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
+      Doc.Insert (Data, "approved", Doc.New_Boolean (True));
+      Doc.Insert (Root, "data", Data);
+      Doc.Set_Root (Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Plan_Approval;
+
    function Publication
      (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String is
       Doc  : Document;

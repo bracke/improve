@@ -51,12 +51,17 @@ Verification evidence is append-only by task and completed assessment. Repeating
 a conflicting outcome for the same task and assessment is rejected. Publication mappings preserve immutable Improve,
 harness, and origin identities while allowing only their cached harness-owned runtime state to be reconciled.
 
+Mandatory review approval is an append-only `operations` event keyed by stable plan identity and exact revision. The
+event also stores the immutable revision fingerprint. Publication accepts the approval only when all three values
+match, so a subsequent revision requires a separate approval even when some logical task identities are retained.
+
 ## Publication operation journal
 
-Before a non-preview publication opens the harness store, Improve appends a `started` operation containing the plan and
-the exact ordered task identities. Its stable key combines those values, so retrying the same selection reuses the
-entry. After the harness transaction commits, Improve records the native task mappings and appends a `completed` child
-entry in its own transaction.
+Before a non-preview publication opens the harness store, Improve verifies exact-revision approval and appends a
+`started` operation containing the plan identity, immutable revision, fingerprint, and exact ordered task identities.
+Its stable key combines the revision and task selection, so retrying the same selection reuses the entry. After the
+harness transaction commits, Improve records the native task mappings and appends a `completed` child entry in its own
+transaction.
 
 The two databases are deliberately not treated as one atomic store. If the process stops between those commits,
 `recover` reads the unmatched `started` entry and republishes through model_runner's origin-aware idempotency contract.

@@ -59,6 +59,7 @@ package body Improve.Text is
      "en.plan.identity = Deterministic draft identity: {id}" & LF &
      "en.plan.persisted.identity = Plan identity: {id}" & LF &
      "en.plan.revision = Revision: {revision}" & LF &
+     "en.plan.approved = Plan {id} revision {revision} approved for publication." & LF &
      "en.plan.none = No remediation tasks are required." & LF &
      "en.plan.list.title = Stored remediation plans" & LF &
      "en.plan.list.none = No stored remediation plans." & LF &

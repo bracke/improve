@@ -170,10 +170,13 @@ package body Improve.CLI is
             if not Parse_Command (Item, Parsed) then Fail ("unknown help topic " & Item); end if;
             Result.Target := To_Unbounded_String (Item); Result.Has_Target := True;
          elsif Result.Command = Plan_Command and then Result.Plan_Action = Create_Plan and then
-           Item in "list" | "show"
+           Item in "list" | "show" | "approve"
          then
-            Result.Plan_Action := (if Item = "list" then List_Plans else Show_Plan);
-         elsif Result.Command = Plan_Command and then Result.Plan_Action = Show_Plan and then not Result.Has_Target then
+            Result.Plan_Action :=
+              (if Item = "list" then List_Plans elsif Item = "show" then Show_Plan else Approve_Plan);
+         elsif Result.Command = Plan_Command and then
+           Result.Plan_Action in Show_Plan | Approve_Plan and then not Result.Has_Target
+         then
             Result.Target := To_Unbounded_String (Item); Result.Has_Target := True;
          elsif Result.Command = Apply_Command and then not Result.Has_Target then
             Result.Target := To_Unbounded_String (Item); Result.Has_Target := True;
@@ -217,13 +220,19 @@ package body Improve.CLI is
       end if;
       if Result.Command = Apply_Command and then not Result.Has_Target then
          Fail ("apply requires a plan identity");
-      elsif Result.Command = Plan_Command and then Result.Plan_Action = Show_Plan and then not Result.Has_Target then
-         Fail ("plan show requires a plan identity");
+      elsif Result.Command = Plan_Command and then
+        Result.Plan_Action in Show_Plan | Approve_Plan and then not Result.Has_Target
+      then
+         Fail
+           ("plan " & (if Result.Plan_Action = Show_Plan then "show" else "approve") &
+            " requires a plan identity");
       elsif Result.Command in Findings_Command | Refresh_Command and then not Result.Has_Project then
          Fail (Name (Result.Command) & " requires --project");
       elsif Result.Command = Tasks_Command and then not Result.Has_Project and then not Result.Has_Task then
          Fail ("tasks requires --project or --task");
-      elsif Result.Command = Plan_Command and then Result.Plan_Action /= Show_Plan and then not Result.Has_Project then
+      elsif Result.Command = Plan_Command and then
+        Result.Plan_Action in Create_Plan | List_Plans and then not Result.Has_Project
+      then
          Fail ("plan requires --project");
       elsif Result.Command = Verify_Command and then not Result.Has_Project and then not Result.Has_Task then
          Fail ("verify requires --project or --task");
@@ -404,7 +413,22 @@ package body Improve.CLI is
          return To_String (Result);
       end Stored_Plan_Terminal;
    begin
-      if Item.Plan_Action = Show_Plan then
+      if Item.Plan_Action = Approve_Plan then
+         declare
+            State : Improve.Storage.Store;
+            Plan  : Improve.Model.Plan_Revision;
+         begin
+            Improve.Storage.Open (State, State_Path (Item), Writable => True);
+            Plan := Improve.Storage.Load (State, To_String (Item.Target));
+            Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision);
+            Improve.Storage.Close (State);
+            if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
+            return
+              Message
+                ("plan.approved",
+                 [Arg ("id", To_String (Plan.Plan_Id)), Arg ("revision", Number (Plan.Revision))]) & LF;
+         end;
+      elsif Item.Plan_Action = Show_Plan then
          declare State : Improve.Storage.Store; begin
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             declare Plan : constant Improve.Model.Plan_Revision :=
@@ -505,11 +529,13 @@ package body Improve.CLI is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
       Existing     : Improve.Storage.Publication_Vectors.Vector;
+      Approved     : Boolean := False;
       Operation_Id : Natural := 0;
    begin
       Improve.Storage.Open (State, State_Path (Item), Writable => False);
       Plan := Improve.Storage.Load (State, To_String (Item.Target));
       Existing := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
+      Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision);
       Improve.Storage.Close (State);
       if Item.Has_Task then
          declare
@@ -523,6 +549,13 @@ package body Improve.CLI is
             end if;
             Plan.Tasks := Selected;
          end;
+      end if;
+      if not Item.Dry_Run and then
+        (To_String (Plan.Review_Status) = "pending" or else
+         (for some Spec of Plan.Tasks => Spec.Requires_Review)) and then not Approved
+      then
+         raise Argument_Error with
+           "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
       end if;
       declare
          Quality : Improve.Source.Repository;
