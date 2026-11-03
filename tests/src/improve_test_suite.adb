@@ -73,6 +73,7 @@ package body Improve_Test_Suite is
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
       Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Interrupted_Publication_Recovery,
+      Recovery_Rejects_Stale_Uncommitted,
       Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision,
       Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
       Operational_Terminal_Paths, Task_Status_Matrix, Real_End_To_End_Workflow);
@@ -1944,6 +1945,9 @@ package body Improve_Test_Suite is
                   Assert (Published.Tasks.Length = 3,
                           "interrupted recovery fixture did not commit harness tasks");
                end;
+               Project_Tools.Files.Write_Text_File
+                 (To_String (Data.Target) & "/after_harness_commit.adb",
+                  "procedure After_Harness_Commit is begin null; end After_Harness_Commit;" & ASCII.LF);
                First := Improve.CLI.Execute (Args ("recover|--state|" & State & "|--format|json"));
                Second := Improve.CLI.Execute (Args ("recover|--state|" & State & "|--format|json"));
                Assert (First.Exit_Code = 0 and then Ada.Strings.Fixed.Index
@@ -1958,6 +1962,54 @@ package body Improve_Test_Suite is
                   Assert (Improve.Storage.Pending_Publications (Improve_State).Is_Empty and then
                             Improve.Storage.Publications (Improve_State, "PLAN-000001").Length = 3,
                           "recovery did not durably complete mappings and journal state");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
+            end;
+         when Recovery_Rejects_Stale_Uncommitted =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("recover_stale", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Plan      : Improve.Model.Plan_Revision;
+               Task_Ids  : Improve.Model.UString_Vectors.Vector;
+               Operation : Positive;
+               Result    : Improve.CLI.Outcome;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+               pragma Unreferenced (Operation);
+            begin
+               Assert (Planned.Exit_Code = 0, "stale recovery fixture plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  Improve.Storage.Approve (Improve_State, "PLAN-000001", Plan.Revision);
+                  for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Project_Tools.Files.Write_Text_File
+                 (To_String (Data.Target) & "/stale_before_commit.adb",
+                  "procedure Stale_Before_Commit is begin null; end Stale_Before_Commit;" & ASCII.LF);
+               Result := Improve.CLI.Execute (Args ("recover|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Failure_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Result.Errors), "operation retained") > 0,
+                  "recovery replayed stale uncommitted publication work");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
+                  "stale recovery created native tasks");
+               Stores.Close (Harness);
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Assert
+                    (Improve.Storage.Pending_Publications (Improve_State).Length = 1,
+                     "stale recovery did not retain its pending operation");
                   Improve.Storage.Close (Improve_State);
                end;
                Remove (Data);

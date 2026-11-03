@@ -40,6 +40,7 @@ package Improve.Workflow is
         Improve.Storage.Publication_Vectors.Empty_Vector;
       Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
         Improve.Model.UString_Vectors.Empty_Vector;
+      Existing_Only     : Boolean := False;
       Dry_Run           : Boolean := False) return Publication_Result;
    --  Validate and publish native candidate tasks in one harness transaction.
    --  Stable origins recover a prior harness commit without duplicating tasks.
@@ -48,6 +49,7 @@ package Improve.Workflow is
    --  @param Requested_Kind Configured task kind or `auto`.
    --  @param Existing Previously verified publication mappings for reused logical tasks.
    --  @param Selected_Task_Ids Tasks to publish, or empty for the complete plan.
+   --  @param Existing_Only Return provenance-verified existing tasks without creating missing work.
    --  @param Dry_Run Whether to validate without changing harness state.
    --  @return Resolved task kind and native mappings.
 

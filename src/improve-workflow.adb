@@ -87,6 +87,7 @@ package body Improve.Workflow is
         Improve.Storage.Publication_Vectors.Empty_Vector;
       Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
         Improve.Model.UString_Vectors.Empty_Vector;
+      Existing_Only     : Boolean := False;
       Dry_Run           : Boolean := False) return Publication_Result is
       Store  : Stores.Store;
       Report : Stores.Recovery_Report;
@@ -177,6 +178,10 @@ package body Improve.Workflow is
                      Recovered  => Length (Harness_Id) > 0));
             end;
          end loop;
+         if Existing_Only then
+            Stores.Close (Store);
+            return Result;
+         end if;
          declare
             Change    : Stores.Transaction;
             Remaining : Natural := Natural (Selected.Length);

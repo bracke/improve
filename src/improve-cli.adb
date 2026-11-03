@@ -600,7 +600,7 @@ package body Improve.CLI is
             Preflight : constant Improve.Workflow.Publication_Result :=
               Improve.Workflow.Publish
                 (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
-                 Selected_Task_Ids => Selected_Task_Ids, Dry_Run => True);
+                 Selected_Task_Ids => Selected_Task_Ids, Existing_Only => False, Dry_Run => True);
             pragma Unreferenced (Preflight);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
          begin
@@ -618,7 +618,7 @@ package body Improve.CLI is
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
              (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
-              Selected_Task_Ids, Item.Dry_Run);
+              Selected_Task_Ids, False, Item.Dry_Run);
       begin
          if not Item.Dry_Run then
             declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin

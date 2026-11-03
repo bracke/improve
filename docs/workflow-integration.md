@@ -35,6 +35,10 @@ there is adopted, not recreated. This handles the non-atomic boundary where the 
 the mapping in Improve state failed. Improve records the verified `IMP-` to `TASK-` mapping in a separate database
 transaction after the harness commit; conflicting reuse is rejected.
 
+Recovery first runs an existing-only provenance probe. A completely committed harness transaction is adopted without
+replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current
+source fingerprint enforced by normal publication. Failed revalidation leaves the operation journal entry pending.
+
 Tasks are staged in dependency order and `depends_on` contains the assigned native task IDs. The harness transaction is
 committed only after every selected definition validates. A dry run performs the same task-kind and native-definition
 validation in an uncommitted transaction opened on read-only harness state.
