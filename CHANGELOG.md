@@ -26,7 +26,9 @@
 - Apply database-qualified project identity to task lists and individual task ownership checks.
 - Prevent historical regression, supersession, and other quality outcomes from becoming current task status.
 - Scope finding summaries to current verification and expose historical resolution separately.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 77 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Canonically fingerprint every planning input, finding, generated task contract, dependency, and planner version so
+  configuration or evidence changes cannot collide with an earlier immutable revision.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 78 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

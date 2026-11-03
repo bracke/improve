@@ -60,7 +60,7 @@ package body Improve_Test_Suite is
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
-      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
+      Plan_Fingerprint_Severity_Sensitive, Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
@@ -135,7 +135,8 @@ package body Improve_Test_Suite is
    function Build_Fixture
      (Label              : String;
       Harness_Project    : Boolean := False;
-      Multiple_Structure : Boolean := False) return Fixture is
+      Multiple_Structure : Boolean := False;
+      Second_Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High) return Fixture is
       use Ada_Quality.Types;
       Directory : constant String := "/tmp/improve_phase2_" & Label;
       DB_Path   : constant String := Directory & "/quality.db";
@@ -207,7 +208,7 @@ package body Improve_Test_Suite is
               (Ada_Quality.Types.Finding'
                  (Indicator     => STR_01,
                   Rule          => To_Unbounded_String ("manifest.invalid"),
-                  Level         => High,
+                  Level         => Second_Structure_Severity,
                   Message       => To_Unbounded_String ("manifest has a second invalid field"),
                   Relative_Path => To_Unbounded_String ("alire.toml"),
                   Line          => 2,
@@ -984,6 +985,52 @@ package body Improve_Test_Suite is
                   end;
                end;
                Improve.Source.Close (Store);
+               Remove (Data);
+            end;
+         when Plan_Fingerprint_Severity_Sensitive =>
+            declare
+               Data    : constant Fixture := Build_Fixture
+                 ("severity_fingerprint", Harness_Project => True, Multiple_Structure => True,
+                  Second_Structure_Severity => Ada_Quality.Types.Low);
+               Quality : Improve.Source.Repository;
+               Low_Settings  : Improve.Config.Settings := Improve.Config.Defaults;
+               High_Settings : Improve.Config.Settings := Improve.Config.Defaults;
+               Store   : Improve.Storage.Store;
+               First   : Improve.Storage.Save_Result;
+               Second  : Improve.Storage.Save_Result;
+            begin
+               Low_Settings.Minimum_Severity := Improve.Config.Low;
+               High_Settings.Minimum_Severity := Improve.Config.High;
+               Improve.Source.Open (Quality, To_String (Data.Database));
+               declare
+                  Project : constant Improve.Model.Project_Reference :=
+                    Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
+                  Selected : constant Improve.Source.Selection :=
+                    Improve.Source.Select_Assessment (Quality, Project, Data.Run);
+                  Low_Findings : constant Improve.Model.Finding_Vectors.Vector :=
+                    Improve.Findings.Normalize (Selected, Ada_Quality.Types.Low, True);
+                  High_Findings : constant Improve.Model.Finding_Vectors.Vector :=
+                    Improve.Findings.Normalize (Selected, Ada_Quality.Types.High, True);
+                  Low_Plan : constant Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, Low_Findings, Low_Settings);
+                  High_Plan : constant Improve.Model.Plan_Revision :=
+                    Improve.Planner.Generate (Selected, High_Findings, High_Settings);
+               begin
+                  Improve.Source.Close (Quality);
+                  Assert
+                    (Low_Findings.Length > High_Findings.Length and then
+                     Low_Plan.Fingerprint /= High_Plan.Fingerprint,
+                     "severity-dependent finding membership collided in the plan fingerprint");
+                  Improve.Storage.Open
+                    (Store, To_String (Data.Directory) & "/severity-improve.db", Writable => True);
+                  First := Improve.Storage.Save (Store, Low_Plan);
+                  Second := Improve.Storage.Save (Store, High_Plan);
+                  Improve.Storage.Close (Store);
+                  Assert
+                    (not First.Existing and then not Second.Existing and then Second.Plan.Revision = 2 and then
+                     Second.Plan.Findings.Length = High_Findings.Length,
+                     "changed severity threshold silently returned an older plan revision");
+               end;
                Remove (Data);
             end;
          when Dependency_Cycle_Rejected =>

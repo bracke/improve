@@ -25,7 +25,8 @@ package body Improve.Planner is
 
    function Configuration_Fingerprint (Settings : Improve.Config.Settings) return String is
      (Stable_Digest
-        (Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
+        (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
+         Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
          Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &
          Boolean_Image (Settings.Require_Review)));
@@ -175,14 +176,45 @@ package body Improve.Planner is
       end loop;
       Improve.Dependencies.Validate (Result.Tasks);
       declare
-         Material : Unbounded_String := To_Unbounded_String
-           (To_String (Selected.Project.Database_Id) & "|" & Positive'Image (Selected.Project.Id) & "|" &
-            Positive'Image (Selected.Assessment.Run.Id) & "|" &
-            To_String (Selected.Baseline.Source_Id) & "|" & To_String (Selected.Baseline.Policy_Id) & "|" & Config_Id);
+         Material : Unbounded_String;
+
+         procedure Add (Name, Value : String) is
+         begin
+            Append (Material, Natural'Image (Name'Length) & ":" & Name);
+            Append (Material, Natural'Image (Value'Length) & ":" & Value);
+         end Add;
       begin
-         Append (Material, "|" & To_String (Result.Working_Source_Id));
+         Add ("planner", Planner_Version);
+         Add ("configuration", Config_Id);
+         Add ("quality_database", To_String (Selected.Project.Database_Id));
+         Add ("project_id", Positive'Image (Selected.Project.Id));
+         Add ("project_path", To_String (Selected.Project.Path));
+         Add ("assessment_run", Positive'Image (Selected.Assessment.Run.Id));
+         Add ("source", To_String (Selected.Baseline.Source_Id));
+         Add ("working_source", To_String (Result.Working_Source_Id));
+         Add ("policy", To_String (Selected.Baseline.Policy_Id));
+         Add ("toolchain", To_String (Selected.Baseline.Toolchain_Id));
+         Add ("snapshot", To_String (Selected.Baseline.Snapshot_Id));
+         Add ("finding_count", Natural'Image (Natural (Result.Findings.Length)));
+         for Finding of Result.Findings loop
+            Add ("finding.project", Positive'Image (Finding.Project_Id));
+            Add ("finding.run", Positive'Image (Finding.Run_Id));
+            Add ("finding.indicator", Ada_Quality.Types.Image (Finding.Indicator));
+            Add ("finding.rule", To_String (Finding.Rule));
+            Add ("finding.severity", Ada_Quality.Types.Severity'Image (Finding.Level));
+            Add ("finding.path", To_String (Finding.Relative_Path));
+            Add ("finding.line", Natural'Image (Finding.Line));
+            Add ("finding.fingerprint", To_String (Finding.Fingerprint));
+            Add ("finding.subject", To_String (Finding.Semantic_Subject));
+            Add ("finding.message", To_String (Finding.Message));
+            Add ("finding.evidence", To_String (Finding.Evidence));
+            Add ("finding.kind", Improve.Model.Image (Finding.Kind));
+            Add ("finding.indicator_level", Boolean'Image (Finding.Indicator_Level));
+         end loop;
+         Add ("task_count", Natural'Image (Natural (Result.Tasks.Length)));
          for Spec of Result.Tasks loop
-            Append (Material, "|" & To_String (Spec.Id) & "|" & To_String (Spec.Acceptance));
+            Add ("task.id", To_String (Spec.Id));
+            Add ("task.contract", Improve.Model.Task_Contract_Fingerprint (Spec));
          end loop;
          Result.Fingerprint := To_Unbounded_String (Stable_Digest (To_String (Material)));
          Result.Plan_Id := To_Unbounded_String ("PLAN-DRAFT-" & To_String (Result.Fingerprint));

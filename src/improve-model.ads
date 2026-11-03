@@ -159,6 +159,11 @@ package Improve.Model is
      (Index_Type => Positive, Element_Type => Task_Specification);
    --  Proposed remediation tasks in dependency order.
 
+   function Task_Contract_Fingerprint (Item : Task_Specification) return String;
+   --  Identify every execution-relevant and provenance field of a task through canonical length-delimited encoding.
+   --  @param Item Complete task specification.
+   --  @return Stable content fingerprint excluding only the assigned logical identity.
+
    type Plan_Revision is record
       Plan_Id       : UString;
       Revision      : Positive := 1;
