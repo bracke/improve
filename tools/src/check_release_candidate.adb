@@ -1,5 +1,7 @@
 with Ada.Command_Line;
+with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada_Quality.Checks;
@@ -28,6 +30,24 @@ procedure Check_Release_Candidate is
       Project_Tools.Processes.Run
         (Label, Directory, Alr, Project_Tools.Processes.Arguments (Arguments));
    end Run_Alr;
+
+   procedure Require_Complete_Solution is
+      Run : constant Project_Tools.Processes.Captured_Process :=
+        Project_Tools.Processes.Capture
+          ("inspect pin-free dependency solution", Stage, Alr,
+           Project_Tools.Processes.Arguments
+             ([Project_Tools.Processes.Argument ("show"), Project_Tools.Processes.Argument ("--solve")]),
+           Quiet => True);
+      Output : constant String := To_String (Run.Output);
+      Lower  : constant String := Ada.Characters.Handling.To_Lower (Output);
+   begin
+      Ada.Text_IO.Put_Line (Output);
+      if Run.Status /= 0 or else Ada.Strings.Fixed.Index (Lower, "missing") > 0 or else
+        Ada.Strings.Fixed.Index (Lower, "incomplete") > 0
+      then
+         raise Program_Error with "pin-free dependency solution is incomplete";
+      end if;
+   end Require_Complete_Solution;
 
    procedure Require_Passing_Assessment (Value : Ada_Quality.Types.Assessment) is
       Failed : Boolean := False;
@@ -78,6 +98,7 @@ begin
    Run_Alr
      ("pin-free dependency resolution", Stage,
       [1 => Project_Tools.Processes.Argument ("update")]);
+   Require_Complete_Solution;
    Run_Alr
      ("pin-free release build", Stage,
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),
