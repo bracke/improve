@@ -63,7 +63,7 @@ package body Improve_Test_Suite is
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan,
-      Native_Publication_And_Recovery, Refresh_Reconciles_State,
+      Native_Publication_And_Recovery, Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
@@ -1325,6 +1325,67 @@ package body Improve_Test_Suite is
                   end;
                   Improve.Storage.Close (Improve_State);
                end;
+               Remove (Data);
+            end;
+         when Selective_Publication_Resolves_Dependency =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("selective_dependency", Harness_Project => True);
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Draft     : Improve.Model.Plan_Revision := Draft_For (Data);
+               Stored    : Improve.Storage.Save_Result;
+               Result    : Improve.CLI.Outcome;
+               First_Map : Improve.Storage.Publication_Record;
+               Next_Map  : Improve.Storage.Publication_Record;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+               Definition : Records.Item;
+            begin
+               Draft.Tasks (2).Dependencies.Append (Draft.Tasks (1).Id);
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Stored := Improve.Storage.Save (Improve_State, Draft);
+                  Improve.Storage.Approve
+                    (Improve_State, To_String (Stored.Plan.Plan_Id), Stored.Plan.Revision);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Initialize_Harness (To_String (Data.Target));
+               Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--task|IMP-000002|--database|" & To_String (Data.Database) &
+                        "|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Failure_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Result.Errors), "requires unpublished prerequisite IMP-000001") > 0,
+                  "selective publication did not identify its unpublished prerequisite");
+               Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--task|IMP-000001|--database|" & To_String (Data.Database) &
+                        "|--state|" & State & "|--format|json"));
+               Assert (Result.Exit_Code = 0, "prerequisite task publication failed");
+               Result := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--task|IMP-000002|--database|" & To_String (Data.Database) &
+                        "|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = 0,
+                  "dependent task did not reuse its published prerequisite: " & To_String (Result.Errors));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  for Mapping of Improve.Storage.Publications (Improve_State, "PLAN-000001") loop
+                     if To_String (Mapping.Improve_Task_Id) = "IMP-000001" then First_Map := Mapping;
+                     elsif To_String (Mapping.Improve_Task_Id) = "IMP-000002" then Next_Map := Mapping;
+                     end if;
+                  end loop;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Tasks.Definition (Harness, To_String (Next_Map.Harness_Task_Id), Definition, Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then
+                  Records.Get (Definition, "depends_on") = To_String (First_Map.Harness_Task_Id),
+                  "native dependent task lost its already-published prerequisite identity");
+               Stores.Close (Harness);
                Remove (Data);
             end;
          when Refresh_Reconciles_State =>

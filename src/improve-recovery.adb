@@ -29,9 +29,8 @@ package body Improve.Recovery is
       for Operation of Pending loop
          Improve.Storage.Open (State, State_Path, Writable => False);
          declare
-            Plan : Improve.Model.Plan_Revision :=
+            Plan : constant Improve.Model.Plan_Revision :=
               Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision);
-            Selected : Improve.Model.Task_Vectors.Vector;
             Existing : constant Improve.Storage.Publication_Vectors.Vector :=
               Improve.Storage.Publications (State, To_String (Operation.Plan_Id));
          begin
@@ -39,17 +38,16 @@ package body Improve.Recovery is
             if Length (Operation.Fingerprint) > 0 and then Plan.Fingerprint /= Operation.Fingerprint then
                raise Data_Error with "pending publication revision fingerprint does not match durable state";
             end if;
-            for Spec of Plan.Tasks loop
-               if Operation.Task_Ids.Contains (Spec.Id) then Selected.Append (Spec); end if;
-            end loop;
-            if Selected.Length /= Operation.Task_Ids.Length then
+            if (for some Task_Id of Operation.Task_Ids =>
+                  (for all Spec of Plan.Tasks => Spec.Id /= Task_Id))
+            then
                raise Data_Error with "pending publication references tasks outside its plan";
             end if;
-            Plan.Tasks := Selected;
             declare
                Published : constant Improve.Workflow.Publication_Result :=
                  Improve.Workflow.Publish
-                   (To_String (Plan.Project.Path), Plan, Requested_Kind, Existing => Existing);
+                   (To_String (Plan.Project.Path), Plan, Requested_Kind, Existing => Existing,
+                    Selected_Task_Ids => Operation.Task_Ids);
                Mappings  : Improve.Storage.Publication_Vectors.Vector;
             begin
                for Value of Published.Tasks loop

@@ -85,12 +85,50 @@ package body Improve.Workflow is
       Requested_Kind    : String;
       Existing          : Improve.Storage.Publication_Vectors.Vector :=
         Improve.Storage.Publication_Vectors.Empty_Vector;
+      Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
+        Improve.Model.UString_Vectors.Empty_Vector;
       Dry_Run           : Boolean := False) return Publication_Result is
       Store  : Stores.Store;
       Report : Stores.Recovery_Report;
       Status : Errors.Error_Info;
       Result : Publication_Result;
+      Selected : Improve.Model.Task_Vectors.Vector;
+
+      function Is_Selected (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
+        (Selected_Task_Ids.Is_Empty or else Selected_Task_Ids.Contains (Task_Id));
+
+      function Is_Known (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
+        (for some Spec of Plan.Tasks => Spec.Id = Task_Id);
+
+      function Published_Dependency
+        (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Ada.Strings.Unbounded.Unbounded_String is
+      begin
+         for Mapping of Existing loop
+            if Mapping.Improve_Task_Id = Task_Id then
+               declare Definition : Records.Item; begin
+                  Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+                  Require_Ok (Status, "read prerequisite harness task " & To_String (Task_Id));
+                  if Records.Get (Definition, "created_by") /= "improve" or else
+                    Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+                  then
+                     raise Data_Error with "stored prerequisite mapping has invalid harness provenance";
+                  end if;
+               end;
+               return Mapping.Harness_Task_Id;
+            end if;
+         end loop;
+         return Null_Unbounded_String;
+      end Published_Dependency;
    begin
+      for Task_Id of Selected_Task_Ids loop
+         if not Is_Known (Task_Id) then
+            raise Data_Error with "publication selection references unknown task " & To_String (Task_Id);
+         end if;
+      end loop;
+      for Spec of Plan.Tasks loop
+         if Is_Selected (Spec.Id) then Selected.Append (Spec); end if;
+      end loop;
+      if Selected.Is_Empty then raise Argument_Error with "publication selection has no tasks"; end if;
       if not Stores.Is_Initialized (Project_Directory) then
          raise Dependency_Error with "model_runner project state is not initialized: " & Project_Directory;
       end if;
@@ -102,7 +140,7 @@ package body Improve.Workflow is
       Require_Ok (Status, "open model_runner project state");
       declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
          Result.Task_Kind := To_Unbounded_String (Kind);
-         for Spec of Plan.Tasks loop
+         for Spec of Selected loop
             declare
                Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, To_String (Spec.Id)));
                Harness_Id  : Unbounded_String;
@@ -141,7 +179,7 @@ package body Improve.Workflow is
          end loop;
          declare
             Change    : Stores.Transaction;
-            Remaining : Natural := Natural (Plan.Tasks.Length);
+            Remaining : Natural := Natural (Selected.Length);
             Progress  : Boolean;
          begin
             for Item of Result.Tasks loop
@@ -149,10 +187,10 @@ package body Improve.Workflow is
             end loop;
             while Remaining > 0 loop
                Progress := False;
-               for Index in 1 .. Natural (Plan.Tasks.Length) loop
+               for Index in 1 .. Natural (Selected.Length) loop
                   if Length (Result.Tasks (Index).Harness_Id) = 0 then
                      declare
-                        Spec       : constant Improve.Model.Task_Specification := Plan.Tasks (Index);
+                        Spec       : constant Improve.Model.Task_Specification := Selected (Index);
                         Ready      : Boolean := True;
                         Harness_Dependencies : Improve.Model.UString_Vectors.Vector;
                      begin
@@ -167,7 +205,20 @@ package body Improve.Workflow is
                                     exit;
                                  end if;
                               end loop;
-                              if not Found then raise Data_Error with "unknown persisted task dependency"; end if;
+                              if not Found then
+                                 if not Is_Known (Dependency) then
+                                    raise Data_Error with "unknown persisted task dependency " & To_String (Dependency);
+                                 end if;
+                                 declare Published : constant Unbounded_String := Published_Dependency (Dependency);
+                                 begin
+                                    if Length (Published) = 0 then
+                                       raise Data_Error with
+                                         "task " & To_String (Spec.Id) & " requires unpublished prerequisite " &
+                                         To_String (Dependency) & "; publish prerequisite first";
+                                    end if;
+                                    Harness_Dependencies.Append (Published);
+                                 end;
+                              end if;
                            end;
                         end loop;
                         if Ready then

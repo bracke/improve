@@ -29,6 +29,8 @@ the newest revision that actually contains that logical task.
 
 `improve apply PLAN-ID` rejects an unapproved revision before opening or modifying harness state. `--dry-run` remains
 available for publication preflight without approval because it cannot create tasks or publication journal records.
+`improve apply PLAN-ID --task IMP-ID` publishes only that task. Its prerequisites are resolved from existing native
+publication mappings; an unpublished prerequisite is reported explicitly and is never silently omitted.
 
 ## Operational inspection
 

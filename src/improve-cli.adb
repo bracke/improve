@@ -547,6 +547,7 @@ package body Improve.CLI is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
       Existing     : Improve.Storage.Publication_Vectors.Vector;
+      Selected_Task_Ids : Improve.Model.UString_Vectors.Vector;
       Approved     : Boolean := False;
       Operation_Id : Natural := 0;
    begin
@@ -556,17 +557,10 @@ package body Improve.CLI is
       Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision);
       Improve.Storage.Close (State);
       if Item.Has_Task then
-         declare
-            Selected : Improve.Model.Task_Vectors.Vector;
-         begin
-            for Spec of Plan.Tasks loop
-               if To_String (Spec.Id) = To_String (Item.Task_Id) then Selected.Append (Spec); end if;
-            end loop;
-            if Selected.Is_Empty then
-               raise Argument_Error with "task does not belong to plan: " & To_String (Item.Task_Id);
-            end if;
-            Plan.Tasks := Selected;
-         end;
+         if (for all Spec of Plan.Tasks => To_String (Spec.Id) /= To_String (Item.Task_Id)) then
+            raise Argument_Error with "task does not belong to plan: " & To_String (Item.Task_Id);
+         end if;
+         Selected_Task_Ids.Append (Item.Task_Id);
       end if;
       if not Item.Dry_Run and then
         (To_String (Plan.Review_Status) = "pending" or else
@@ -605,11 +599,16 @@ package body Improve.CLI is
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=
               Improve.Workflow.Publish
-                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing, Dry_Run => True);
+                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
+                 Selected_Task_Ids => Selected_Task_Ids, Dry_Run => True);
             pragma Unreferenced (Preflight);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
          begin
-            for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+            if Selected_Task_Ids.Is_Empty then
+               for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+            else
+               Task_Ids := Selected_Task_Ids;
+            end if;
             Improve.Storage.Open (State, State_Path (Item), Writable => True);
             Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids);
             Improve.Storage.Close (State);
@@ -618,7 +617,8 @@ package body Improve.CLI is
       declare
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
-             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing, Item.Dry_Run);
+             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
+              Selected_Task_Ids, Item.Dry_Run);
       begin
          if not Item.Dry_Run then
             declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin

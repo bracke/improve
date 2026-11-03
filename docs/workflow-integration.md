@@ -1,5 +1,10 @@
 # Native model runner publication
 
+Selective publication retains the complete immutable plan while creating only the requested task. Dependency lookup
+therefore resolves against both the full plan graph and durable publication mappings. A dependency already published
+to model_runner is translated to its native task identity. An unpublished prerequisite stops publication with its
+exact Improve task identity and instructs the operator to publish that prerequisite first.
+
 `Improve.Workflow` publishes only through `Model_Runner.Framework.Tasks.Create` and one
 `Model_Runner.Framework.Stores.Transaction`. Improve does not write harness record files, infer task states, accept
 candidates, or introduce an execution command.
@@ -22,7 +27,7 @@ field schemas, component inference, task identifiers, auto-accept policy, lifecy
 Every task is created with `created_by=improve` and an origin of the form:
 
 ```text
-improve:<plan-fingerprint>:<improve-task-id>
+improve:<project-path-digest>:task:<improve-task-id>
 ```
 
 Before staging work, publication scans native task definitions for that exact authenticated provenance. A task found
