@@ -157,6 +157,8 @@ package body Improve.Planner is
       end if;
       Result.Project := Selected.Project;
       Result.Baseline := Selected.Baseline;
+      Result.Working_Source_Id := To_Unbounded_String
+        (Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path)));
       Result.Planner_Id := To_Unbounded_String (Planner_Version & ":" & Config_Id);
       Result.Created_At := Ada.Calendar.Time_Of (1970, 1, 1);
       Result.Findings := Findings;
@@ -170,6 +172,7 @@ package body Improve.Planner is
            (Positive'Image (Selected.Project.Id) & "|" & Positive'Image (Selected.Assessment.Run.Id) & "|" &
             To_String (Selected.Baseline.Source_Id) & "|" & To_String (Selected.Baseline.Policy_Id) & "|" & Config_Id);
       begin
+         Append (Material, "|" & To_String (Result.Working_Source_Id));
          for Spec of Result.Tasks loop
             Append (Material, "|" & To_String (Spec.Id) & "|" & To_String (Spec.Acceptance));
          end loop;

@@ -140,6 +140,15 @@ package body Improve.CLI is
                Result.Run_Id := Natural'Value (Value);
                if Result.Run_Id = 0 then Fail ("--run requires a positive run identity"); end if;
             exception when Constraint_Error => Fail ("--run value is out of range"); end;
+         elsif Option = "--revision" then
+            Once (Result.Has_Revision, Option);
+            declare Value : constant String := Value_Of (Option, Inline, Has_Inline); begin
+               if Value = "" or else (for some C of Value => C not in '0' .. '9') then
+                  Fail ("--revision requires a positive revision");
+               end if;
+               Result.Revision := Natural'Value (Value);
+               if Result.Revision = 0 then Fail ("--revision requires a positive revision"); end if;
+            exception when Constraint_Error => Fail ("--revision value is out of range"); end;
          elsif Option = "--task" then
             Once (Result.Has_Task, Option);
             Result.Task_Id := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
@@ -209,6 +218,11 @@ package body Improve.CLI is
       if Result.Format = JSON_Format then Result.Color := Color_Never; end if;
       if Result.Has_Run and then Result.Command not in Findings_Command | Plan_Command | Verify_Command then
          Fail ("--run is not accepted by command " & Name (Result.Command));
+      elsif Result.Has_Revision and then
+        not (Result.Command = Plan_Command and then Result.Plan_Action = Show_Plan) and then
+        not (Result.Command in Tasks_Command | Verify_Command and then Result.Has_Task)
+      then
+         Fail ("--revision requires plan show, tasks --task, or verify --task");
       elsif Result.Dry_Run and then Result.Command not in Plan_Command | Apply_Command then
          Fail ("--dry-run is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Task and then Result.Command not in Apply_Command | Tasks_Command | Verify_Command then
@@ -260,7 +274,8 @@ package body Improve.CLI is
       Line ("--project ID|NAME", "help.opt.project", 36);
       Line ("--format terminal|json", "help.opt.format", 36);
       Line ("--color auto|always|never", "help.opt.color", 36);
-      Line ("--run ID", "help.opt.run", 36); Line ("--task ID", "help.opt.task", 36);
+      Line ("--run ID", "help.opt.run", 36); Line ("--revision NUMBER", "help.opt.revision", 36);
+      Line ("--task ID", "help.opt.task", 36);
       Line ("--status STATUS", "help.opt.status", 36); Line ("--dry-run", "help.opt.dry_run", 36);
       Line ("--all", "help.opt.all", 36);
       Line ("--verbose", "help.opt.verbose", 36); Line ("--quiet", "help.opt.quiet", 36);
@@ -432,7 +447,9 @@ package body Improve.CLI is
          declare State : Improve.Storage.Store; begin
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             declare Plan : constant Improve.Model.Plan_Revision :=
-              Improve.Storage.Load (State, To_String (Item.Target));
+              (if Item.Has_Revision then
+                  Improve.Storage.Load (State, To_String (Item.Target), Positive (Item.Revision))
+               else Improve.Storage.Load (State, To_String (Item.Target)));
             begin
                Improve.Storage.Close (State);
                if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
@@ -558,6 +575,15 @@ package body Improve.CLI is
            "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
       end if;
       declare
+         Current_Source : constant String :=
+           Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path));
+      begin
+         if Current_Source /= To_String (Plan.Working_Source_Id) then
+            raise Data_Error with
+              "current project source differs from the assessment baseline; remeasure and refresh the plan";
+         end if;
+      end;
+      declare
          Quality : Improve.Source.Repository;
       begin
          Improve.Source.Open (Quality, Quality_Path (Item, Settings));
@@ -662,27 +688,42 @@ package body Improve.CLI is
          end;
       end if;
       Improve.Storage.Open (State, State_Path (Item), Writable => False);
-      declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-        Improve.Storage.List (State, Project_Id);
-      begin
-         if Summaries.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
-            raise Data_Error with "task query exceeds output.maximum_output_items";
-         end if;
-         for Summary of Summaries loop
-            declare
-               Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
-            begin
-               for View of Plan_Views loop
-                  if not Item.Has_Task or else View.Improve_Id = Item.Task_Id then
-                     Found_Task := True;
+      if Item.Has_Task then
+         declare
+            Plan : constant Improve.Model.Plan_Revision :=
+              Improve.Storage.Load_Task (State, To_String (Item.Task_Id), Item.Revision);
+            Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+         begin
+            if Project_Id /= 0 and then Plan.Project.Id /= Project_Id then
+               raise Argument_Error with "task does not belong to selected project";
+            end if;
+            for View of Plan_Views loop
+               if View.Improve_Id = Item.Task_Id then
+                  Found_Task := True;
+                  if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
+               end if;
+            end loop;
+         end;
+      else
+         declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+           Improve.Storage.List (State, Project_Id);
+         begin
+            if Summaries.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+               raise Data_Error with "task query exceeds output.maximum_output_items";
+            end if;
+            for Summary of Summaries loop
+               declare
+                  Plan : constant Improve.Model.Plan_Revision :=
+                    Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+                  Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+               begin
+                  for View of Plan_Views loop
                      if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
-                  end if;
-               end loop;
-            end;
-         end loop;
-      end;
+                  end loop;
+               end;
+            end loop;
+         end;
+      end if;
       Improve.Storage.Close (State);
       if not Found_Task then raise Argument_Error with "unknown Improve task " & To_String (Item.Task_Id); end if;
       if Filtered.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
@@ -855,23 +896,7 @@ package body Improve.CLI is
    begin
       Improve.Storage.Open (State, State_Path (Item), Writable => False);
       if Item.Has_Task then
-         declare Found : Boolean := False; begin
-            for Summary of Improve.Storage.List (State) loop
-               declare Candidate : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-               begin
-                  for Spec of Candidate.Tasks loop
-                     if To_String (Spec.Id) = To_String (Item.Task_Id) then
-                        Plan := Candidate;
-                        Found := True;
-                        exit;
-                     end if;
-                  end loop;
-               end;
-               exit when Found;
-            end loop;
-            if not Found then raise Argument_Error with "unknown Improve task " & To_String (Item.Task_Id); end if;
-         end;
+         Plan := Improve.Storage.Load_Task (State, To_String (Item.Task_Id), Item.Revision);
       else
          declare
             Quality : Improve.Source.Repository;

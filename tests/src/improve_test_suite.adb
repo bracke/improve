@@ -60,7 +60,8 @@ package body Improve_Test_Suite is
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
-      Plan_Approval_Required, Native_Publication_And_Recovery, Refresh_Reconciles_State,
+      Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
+      Native_Publication_And_Recovery, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
       Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
@@ -154,11 +155,13 @@ package body Improve_Test_Suite is
       end if;
       Ada_Quality.Storage.Open (Store, DB_Path);
       Project := Ada_Quality.Storage.Add_Project (Store, Target);
-      Run := Ada_Quality.Storage.Start_Assessment (Store, Project, "source-a", "policy-a");
+      declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
+         Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
+         Value.Source_Fingerprint := To_Unbounded_String (Source);
+      end;
       Value.Id := Run;
       Value.Project_Id := Project;
       Value.Project_Path := To_Unbounded_String (Target);
-      Value.Source_Fingerprint := To_Unbounded_String ("source-a");
       Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
       Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
       Value.Status := Assessment_Completed;
@@ -1124,6 +1127,78 @@ package body Improve_Test_Suite is
                   "new plan revision inherited prior approval");
                Remove (Data);
             end;
+         when Current_Source_Staleness_Detected =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data    : constant Fixture := Build_Fixture ("source_stale", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Applied : Improve.CLI.Outcome;
+               Harness : Stores.Store;
+               Status  : Errors.Error_Info;
+            begin
+               Assert (Planned.Exit_Code = 0, "source-staleness fixture planning failed");
+               Initialize_Harness (To_String (Data.Target));
+               Approve_Latest (State);
+               Project_Tools.Files.Write_Text_File
+                 (To_String (Data.Target) & "/alire.toml",
+                  "name = ""changed_after_measurement""" & ASCII.LF &
+                  "version = ""0.1.0-dev""" & ASCII.LF &
+                  "licenses = ""MIT""" & ASCII.LF);
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = Improve.CLI.Failure_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Applied.Errors), "current project source differs") > 0,
+                  "unmeasured current source change did not block publication");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
+                  "stale-source rejection modified harness state");
+               Stores.Close (Harness);
+               Remove (Data);
+            end;
+         when Historical_Task_Lookup =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("historical_task");
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned    : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run        : Positive;
+               Replanned  : Improve.CLI.Outcome;
+               Inspected  : Improve.CLI.Outcome;
+               Verified   : Improve.CLI.Outcome;
+               Shown      : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "historical-task fixture planning failed");
+               Run := Publish_Followup (Data);
+               Replanned := Improve.CLI.Execute
+                 (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Replanned.Exit_Code = 0, "historical-task fixture replanning failed");
+               Inspected := Improve.CLI.Execute
+                 (Args ("tasks|--task|IMP-000001|--revision|1|--state|" & State & "|--format|json"));
+               Assert
+                 (Inspected.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Inspected.Output), "IMP-000001") > 0,
+                  "task omitted from latest revision is not inspectable");
+               Verified := Improve.CLI.Execute
+                 (Args ("verify|--task|IMP-000001|--revision|1|--run|" & Id_Image (Run) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Verified.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Verified.Output), """outcome"":""verified""") > 0,
+                  "historical task cannot be independently verified");
+               Shown := Improve.CLI.Execute
+                 (Args ("plan|show|PLAN-000001|--revision|1|--state|" & State & "|--format|json"));
+               Assert
+                 (Shown.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Shown.Output), """revision"":1") > 0,
+                  "exact historical plan revision cannot be inspected");
+               Remove (Data);
+            end;
          when Native_Publication_And_Recovery =>
             declare
                package Errors renames Model_Runner.Errors;
@@ -1742,7 +1817,9 @@ package body Improve_Test_Suite is
                   end loop;
                   Improve.Storage.Close (Improve_State);
                end;
-               Run := Publish_Followup (Data, Structure_State => Structure_Failing, Source => "source-revision-2");
+               Run := Publish_Followup
+                 (Data, Structure_State => Structure_Failing,
+                  Source => Ada_Quality.Checks.Source_Fingerprint (To_String (Data.Target)));
                Replanned := Improve.CLI.Execute
                  (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
@@ -2057,6 +2134,7 @@ package body Improve_Test_Suite is
                Check ("complete", Improve.Tasks.Awaiting_Verification);
                Check ("verification", Improve.Tasks.Awaiting_Verification);
                Check ("complete", Improve.Tasks.Verified, True, Improve.Model.Verified);
+               Check ("running", Improve.Tasks.In_Progress, True, Improve.Model.Verified);
                Check ("complete", Improve.Tasks.Partially_Resolved, True, Improve.Model.Partially_Resolved);
                Check ("complete", Improve.Tasks.Still_Failing, True, Improve.Model.Still_Failing);
                Check ("complete", Improve.Tasks.Inconclusive, True, Improve.Model.Inconclusive);

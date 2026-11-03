@@ -43,6 +43,10 @@ the immediately preceding revision, it reuses that task's logical `IMP-NNNNNN` i
 new physical task row and remains immutable. Changed or newly introduced work receives a new logical identity. This
 keeps unaffected work and publication history stable while preserving complete revision history.
 
+Task rows form a persistent logical-task-to-revision index. Historical lookup selects the newest revision containing
+the requested `IMP-NNNNNN` identity, or an explicitly requested revision, even when the task is absent from the plan's
+current revision.
+
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
 perform recovery. Writable open initializes a missing version-1 database; an existing database with missing or different
 schema metadata is rejected rather than guessed or silently migrated.

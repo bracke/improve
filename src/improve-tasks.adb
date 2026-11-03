@@ -24,7 +24,7 @@ package body Improve.Tasks is
       Quality          : Improve.Model.Quality_Outcome;
       Has_Verification : Boolean) return Operational_Status is
    begin
-      if Quality = Improve.Model.Verified then return Verified;
+      if Quality = Improve.Model.Verified and then Harness in "complete" | "verification" then return Verified;
       elsif Quality = Improve.Model.Regressed then return Regressed;
       elsif Quality = Improve.Model.Superseded then return Superseded;
       elsif Harness = "" then return Proposed;

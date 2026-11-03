@@ -92,6 +92,7 @@ package body Improve.JSON is
       Doc.Insert (Data, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project.Id)));
       Doc.Insert (Data, "project", Doc.New_String (To_String (Value.Project.Name)));
       Doc.Insert (Data, "run_id", Doc.New_Integer (Long_Long_Integer (Value.Baseline.Run_Id)));
+      Doc.Insert (Data, "working_source_fingerprint", Doc.New_String (To_String (Value.Working_Source_Id)));
       Doc.Insert (Data, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
       Doc.Insert (Data, "planner", Doc.New_String (To_String (Value.Planner_Id)));
       Doc.Insert (Data, "dry_run", Doc.New_Boolean (Dry_Run));

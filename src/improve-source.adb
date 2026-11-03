@@ -1,14 +1,87 @@
 with Ada.Containers;
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Interfaces;
 with Ada_Quality.Types;
+with Project_Tools.Files;
 
 package body Improve.Source is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Assessment_Status;
    use type Ada_Quality.Types.Indicator_Id;
+   use type Interfaces.Unsigned_64;
+
+   function Working_Fingerprint (Root : String) return String is
+      package Paths is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+         "=" => Ada.Strings.Unbounded."=");
+      package Sorting is new Paths.Generic_Sorting ("<" => Ada.Strings.Unbounded."<");
+      Skip : constant Project_Tools.Files.Name_List :=
+        [To_Unbounded_String (".git"), To_Unbounded_String (".alire"),
+         To_Unbounded_String (".model_runner"), To_Unbounded_String ("obj"),
+         To_Unbounded_String ("bin"), To_Unbounded_String ("cov-obj"),
+         To_Unbounded_String ("cov-bin"), To_Unbounded_String ("coverage"),
+         To_Unbounded_String ("lib"), To_Unbounded_String ("gnatprove")];
+      Listed : constant Project_Tools.Files.Path_List := Project_Tools.Files.List_Tree (Root, "*", Skip);
+      Values : Paths.Vector;
+      Hash   : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
+      Prime  : constant Interfaces.Unsigned_64 := 16#100000001B3#;
+      Total  : Natural := 0;
+
+      procedure Add (Text : String) is
+      begin
+         for C of Text loop
+            Hash := (Hash xor Interfaces.Unsigned_64 (Character'Pos (C))) * Prime;
+         end loop;
+      end Add;
+
+      function Hex return String is
+         Hex_Chars : constant String := "0123456789abcdef";
+         Work   : Interfaces.Unsigned_64 := Hash;
+         Result : String (1 .. 16);
+      begin
+         for Index in reverse Result'Range loop
+            Result (Index) := Hex_Chars (Natural (Work and 16#F#) + 1);
+            Work := Interfaces.Shift_Right (Work, 4);
+         end loop;
+         return Result;
+      end Hex;
+
+      function Runtime_Database (Path : String) return Boolean is
+        ((Path'Length >= 3 and then Path (Path'Last - 2 .. Path'Last) = ".db") or else
+         (Path'Length >= 7 and then Path (Path'Last - 6 .. Path'Last) = ".db.fts") or else
+         (Path'Length >= 7 and then Path (Path'Last - 6 .. Path'Last) = ".sqlite") or else
+         (Path'Length >= 8 and then Path (Path'Last - 7 .. Path'Last) = ".sqlite3"));
+   begin
+      if Listed'Length > 100_000 then raise Data_Error with "project source exceeds fingerprint file limit"; end if;
+      for Path of Listed loop Values.Append (Path); end loop;
+      Sorting.Sort (Values);
+      for Path of Values loop
+         declare
+            Full : constant String := To_String (Path);
+            Name : constant String :=
+              (if Full'Length > Root'Length and then Full (Full'First .. Full'First + Root'Length - 1) = Root
+               then Full (Full'First + Root'Length + 1 .. Full'Last)
+               else Full);
+         begin
+            if Runtime_Database (Full) then
+               null;
+            else
+               declare Data : constant String := Project_Tools.Files.Read_Raw_File (Full); begin
+                  if Data'Length > 16_777_216 or else Total > 268_435_456 - Data'Length then
+                     raise Data_Error with "project source exceeds fingerprint byte limit";
+                  end if;
+                  Total := Total + Data'Length;
+                  Add (Name & Character'Val (0) & Data);
+               end;
+            end if;
+         end;
+      end loop;
+      return "working-fnv1a64:" & Hex;
+   end Working_Fingerprint;
 
    procedure Open
      (Item   : in out Repository;

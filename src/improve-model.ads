@@ -162,6 +162,7 @@ package Improve.Model is
       Revision      : Positive := 1;
       Project       : Project_Reference;
       Baseline      : Assessment_Baseline;
+      Working_Source_Id : UString;
       Planner_Id    : UString;
       Created_At    : Ada.Calendar.Time := Ada.Calendar.Time_Of (1970, 1, 1);
       Findings      : Finding_Vectors.Vector;
@@ -174,6 +175,7 @@ package Improve.Model is
    --  @field Revision Immutable revision ordinal.
    --  @field Project Target project.
    --  @field Baseline Assessment baseline.
+   --  @field Working_Source_Id Planning-time source fingerprint excluding harness-owned state.
    --  @field Planner_Id Planner configuration fingerprint.
    --  @field Created_At Revision creation time.
    --  @field Findings Normalized baseline findings.

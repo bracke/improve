@@ -133,6 +133,17 @@ package Improve.Storage is
    --  @param Revision Immutable revision ordinal.
    --  @return Exact plan revision.
 
+   function Load_Task
+     (Item     : in out Store;
+      Task_Id  : String;
+      Revision : Natural := 0) return Improve.Model.Plan_Revision;
+   --  Load the newest immutable revision containing a logical task, or an
+   --  explicitly selected revision containing it.
+   --  @param Item Open store.
+   --  @param Task_Id Stable Improve task identity.
+   --  @param Revision Exact revision ordinal, or zero for the newest containing revision.
+   --  @return Immutable plan revision containing the requested task.
+
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector;
    --  List latest plan revisions, optionally filtered by project.

@@ -10,7 +10,10 @@
 - Separate project-level regression outcomes from task-level resolution and constrain regression history by assessment
   order.
 - Enforce append-only approval of exact immutable plan revisions before native task publication.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 63 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Detect current authored-source changes before publication while excluding harness-owned and runtime state.
+- Preserve direct inspection and verification of tasks omitted from newer revisions, with exact `--revision` lookup.
+- Require both harness completion and independent quality resolution before reporting a task as fully verified.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 65 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

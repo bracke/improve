@@ -49,6 +49,7 @@ package Improve.CLI is
       Task_Id       : Ada.Strings.Unbounded.Unbounded_String;
       Status_Filter : Ada.Strings.Unbounded.Unbounded_String;
       Run_Id        : Natural := 0;
+      Revision      : Natural := 0;
       Format        : Improve.Config.Output_Format := Improve.Config.Terminal_Format;
       Color         : Improve.Config.Color_Mode := Improve.Config.Color_Auto;
       Has_Database  : Boolean := False;
@@ -58,6 +59,7 @@ package Improve.CLI is
       Has_Task      : Boolean := False;
       Has_Status    : Boolean := False;
       Has_Run       : Boolean := False;
+      Has_Revision  : Boolean := False;
       Dry_Run       : Boolean := False;
       All_Projects  : Boolean := False;
       Verbose       : Boolean := False;
@@ -73,6 +75,7 @@ package Improve.CLI is
    --  @field Task_Id Improve task selector.
    --  @field Status_Filter Task status filter.
    --  @field Run_Id Explicit assessment identity, or zero.
+   --  @field Revision Explicit immutable plan revision, or zero.
    --  @field Format Selected output format.
    --  @field Color Selected color policy.
    --  @field Has_Database Whether Database was supplied explicitly.
@@ -82,6 +85,7 @@ package Improve.CLI is
    --  @field Has_Task Whether Task_Id was supplied.
    --  @field Has_Status Whether Status_Filter was supplied.
    --  @field Has_Run Whether Run_Id was supplied.
+   --  @field Has_Revision Whether Revision was supplied.
    --  @field Dry_Run Whether modification is disabled.
    --  @field All_Projects Whether every project is selected.
    --  @field Verbose Whether verbose diagnostics are requested.

@@ -375,6 +375,7 @@ package body Improve.Storage is
       Pair ("project_path", To_String (Value.Project.Path)) & LF &
       Pair ("run_id", Number (Value.Baseline.Run_Id)) & LF &
       Pair ("source", To_String (Value.Baseline.Source_Id)) & LF &
+      Pair ("working_source", To_String (Value.Working_Source_Id)) & LF &
       Pair ("policy", To_String (Value.Baseline.Policy_Id)) & LF &
       Pair ("toolchain", To_String (Value.Baseline.Toolchain_Id)) & LF &
       Pair ("snapshot", To_String (Value.Baseline.Snapshot_Id)) & LF &
@@ -625,6 +626,8 @@ package body Improve.Storage is
            (Result.Project.Id, Positive'Value (Field (Payload, "run_id")),
             To_Unbounded_String (Field (Payload, "source")), To_Unbounded_String (Field (Payload, "policy")),
             To_Unbounded_String (Field (Payload, "toolchain")), To_Unbounded_String (Field (Payload, "snapshot")));
+         Result.Working_Source_Id :=
+           To_Unbounded_String (Field_Or (Payload, "working_source", Field (Payload, "source")));
          Result.Planner_Id := To_Unbounded_String (Field (Payload, "planner"));
          Result.Created_At := Parse_Time (Field (Payload, "created_at"));
          Result.Fingerprint := To_Unbounded_String (S (Revision.Kind));
@@ -770,6 +773,59 @@ package body Improve.Storage is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
    end Load;
+
+   function Load_Task
+     (Item     : in out Store;
+      Task_Id  : String;
+      Revision : Natural := 0) return Improve.Model.Plan_Revision is
+      Tx          : Database.Transactions.Transaction;
+      Revision_Id : Natural := 0;
+   begin
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
+         while Entity_Tables.Has_Element (Tasks) loop
+            declare
+               Task_Row : constant Entity := Entity_Tables.Element (Tasks);
+               Payload  : constant String := S (Task_Row.Payload);
+            begin
+               if Field_Or (Payload, "draft_id", "") = Task_Id then
+                  if Revision = 0 then
+                     Revision_Id := Natural'Max (Revision_Id, Task_Row.Parent_Id);
+                  else
+                     declare Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
+                        while Entity_Tables.Has_Element (Revisions) loop
+                           declare Row : constant Entity := Entity_Tables.Element (Revisions); begin
+                              if Row.Id = Task_Row.Parent_Id and then
+                                Positive'Value (Field (S (Row.Payload), "revision")) = Revision
+                              then
+                                 Revision_Id := Row.Id;
+                                 exit;
+                              end if;
+                           end;
+                           Advance (Item, Tx, Revisions_Table, Revisions);
+                        end loop;
+                     end;
+                  end if;
+               end if;
+            end;
+            Advance (Item, Tx, Tasks_Table, Tasks);
+         end loop;
+      end;
+      Database.Transactions.Rollback (Tx);
+      if Revision_Id = 0 then
+         raise Argument_Error with
+           "unknown Improve task " & Task_Id &
+           (if Revision = 0 then "" else " in revision " & Number (Revision));
+      end if;
+      return Load_Revision (Item, Positive (Revision_Id));
+   exception
+      when Constraint_Error =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise Data_Error with "stored task revision is malformed";
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Load_Task;
 
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector is

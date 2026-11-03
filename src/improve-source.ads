@@ -57,6 +57,12 @@ package Improve.Source is
    --  @param Run_Id Explicit run identity or zero for latest completed.
    --  @return Validated assessment selection.
 
+   function Working_Fingerprint (Root : String) return String;
+   --  Fingerprint the current project source while excluding generated build
+   --  directories, runtime databases, and model_runner-owned operational state.
+   --  @param Root Canonical project root.
+   --  @return Stable source fingerprint used for publication staleness checks.
+
 private
    type Repository is limited record
       Session : Ada_Quality.Reporting.Session;

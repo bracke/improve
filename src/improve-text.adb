@@ -36,6 +36,7 @@ package body Improve.Text is
      "en.help.opt.format = Output format: terminal or json" & LF &
      "en.help.opt.color = Color policy: auto, always, or never" & LF &
      "en.help.opt.run = Completed assessment identity" & LF &
+     "en.help.opt.revision = Immutable plan revision" & LF &
      "en.help.opt.task = Improve task identity" & LF &
      "en.help.opt.status = Task status filter" & LF &
      "en.help.opt.dry_run = Preview without persistent modification" & LF &

@@ -22,6 +22,11 @@ revision and `improve plan list --project PROJECT` lists stable plan identities.
 `improve plan approve PLAN-ID` records approval for the exact current revision and fingerprint. Approval is idempotent
 and never transfers to a newer revision.
 
+Historical plan and task state remains directly addressable. `plan show PLAN-ID --revision N` inspects an exact
+revision; `tasks --task IMP-ID --revision N` and `verify --task IMP-ID --revision N --run RUN` resolve the task through
+the persistent cross-revision index rather than substituting the plan's latest revision. Omitting `--revision` selects
+the newest revision that actually contains that logical task.
+
 `improve apply PLAN-ID` rejects an unapproved revision before opening or modifying harness state. `--dry-run` remains
 available for publication preflight without approval because it cannot create tasks or publication journal records.
 
@@ -32,6 +37,9 @@ selects one task without requiring the Ada Quality registry, and `--status STATU
 statuses are `proposed`, `published`, `in_progress`, `awaiting_verification`, `verified`, `blocked`, `failed`,
 `cancelled`, `rejected`, `partially_resolved`, `still_failing`, `inconclusive`, `regressed`, and `superseded`.
 Results have stable task-ID ordering and include the mapped harness task identity when publication has occurred.
+The task view retains quality outcome separately from harness runtime state. A quality-resolved task is reported as
+`verified` only after the harness work reaches `verification` or `complete`; resolution evidence alone cannot imply
+that authored investigation or implementation work was completed.
 
 `improve status --project PROJECT` summarizes stored plans, task states, and the latest plan's finding outcomes against
 the newest completed assessment. `improve status --all` produces the same deterministic summary for every registered
