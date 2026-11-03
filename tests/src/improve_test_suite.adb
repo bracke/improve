@@ -48,6 +48,7 @@ package body Improve_Test_Suite is
    use type Improve.Model.Task_Vectors.Vector;
    use type Improve.Refinement.Refinement_Status;
    use type Improve.Refinement.Source_State;
+   use type Improve.Storage.Verification_Scope;
    use type Improve.Tasks.Operational_Status;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
@@ -63,6 +64,7 @@ package body Improve_Test_Suite is
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Native_Publication_And_Recovery, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
+      Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
       Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
       Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
@@ -299,6 +301,7 @@ package body Improve_Test_Suite is
       Policy           : String := "policy-a";
       Source           : String := "source-c";
       Toolchain        : String := "gnat-15.2.1";
+      Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High;
       New_Critical     : Boolean := False) return Positive is
       use Ada_Quality.Types;
       Store : Ada_Quality.Storage.Store;
@@ -345,7 +348,7 @@ package body Improve_Test_Suite is
               (Finding'
                  (Indicator     => STR_01,
                 Rule          => To_Unbounded_String ("manifest.invalid"),
-                Level         => High,
+                Level         => Structure_Severity,
                 Message       => To_Unbounded_String ("manifest is invalid"),
                 Relative_Path => To_Unbounded_String ("alire.toml"),
                 Line          => 1,
@@ -1381,7 +1384,7 @@ package body Improve_Test_Suite is
                   declare Values : constant Improve.Storage.Verification_Vectors.Vector :=
                     Improve.Storage.Verifications (Improve_State, "PLAN-000001");
                   begin
-                     Assert (Values.Length = 3, "repeated verification duplicated historical evidence");
+                     Assert (Values.Length = 5, "repeated verification duplicated historical evidence");
                   end;
                   Improve.Storage.Close (Improve_State);
                end;
@@ -1403,6 +1406,86 @@ package body Improve_Test_Suite is
                Assert (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
                          (To_String (Result.Output), """outcome"":""still_failing""") > 0,
                        "unresolved verification did not return exit 1: " & To_String (Result.Errors));
+               Remove (Data);
+            end;
+         when Verification_Task_Scope_Not_Project =>
+            declare
+               Data      : constant Fixture := Build_Fixture ("verification_scope");
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run       : Positive;
+               Task_Run  : Improve.CLI.Outcome;
+               Full_Run  : Improve.CLI.Outcome;
+               Status    : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "verification-scope fixture plan failed");
+               Run := Publish_Followup (Data, Structure_State => Structure_Failing);
+               Task_Run := Improve.CLI.Execute
+                 (Args ("verify|--task|IMP-000003|--run|" & Id_Image (Run) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Task_Run.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Task_Run.Output), """outcome"":""verified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Task_Run.Output), """project_outcome"":""unverified""") > 0,
+                  "task-only verification claimed a project outcome");
+               Task_Run := Improve.CLI.Execute
+                 (Args ("verify|--task|IMP-000003|--run|" & Id_Image (Run) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Task_Run.Exit_Code = 0, "repeated task-scope verification was not idempotent");
+               Status := Improve.CLI.Execute
+                 (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Status.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Status.Output), """plan_quality"":""unverified""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Status.Output), """project_quality"":""unverified""") > 0,
+                  "status inferred aggregate quality from one verified task");
+               Full_Run := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Full_Run.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Full_Run.Output), """plan_outcome"":""still_failing""") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Full_Run.Output), """project_outcome"":""still_failing""") > 0,
+                  "full verification did not preserve unresolved aggregate outcomes: " &
+                    To_String (Full_Run.Errors));
+               Full_Run := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Full_Run.Exit_Code = Improve.CLI.Negative_Exit,
+                  "repeated full verification conflicted with task-scope evidence");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Assert
+                    (Improve.Storage.Verifications (Improve_State, "PLAN-000001").Length = 5,
+                     "verification scopes were duplicated or conflated");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
+            end;
+         when Verification_Severity_Drop_Outstanding =>
+            declare
+               Data     : constant Fixture := Build_Fixture ("verification_severity");
+               State    : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run      : Positive;
+               Result   : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "severity fixture plan failed");
+               Run := Publish_Followup
+                 (Data, Structure_State => Structure_Failing,
+                  Structure_Severity => Ada_Quality.Types.Info);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--task|IMP-000001|--run|" & Id_Image (Run) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Result.Output), """outcome"":""still_failing""") > 0,
+                  "severity reduction incorrectly resolved the same finding fingerprint");
                Remove (Data);
             end;
          when Verification_Partially_Resolved =>
@@ -1489,10 +1572,19 @@ package body Improve_Test_Suite is
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => False);
                   for Evidence of Improve.Storage.Verifications (Improve_State, "PLAN-000001") loop
-                     Assert
-                       (Evidence.Outcome = Improve.Model.Verified and then
-                        Evidence.Project_Outcome = Improve.Model.Regressed,
-                        "task and project verification outcomes were not persisted separately");
+                     if Evidence.Scope = Improve.Storage.Task_Evaluation then
+                        Assert
+                          (Evidence.Outcome = Improve.Model.Verified,
+                           "task verification outcome was not preserved");
+                     elsif Evidence.Scope = Improve.Storage.Plan_Evaluation then
+                        Assert
+                          (Evidence.Outcome = Improve.Model.Regressed,
+                           "plan regression outcome was not persisted separately");
+                     else
+                        Assert
+                          (Evidence.Outcome = Improve.Model.Regressed,
+                           "project regression outcome was not persisted separately");
+                     end if;
                   end loop;
                   Improve.Storage.Close (Improve_State);
                end;
@@ -2113,8 +2205,8 @@ package body Improve_Test_Suite is
                   if Verified then
                      Evidence.Append
                        (Improve.Storage.Verification_Record'
-                          (Task_Id => Only.Id, Assessment_Id => 2, Outcome => Outcome,
-                           Project_Outcome => Outcome, Comparable => True,
+                          (Scope => Improve.Storage.Task_Evaluation, Task_Id => Only.Id,
+                           Assessment_Id => 2, Outcome => Outcome, Comparable => True,
                            Explanation => To_Unbounded_String ("matrix")));
                   end if;
                   Views := Improve.Tasks.Build (Plan, Publications, Evidence);

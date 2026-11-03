@@ -61,19 +61,25 @@ package Improve.Storage is
    package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
    --  Ordered publication mappings.
 
+   type Verification_Scope is (Task_Evaluation, Plan_Evaluation, Project_Evaluation);
+   --  Identity and aggregation level of persisted verification evidence.
+   --  @enum Task_Evaluation Outcome for one logical remediation task.
+   --  @enum Plan_Evaluation Aggregate outcome for one complete plan evaluation.
+   --  @enum Project_Evaluation Aggregate quality of the complete assessment.
+
    type Verification_Record is record
-      Task_Id      : Ada.Strings.Unbounded.Unbounded_String;
+      Scope         : Verification_Scope := Task_Evaluation;
+      Task_Id       : Ada.Strings.Unbounded.Unbounded_String;
       Assessment_Id : Positive;
-      Outcome      : Improve.Model.Quality_Outcome;
-      Project_Outcome : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
-      Comparable   : Boolean;
-      Explanation  : Ada.Strings.Unbounded.Unbounded_String;
+      Outcome       : Improve.Model.Quality_Outcome;
+      Comparable    : Boolean;
+      Explanation   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
    --  Append-only independent verification evidence.
+   --  @field Scope Evaluation identity and aggregation level.
    --  @field Task_Id Improve task identity.
    --  @field Assessment_Id Completed assessment identity.
-   --  @field Outcome Quality outcome.
-   --  @field Project_Outcome Project-level outcome for the same assessment.
+   --  @field Outcome Quality outcome at Scope.
    --  @field Comparable Whether baseline and current evidence are comparable.
    --  @field Explanation Evidence-based conclusion.
 

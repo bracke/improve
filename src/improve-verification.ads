@@ -30,6 +30,8 @@ package Improve.Verification is
       Baseline_Run     : Positive;
       Verification_Run : Positive;
       Outcome          : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
+      Plan_Outcome     : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
+      Project_Outcome  : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Comparable       : Boolean := False;
       New_Critical     : Natural := 0;
       Explanation      : Ada.Strings.Unbounded.Unbounded_String;
@@ -40,6 +42,8 @@ package Improve.Verification is
    --  @field Baseline_Run Original assessment identity.
    --  @field Verification_Run Current completed assessment identity.
    --  @field Outcome Aggregate quality outcome.
+   --  @field Plan_Outcome Complete plan outcome, or unverified for task-only evaluation.
+   --  @field Project_Outcome Complete assessment outcome, or unverified for task-only evaluation.
    --  @field Comparable Whether the evidence can establish an outcome.
    --  @field New_Critical New unrelated critical findings.
    --  @field Explanation Comparability and outcome explanation.

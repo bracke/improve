@@ -1009,6 +1009,18 @@ package body Improve.Storage is
       Values  : Verification_Vectors.Vector) is
       Tx     : Database.Transactions.Transaction;
       Row_Id : Positive;
+
+      function Scope_Image (Value : Verification_Scope) return String is
+        (case Value is
+            when Task_Evaluation => "task",
+            when Plan_Evaluation => "plan",
+            when Project_Evaluation => "project");
+
+      function Record_Key (Value : Verification_Record) return String is
+        (case Value.Scope is
+            when Task_Evaluation => To_String (Value.Task_Id),
+            when Plan_Evaluation => "@plan",
+            when Project_Evaluation => "@project");
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for verification recording";
@@ -1019,18 +1031,23 @@ package body Improve.Storage is
          declare
             Cursor   : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table);
             Existing : Boolean := False;
+            Key      : constant String := Record_Key (Value);
          begin
+            if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
+               raise Data_Error with "task verification has no task identity";
+            elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
+               raise Data_Error with "aggregate verification must not name a task";
+            end if;
             while Entity_Tables.Has_Element (Cursor) loop
                declare
                   Row     : constant Entity := Entity_Tables.Element (Cursor);
                   Payload : constant String := S (Row.Payload);
                begin
-                  if S (Row.Kind) = To_String (Value.Task_Id) and then Field (Payload, "plan_id") = Plan_Id and then
+                  if S (Row.Kind) = Key and then Field (Payload, "plan_id") = Plan_Id and then
                     Field (Payload, "assessment_id") = Number (Value.Assessment_Id)
                   then
                      if S (Row.State) /= Improve.Model.Image (Value.Outcome) or else
-                       Field_Or (Payload, "project_outcome", S (Row.State)) /=
-                         Improve.Model.Image (Value.Project_Outcome) or else
+                       Field_Or (Payload, "scope", "task") /= Scope_Image (Value.Scope) or else
                        Field (Payload, "comparable") /= Boolean_Image (Value.Comparable) or else
                        Field (Payload, "explanation") /= To_String (Value.Explanation)
                      then
@@ -1046,10 +1063,11 @@ package body Improve.Storage is
                Check
                  (Entity_Tables.Insert
                     (Tx, Item.DB, Item.Schemas (Verifications_Table),
-                     (Row_Id, 0, WW (To_String (Value.Task_Id)), WW (Improve.Model.Image (Value.Outcome)),
+                     (Row_Id, 0, WW (Key), WW (Improve.Model.Image (Value.Outcome)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
-                          Pair ("project_outcome", Improve.Model.Image (Value.Project_Outcome)) & LF &
+                          Pair ("scope", Scope_Image (Value.Scope)) & LF &
+                          Pair ("task_id", To_String (Value.Task_Id)) & LF &
                           Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
                           Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
                   "record verification evidence");
@@ -1072,6 +1090,15 @@ package body Improve.Storage is
       raise Data_Error with "stored verification outcome is invalid: " & Value;
    end Parse_Outcome;
 
+   function Parse_Scope (Value : String) return Verification_Scope is
+   begin
+      if Value = "task" then return Task_Evaluation;
+      elsif Value = "plan" then return Plan_Evaluation;
+      elsif Value = "project" then return Project_Evaluation;
+      else raise Data_Error with "stored verification scope is invalid: " & Value;
+      end if;
+   end Parse_Scope;
+
    function Verifications
      (Item    : in out Store;
       Plan_Id : String := "";
@@ -1086,16 +1113,19 @@ package body Improve.Storage is
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
+            Scope   : constant Verification_Scope := Parse_Scope (Field_Or (Payload, "scope", "task"));
+            Stored_Task : constant String :=
+              (if Scope = Task_Evaluation then Field_Or (Payload, "task_id", S (Row.Kind)) else "");
          begin
             if (Plan_Id = "" or else Field (Payload, "plan_id") = Plan_Id) and then
-              (Task_Id = "" or else S (Row.Kind) = Task_Id)
+              (Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id))
             then
                Result.Append
                  (Verification_Record'
-                    (Task_Id       => To_Unbounded_String (S (Row.Kind)),
+                    (Scope         => Scope,
+                     Task_Id       => To_Unbounded_String (Stored_Task),
                      Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
                      Outcome       => Parse_Outcome (S (Row.State)),
-                     Project_Outcome => Parse_Outcome (Field_Or (Payload, "project_outcome", S (Row.State))),
                      Comparable    => Boolean'Value (Field (Payload, "comparable")),
                      Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
             end if;

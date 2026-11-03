@@ -51,9 +51,11 @@ Read-only commands use `Database.Open_Read_Only`. They do not create a missing f
 perform recovery. Writable open initializes a missing version-1 database; an existing database with missing or different
 schema metadata is rejected rather than guessed or silently migrated.
 
-Verification evidence is append-only by task and completed assessment. Repeating the same evaluation is idempotent;
-a conflicting outcome for the same task and assessment is rejected. Publication mappings preserve immutable Improve,
-harness, and origin identities while allowing only their cached harness-owned runtime state to be reconciled.
+Verification evidence is append-only by evaluation scope and completed assessment. Task, complete-plan, and
+complete-project records use distinct identities. Repeating an evaluation at the same scope is idempotent; a
+conflicting outcome at that exact scope is rejected without preventing another valid scope from evaluating the same
+assessment. Publication mappings preserve immutable Improve, harness, and origin identities while allowing only their
+cached harness-owned runtime state to be reconciled.
 
 Mandatory review approval is an append-only `operations` event keyed by stable plan identity and exact revision. The
 event also stores the immutable revision fingerprint. Publication accepts the approval only when all three values

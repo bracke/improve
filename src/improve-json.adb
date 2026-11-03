@@ -220,6 +220,8 @@ package body Improve.JSON is
       Doc.Insert (Data, "baseline_run", Doc.New_Integer (Long_Long_Integer (Value.Baseline_Run)));
       Doc.Insert (Data, "verification_run", Doc.New_Integer (Long_Long_Integer (Value.Verification_Run)));
       Doc.Insert (Data, "outcome", Doc.New_String (Improve.Model.Image (Value.Outcome)));
+      Doc.Insert (Data, "plan_outcome", Doc.New_String (Improve.Model.Image (Value.Plan_Outcome)));
+      Doc.Insert (Data, "project_outcome", Doc.New_String (Improve.Model.Image (Value.Project_Outcome)));
       Doc.Insert (Data, "comparable", Doc.New_Boolean (Value.Comparable));
       Doc.Insert (Data, "new_critical", Doc.New_Integer (Long_Long_Integer (Value.New_Critical)));
       Doc.Insert (Data, "explanation", Doc.New_String (To_String (Value.Explanation)));
@@ -294,6 +296,11 @@ package body Improve.JSON is
             Doc.Insert (Item, "baseline_run", Doc.New_Integer (Long_Long_Integer (Value.Baseline_Run)));
             Doc.Insert (Item, "latest_run", Doc.New_Integer (Long_Long_Integer (Value.Latest_Run)));
             Doc.Insert (Item, "plan_count", Doc.New_Integer (Long_Long_Integer (Value.Plan_Count)));
+            Doc.Insert
+              (Item, "plan_quality",
+               Doc.New_String
+                 (if Value.Has_Plan_Verification then Improve.Model.Image (Value.Plan_Quality)
+                  else "unverified"));
             Doc.Insert
               (Item, "project_quality",
                Doc.New_String

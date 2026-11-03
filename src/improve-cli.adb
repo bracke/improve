@@ -29,6 +29,7 @@ package body Improve.CLI is
    use Improve.Text;
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
+   use type Improve.Storage.Verification_Scope;
    use type Improve.Tasks.Operational_Status;
 
    LF : constant Character := Character'Val (10);
@@ -775,12 +776,21 @@ package body Improve.CLI is
                  Improve.Storage.Load (State, To_String (Summary.Plan_Id));
                Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
                Latest_Project_Run : Natural := 0;
+               Latest_Plan_Run : Natural := 0;
             begin
                for Evidence of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-                  if Evidence.Assessment_Id >= Latest_Project_Run then
+                  if Evidence.Scope = Improve.Storage.Project_Evaluation and then
+                    Evidence.Assessment_Id >= Latest_Project_Run
+                  then
                      Latest_Project_Run := Evidence.Assessment_Id;
-                     Value.Project_Quality := Evidence.Project_Outcome;
+                     Value.Project_Quality := Evidence.Outcome;
                      Value.Has_Project_Verification := True;
+                  elsif Evidence.Scope = Improve.Storage.Plan_Evaluation and then
+                    Evidence.Assessment_Id >= Latest_Plan_Run
+                  then
+                     Latest_Plan_Run := Evidence.Assessment_Id;
+                     Value.Plan_Quality := Evidence.Outcome;
+                     Value.Has_Plan_Verification := True;
                   end if;
                end loop;
                Value.Tasks.Append_Vector (Plan_Views);
@@ -843,6 +853,9 @@ package body Improve.CLI is
                Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
                Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
                Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF &
+               "Plan quality: " &
+               (if Value.Has_Plan_Verification then Improve.Model.Image (Value.Plan_Quality)
+                else "unverified") & LF &
                "Project quality: " &
                (if Value.Has_Project_Verification then Improve.Model.Image (Value.Project_Quality)
                 else "unverified") & LF);
@@ -927,7 +940,8 @@ package body Improve.CLI is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-               if Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
+               if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
+                 Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
                  Record_Value.Outcome = Improve.Model.Verified and then
                  not Previously_Verified.Contains (Record_Value.Task_Id)
                then
@@ -945,13 +959,31 @@ package body Improve.CLI is
                for Result of Report.Tasks loop
                   Records.Append
                     (Improve.Storage.Verification_Record'
-                       (Task_Id         => Result.Task_Id,
+                       (Scope           => Improve.Storage.Task_Evaluation,
+                        Task_Id         => Result.Task_Id,
                         Assessment_Id   => Report.Verification_Run,
                         Outcome         => Result.Outcome,
-                        Project_Outcome => Report.Outcome,
                         Comparable      => Report.Comparable,
                         Explanation     => Result.Explanation));
                end loop;
+               if not Item.Has_Task then
+                  Records.Append
+                    (Improve.Storage.Verification_Record'
+                       (Scope         => Improve.Storage.Plan_Evaluation,
+                        Task_Id       => Null_Unbounded_String,
+                        Assessment_Id => Report.Verification_Run,
+                        Outcome       => Report.Plan_Outcome,
+                        Comparable    => Report.Comparable,
+                        Explanation   => Report.Explanation));
+                  Records.Append
+                    (Improve.Storage.Verification_Record'
+                       (Scope         => Improve.Storage.Project_Evaluation,
+                        Task_Id       => Null_Unbounded_String,
+                        Assessment_Id => Report.Verification_Run,
+                        Outcome       => Report.Project_Outcome,
+                        Comparable    => Report.Comparable,
+                        Explanation   => Report.Explanation));
+               end if;
                Improve.Storage.Open (State, State_Path (Item), Writable => True);
                Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
                Improve.Storage.Close (State);

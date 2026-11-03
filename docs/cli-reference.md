@@ -41,6 +41,10 @@ The task view retains quality outcome separately from harness runtime state. A q
 `verified` only after the harness work reaches `verification` or `complete`; resolution evidence alone cannot imply
 that authored investigation or implementation work was completed.
 
+`verify --task IMP-ID` records task-scoped quality only. `verify --project PROJECT` evaluates every task in the selected
+plan and persists separate plan and project assessment outcomes. Status displays unverified aggregate quality until a
+complete evaluation exists; it never promotes one successful task to a project-wide conclusion.
+
 `improve status --project PROJECT` summarizes stored plans, task states, and the latest plan's finding outcomes against
 the newest completed assessment. `improve status --all` produces the same deterministic summary for every registered
 project. A newer failed or incomplete assessment does not replace the most recent completed run.

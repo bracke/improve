@@ -115,7 +115,34 @@ package body Improve.Verification is
         Improve.Model.UString_Vectors.Empty_Vector) return Report is
       Result : Report;
       Current_Findings : constant Improve.Model.Finding_Vectors.Vector :=
-        Improve.Findings.Normalize (Current, Allow_Investigation => True);
+        Improve.Findings.Normalize
+          (Current, Minimum_Severity => Ada_Quality.Types.Info, Allow_Investigation => True);
+
+      function Complete_Project_Outcome return Improve.Model.Quality_Outcome is
+         Inconclusive : Boolean := False;
+      begin
+         for Evidence of Current.Assessment.Results loop
+            if Evidence.Execution = Succeeded and then Evidence.Compliance = Violation then
+               return Improve.Model.Still_Failing;
+            elsif Evidence.Execution = Failed and then Evidence.Compliance = Violation then
+               return Improve.Model.Still_Failing;
+            elsif Evidence.Execution /= Not_Applicable and then
+              not (Evidence.Execution = Succeeded and then Evidence.Compliance = Pass)
+            then
+               Inconclusive := True;
+            end if;
+         end loop;
+         return (if Inconclusive then Improve.Model.Inconclusive else Improve.Model.Verified);
+      end Complete_Project_Outcome;
+
+      procedure Set_Complete_Outcomes is
+      begin
+         if Task_Id = "" then
+            Result.Plan_Outcome := Result.Outcome;
+            Result.Project_Outcome := Complete_Project_Outcome;
+            if Result.New_Critical > 0 then Result.Project_Outcome := Improve.Model.Regressed; end if;
+         end if;
+      end Set_Complete_Outcomes;
    begin
       Result.Plan_Id := Plan.Plan_Id;
       Result.Baseline_Run := Plan.Baseline.Run_Id;
@@ -126,17 +153,29 @@ package body Improve.Verification is
          Result.Outcome := Improve.Model.Inconclusive;
          Result.Explanation := To_Unbounded_String ("verification requires a completed assessment newer than baseline");
          Add_Inconclusive_Tasks (Plan, Task_Id, To_String (Result.Explanation), Result);
+         if Task_Id = "" then
+            Result.Plan_Outcome := Improve.Model.Inconclusive;
+            Result.Project_Outcome := Improve.Model.Inconclusive;
+         end if;
          return Result;
       elsif Settings.Require_Same_Policy and then Current.Baseline.Policy_Id /= Plan.Baseline.Policy_Id then
          Result.Outcome := Improve.Model.Inconclusive;
          Result.Explanation := To_Unbounded_String
            ("quality policy changed; original acceptance intent is not comparable");
          Add_Inconclusive_Tasks (Plan, Task_Id, To_String (Result.Explanation), Result);
+         if Task_Id = "" then
+            Result.Plan_Outcome := Improve.Model.Inconclusive;
+            Result.Project_Outcome := Improve.Model.Inconclusive;
+         end if;
          return Result;
       elsif Settings.Require_Same_Toolchain and then Current.Baseline.Toolchain_Id /= Plan.Baseline.Toolchain_Id then
          Result.Outcome := Improve.Model.Inconclusive;
          Result.Explanation := To_Unbounded_String ("toolchain changed and equivalence is required");
          Add_Inconclusive_Tasks (Plan, Task_Id, To_String (Result.Explanation), Result);
+         if Task_Id = "" then
+            Result.Plan_Outcome := Improve.Model.Inconclusive;
+            Result.Project_Outcome := Improve.Model.Inconclusive;
+         end if;
          return Result;
       end if;
       Result.Comparable := True;
@@ -213,6 +252,7 @@ package body Improve.Verification is
       else
          Result.Explanation := To_Unbounded_String ("evaluated against completed assessment evidence");
       end if;
+      Set_Complete_Outcomes;
       return Result;
    end Evaluate;
 end Improve.Verification;

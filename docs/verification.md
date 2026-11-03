@@ -1,5 +1,13 @@
 # Verification
 
+Verification has three independently persisted scopes: task, complete plan, and complete project assessment. A
+`verify --task` invocation records only the selected task outcome. It cannot create or replace a plan or project
+conclusion. A full project invocation records per-task results plus distinct plan and project aggregate records, so
+both scopes can evaluate the same assessment without identity conflicts.
+
+Finding matching uses every current finding regardless of task-generation severity thresholds. A matching fingerprint
+remains outstanding when its severity changes; severity reduction alone is not resolution evidence.
+
 `improve verify` evaluates an existing completed Ada Quality assessment. It never starts a measurement and never moves
 a model runner task. `improve refresh` performs the same evidence evaluation after reconciling published task states;
 an unresolved refresh is reported in its document but does not make the reconciliation command fail.
@@ -21,7 +29,7 @@ When configured, a new critical finding also makes the report regressed. A task 
 linked deficiency has comparable evidence and is resolved. Overall outcome precedence is regression, inconclusive,
 still failing, partial resolution, then verified.
 
-Verification records identify the task, completed assessment, comparability decision, outcome, and explanation. They
-are append-only and idempotent for the same task/assessment evidence. JSON output is schema-versioned and verification
-returns exit code 1 for every outcome other than `verified`; invalid or incomplete assessment selection returns the
-normal unavailable-evidence error instead.
+Verification records identify their scope, optional task, completed assessment, comparability decision, outcome, and
+explanation. They are append-only and idempotent for the same scope and assessment evidence. JSON output is
+schema-versioned and verification returns exit code 1 for every requested outcome other than `verified`; invalid or
+incomplete assessment selection returns the normal unavailable-evidence error instead.

@@ -1,6 +1,7 @@
 package body Improve.Tasks is
    use Ada.Strings.Unbounded;
    use type Improve.Model.Quality_Outcome;
+   use type Improve.Storage.Verification_Scope;
 
    function Image (Value : Operational_Status) return String is
      (case Value is
@@ -71,7 +72,9 @@ package body Improve.Tasks is
                end if;
             end loop;
             for Verification of Verifications loop
-               if Verification.Task_Id = Spec.Id and then Verification.Assessment_Id >= Latest_Run then
+               if Verification.Scope = Improve.Storage.Task_Evaluation and then
+                 Verification.Task_Id = Spec.Id and then Verification.Assessment_Id >= Latest_Run
+               then
                   Latest_Run := Verification.Assessment_Id;
                   View.Quality := Verification.Outcome;
                   View.Has_Verification := True;
