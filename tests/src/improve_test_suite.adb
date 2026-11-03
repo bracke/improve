@@ -70,7 +70,8 @@ package body Improve_Test_Suite is
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
       Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
-      Verification_Policy_Changed, Verification_Incomplete_Rejected, Verification_Revisions_Coexist,
+      Changed_Contract_Not_Regression, Verification_Policy_Changed, Verification_Incomplete_Rejected,
+      Verification_Revisions_Coexist,
       Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
@@ -1828,6 +1829,50 @@ package body Improve_Test_Suite is
                     (To_String (Old_Result.Output), """outcome"":""still_failing""") > 0 and then
                   Ada.Strings.Fixed.Index (To_String (Old_Result.Output), """outcome"":""regressed""") = 0,
                   "future verification evidence incorrectly regressed an older assessment");
+               Remove (Data);
+            end;
+         when Changed_Contract_Not_Regression =>
+            declare
+               Data      : constant Fixture := Build_Fixture ("changed_contract_history");
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Resolved  : Positive;
+               Returned  : Positive;
+               Checked   : Improve.CLI.Outcome;
+               Store     : Improve.Storage.Store;
+               Next_Plan : Improve.Model.Plan_Revision;
+               Saved     : Improve.Storage.Save_Result;
+            begin
+               Assert (Planned.Exit_Code = 0, "changed-contract fixture plan failed");
+               Resolved := Publish_Followup (Data);
+               Checked := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Resolved) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (Checked.Exit_Code = 0, "original task contract was not verified");
+               Improve.Storage.Open (Store, State, Writable => False);
+               Next_Plan := Improve.Storage.Load (Store, "PLAN-000001");
+               Improve.Storage.Close (Store);
+               Next_Plan.Tasks (Next_Plan.Tasks.First_Index).Goal :=
+                 To_Unbounded_String ("A materially revised remediation goal");
+               Next_Plan.Fingerprint := To_Unbounded_String
+                 (Improve.Stable_Digest ("changed-task-contract-revision"));
+               Improve.Storage.Open (Store, State, Writable => True);
+               Saved := Improve.Storage.Save (Store, Next_Plan);
+               Improve.Storage.Close (Store);
+               Assert
+                 (not Saved.Existing and then Saved.Plan.Revision = 2 and then
+                  Saved.Plan.Tasks.First_Element.Id = To_Unbounded_String ("IMP-000001"),
+                  "changed contract did not retain the logical task identity fixture");
+               Returned := Publish_Followup (Data, Structure_State => Structure_Failing);
+               Checked := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--revision|2|--run|" &
+                        Id_Image (Returned) & "|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Checked.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Checked.Output), """outcome"":""still_failing""") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Checked.Output), """outcome"":""regressed""") = 0,
+                  "verification reused resolution history from a different task contract");
                Remove (Data);
             end;
          when Verification_Policy_Changed =>

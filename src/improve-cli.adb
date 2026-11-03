@@ -994,13 +994,19 @@ package body Improve.CLI is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-               if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
-                 Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
-                 Record_Value.Outcome = Improve.Model.Verified and then
-                 not Previously_Verified.Contains (Record_Value.Task_Id)
-               then
-                  Previously_Verified.Append (Record_Value.Task_Id);
-               end if;
+               for Spec of Plan.Tasks loop
+                  if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
+                    Record_Value.Task_Id = Spec.Id and then
+                    To_String (Record_Value.Contract_Fingerprint) =
+                      Improve.Verification.Contract_Fingerprint (Spec) and then
+                    Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
+                    Record_Value.Outcome = Improve.Model.Verified and then
+                    not Previously_Verified.Contains (Record_Value.Task_Id)
+                  then
+                     Previously_Verified.Append (Record_Value.Task_Id);
+                     exit;
+                  end if;
+               end loop;
             end loop;
             Improve.Storage.Close (State);
             declare

@@ -25,6 +25,10 @@ Each task is evaluated against all linked baseline findings:
 - a mixture of resolved and outstanding linked findings is partially resolved;
 - a deficiency returning after a recorded verified result is regressed.
 
+Regression history is contract-specific. A prior verified record qualifies only when its immutable task-contract
+fingerprint equals the contract currently being evaluated. Reuse of a logical task ID across a changed contract does
+not carry resolution history forward without an explicit future compatibility rule.
+
 When configured, a new critical finding also makes the report regressed. A task is verified only if every mandatory
 linked deficiency has comparable evidence and is resolved. Overall outcome precedence is regression, inconclusive,
 still failing, partial resolution, then verified.

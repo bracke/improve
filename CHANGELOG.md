@@ -20,8 +20,9 @@
 - Prevent recovery from creating missing native tasks after approval or source preconditions become stale.
 - Scope status quality to the latest completed assessment and label older plan or project verification as historical.
 - Bind derived task verification status to the latest applicable completed assessment while retaining historical evidence.
+- Restrict regression history to prior verification of the exact immutable task contract.
 - Qualify project history by Ada Quality database identity and canonical project path, rejecting cross-database ID reuse.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 75 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 76 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

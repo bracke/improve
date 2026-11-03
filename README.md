@@ -30,7 +30,7 @@ alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
 tools/bin/check_phase_9
 ```
 
-The gate performs warning-clean application and test builds, runs the 75-case AUnit suite, checks repository policy,
+The gate performs warning-clean application and test builds, runs the 76-case AUnit suite, checks repository policy,
 audits every Improve package with GNATdoc, proves every SPARK-enabled unit with GNATprove, and requires at least 90%
 measured production-line coverage. `alr test` invokes the same Ada gate.
 
