@@ -56,7 +56,7 @@ package Improve.Storage is
    --  @field Improve_Task_Id Stable Improve task identity.
    --  @field Harness_Task_Id Native model_runner task identity.
    --  @field Origin Authenticated stable Improve origin.
-   --  @field Contract Complete execution contract represented by the native task.
+   --  @field Contract Dependency-qualified effective execution binding represented by the native task.
    --  @field State Cached harness-owned runtime state.
    --  @field Plan_Revision Immutable revision that first published the task.
 

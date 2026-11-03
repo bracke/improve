@@ -48,6 +48,9 @@ package Improve.Workflow is
    --  Stable origins recover a prior harness commit without duplicating tasks.
    --  A changed contract retires safe predecessors in the same transaction,
    --  preserves completed history, and rejects active execution replacement.
+   --  Transitive dependency bindings replace safe published dependents with
+   --  native edges to the replacement prerequisites; unsafe selective work
+   --  is rejected before any harness change.
    --  @param Project_Directory Initialized model_runner project directory.
    --  @param Plan Immutable plan revision to publish.
    --  @param Requested_Kind Configured task kind or `auto`.

@@ -45,6 +45,13 @@ historical; and completed predecessors remain completed. A predecessor in `runni
 replacement until the operator resolves that active work through the normal harness workflow. Project transition policy
 is respected, and an unavailable retirement transition blocks publication.
 
+The publication contract is dependency-qualified: it combines the task specification with the effective contracts of
+all transitive Improve prerequisites. If A changes, an already-published B that depends on A therefore receives a new
+native binding even when B's authored specification is unchanged. A full-plan apply retires and replaces the safe active
+graph in one transaction, and the replacement B points to the replacement A. A selective apply that would strand an
+active published dependent is rejected before retiring any prerequisite and directs the operator to publish the complete
+plan. Completed, cancelled, and rejected dependent definitions retain their historical native dependency edges.
+
 Recovery first runs an existing-only provenance probe. A completely committed harness transaction is adopted without
 replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current
 source fingerprint enforced by normal publication. Failed revalidation leaves the operation journal entry pending.

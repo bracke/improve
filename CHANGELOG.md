@@ -37,7 +37,9 @@
   selected project's complete typed assessment evidence, preventing unrelated measurements from creating revisions.
 - Add atomic native-task supersession: retire safe predecessor states through model_runner, preserve completed history,
   block running or verification predecessors, and trace predecessor identities in replacement task definitions.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 82 AUnit cases, GNATdoc, GNATprove, repository checks, and
+- Qualify native publication identity by transitive prerequisite contracts so full-plan replacement migrates concrete
+  dependency edges atomically, while selective replacement rejects active downstream work before modifying the harness.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, 83 AUnit cases, GNATdoc, GNATprove, repository checks, and
   at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.

@@ -189,4 +189,13 @@ package Improve.Model is
    --  @field Tasks Proposed remediation tasks.
    --  @field Fingerprint Deterministic revision identity.
    --  @field Review_Status Review state.
+
+   function Effective_Task_Contract_Fingerprint
+     (Plan    : Plan_Revision;
+      Task_Id : UString) return String;
+   --  Identify the executable task contract together with the exact
+   --  logical contracts of every transitive prerequisite.
+   --  @param Plan Complete immutable plan containing the dependency graph.
+   --  @param Task_Id Logical task whose effective contract is required.
+   --  @return Stable dependency-qualified execution fingerprint.
 end Improve.Model;

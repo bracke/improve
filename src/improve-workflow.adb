@@ -50,7 +50,7 @@ package body Improve.Workflow is
      (Plan : Improve.Model.Plan_Revision;
       Spec : Improve.Model.Task_Specification) return String is
      ("improve:" & Stable_Digest (To_String (Plan.Project.Path)) & ":task:" & To_String (Spec.Id) &
-      ":contract:" & Improve.Model.Task_Contract_Fingerprint (Spec));
+      ":contract:" & Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id));
 
    function Harness_Priority (Value : Improve.Model.Priority) return String is
      (case Value is
@@ -71,9 +71,11 @@ package body Improve.Workflow is
 
    function Native_Notes
      (Spec         : Improve.Model.Task_Specification;
+      Binding      : String;
       Predecessors : Improve.Model.UString_Vectors.Vector) return String is
      ("Improve task: " & To_String (Spec.Id) & ASCII.LF &
       "Contract: " & Improve.Model.Task_Contract_Fingerprint (Spec) & ASCII.LF &
+      "Dependency binding: " & Binding & ASCII.LF &
       (if Predecessors.Is_Empty then "" else "Supersedes: " & Join (Predecessors) & ASCII.LF) &
       "Goal: " & To_String (Spec.Goal) & ASCII.LF &
       "Problem: " & To_String (Spec.Problem) & ASCII.LF &
@@ -89,6 +91,7 @@ package body Improve.Workflow is
       Spec   : Improve.Model.Task_Specification;
       Kind   : String;
       Origin : String;
+      Binding : String;
       Predecessors : Improve.Model.UString_Vectors.Vector) is
    begin
       if Records.Get (Value, "created_by") /= "improve" or else Records.Get (Value, "origin") /= Origin then
@@ -98,7 +101,7 @@ package body Improve.Workflow is
         Records.Get (Value, "kind") /= Kind or else
         Records.Get (Value, "priority") /= Harness_Priority (Spec.Task_Priority) or else
         Records.Get (Value, "acceptance") /= To_String (Spec.Acceptance) or else
-        Records.Get (Value, "notes") /= Native_Notes (Spec, Predecessors)
+        Records.Get (Value, "notes") /= Native_Notes (Spec, Binding, Predecessors)
       then
          raise Data_Error with
            "native task definition differs from the complete Improve contract for " & To_String (Spec.Id);
@@ -110,6 +113,7 @@ package body Improve.Workflow is
       Origin : String;
       Spec   : Improve.Model.Task_Specification;
       Kind   : String;
+      Binding : String;
       Predecessors : Improve.Model.UString_Vectors.Vector) return String is
       Status : Errors.Error_Info;
       Value  : Records.Item;
@@ -119,7 +123,7 @@ package body Improve.Workflow is
          if Errors.Is_Ok (Status) and then Records.Get (Value, "created_by") = "improve" and then
            Records.Get (Value, "origin") = Origin
          then
-            Require_Compatible_Definition (Value, Spec, Kind, Origin, Predecessors);
+            Require_Compatible_Definition (Value, Spec, Kind, Origin, Binding, Predecessors);
             return Id;
          end if;
       end loop;
@@ -151,7 +155,9 @@ package body Improve.Workflow is
       function Contract_Of (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return String is
       begin
          for Spec of Plan.Tasks loop
-            if Spec.Id = Task_Id then return Improve.Model.Task_Contract_Fingerprint (Spec); end if;
+            if Spec.Id = Task_Id then
+               return Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id);
+            end if;
          end loop;
          return "";
       end Contract_Of;
@@ -160,7 +166,7 @@ package body Improve.Workflow is
         (Mapping : Improve.Storage.Publication_Record;
          Spec    : Improve.Model.Task_Specification) return Boolean is
         (Mapping.Improve_Task_Id = Spec.Id and then
-         To_String (Mapping.Contract) /= Improve.Model.Task_Contract_Fingerprint (Spec) and then
+         To_String (Mapping.Contract) /= Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id) and then
          Mapping.Plan_Revision < Plan.Revision);
 
       function Predecessors_Of
@@ -174,6 +180,34 @@ package body Improve.Workflow is
          end loop;
          return Values;
       end Predecessors_Of;
+
+      function Has_Current_Mapping (Spec : Improve.Model.Task_Specification) return Boolean is
+         Binding : constant String := Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id);
+      begin
+         return
+           (for some Mapping of Existing =>
+              Mapping.Improve_Task_Id = Spec.Id and then To_String (Mapping.Contract) = Binding);
+      end Has_Current_Mapping;
+
+      function Depends_On_Any
+        (Spec    : Improve.Model.Task_Specification;
+         Targets : Improve.Model.UString_Vectors.Vector;
+         Trail   : Improve.Model.UString_Vectors.Vector := Improve.Model.UString_Vectors.Empty_Vector)
+         return Boolean is
+         Next_Trail : Improve.Model.UString_Vectors.Vector := Trail;
+      begin
+         if Trail.Contains (Spec.Id) then return False; end if;
+         Next_Trail.Append (Spec.Id);
+         for Dependency of Spec.Dependencies loop
+            if Targets.Contains (Dependency) then return True; end if;
+            for Candidate of Plan.Tasks loop
+               if Candidate.Id = Dependency and then Depends_On_Any (Candidate, Targets, Next_Trail) then
+                  return True;
+               end if;
+            end loop;
+         end loop;
+         return False;
+      end Depends_On_Any;
 
       function Retirement_Target (Mapping : Improve.Storage.Publication_Record) return String is
          Definition : Records.Item;
@@ -254,10 +288,51 @@ package body Improve.Workflow is
       Require_Ok (Status, "open model_runner project state");
       declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
          Result.Task_Kind := To_Unbounded_String (Kind);
+         declare Replaced : Improve.Model.UString_Vectors.Vector; begin
+            for Spec of Selected loop
+               if not Has_Current_Mapping (Spec) and then not Predecessors_Of (Spec).Is_Empty then
+                  Replaced.Append (Spec.Id);
+               end if;
+            end loop;
+            if not Replaced.Is_Empty then
+               for Spec of Plan.Tasks loop
+                  if not Is_Selected (Spec.Id) and then not Has_Current_Mapping (Spec) and then
+                    Depends_On_Any (Spec, Replaced)
+                  then
+                     for Mapping of Existing loop
+                        if Is_Predecessor (Mapping, Spec) then
+                           declare
+                              Definition : Records.Item;
+                              Native_State : constant String :=
+                                Tasks.State_Of (Store, To_String (Mapping.Harness_Task_Id));
+                              Core_State : constant String := Tasks.Counts_As (Store, Native_State);
+                           begin
+                              Tasks.Definition
+                                (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+                              Require_Ok
+                                (Status, "read downstream native task " & To_String (Mapping.Harness_Task_Id));
+                              if Records.Get (Definition, "created_by") /= "improve" or else
+                                Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+                              then
+                                 raise Data_Error with "downstream native task has invalid Improve provenance";
+                              end if;
+                              if Core_State not in "complete" | "cancelled" | "rejected" then
+                                 raise Data_Error with
+                                   "selective replacement would strand published dependent " & To_String (Spec.Id) &
+                                   " (" & To_String (Mapping.Harness_Task_Id) & " is " & Native_State &
+                                   "); publish the complete plan so its dependency can be replaced atomically";
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                  end if;
+               end loop;
+            end if;
+         end;
          for Spec of Selected loop
             declare
                Contract    : constant Unbounded_String :=
-                 To_Unbounded_String (Improve.Model.Task_Contract_Fingerprint (Spec));
+                 To_Unbounded_String (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id));
                Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec));
                Harness_Id  : Unbounded_String;
                Was_Mapped  : Boolean := False;
@@ -282,7 +357,7 @@ package body Improve.Workflow is
                            raise Data_Error with "stored publication mapping has an incompatible stable origin";
                         end if;
                         Require_Compatible_Definition
-                          (Definition, Spec, Kind, To_String (Mapping.Origin), Predecessors);
+                          (Definition, Spec, Kind, To_String (Mapping.Origin), To_String (Contract), Predecessors);
                      end;
                      Origin := Mapping.Origin;
                      Harness_Id := Mapping.Harness_Task_Id;
@@ -292,7 +367,8 @@ package body Improve.Workflow is
                end loop;
                if not Was_Mapped then
                   Harness_Id := To_Unbounded_String
-                    (Existing_By_Origin (Store, To_String (Origin), Spec, Kind, Predecessors));
+                    (Existing_By_Origin
+                       (Store, To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
                end if;
                Result.Tasks.Append
                  (Published_Task'
@@ -366,7 +442,7 @@ package body Improve.Workflow is
                               Tasks.Move
                                 (Store, Change, To_String (Mapping.Harness_Task_Id), Target,
                                  "superseded by " & To_String (Spec.Id) & " contract " &
-                                   Improve.Model.Task_Contract_Fingerprint (Spec),
+                                   Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id),
                                  Status => Status, Actor => Transitions.User);
                               Require_Ok (Status, "retire superseded native task");
                            end if;
@@ -418,7 +494,9 @@ package body Improve.Workflow is
                            declare
                               Fields : Tasks.Field_Map;
                               Id     : Unbounded_String;
-                              Notes  : constant String := Native_Notes (Spec, Predecessors_Of (Spec));
+                              Notes  : constant String := Native_Notes
+                                (Spec, Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id),
+                                 Predecessors_Of (Spec));
                            begin
                               Fields.Include ("title", To_String (Spec.Title));
                               Fields.Include ("kind", Kind);

@@ -72,7 +72,8 @@ package body Improve.Tasks is
             View.Title := Spec.Title;
             for Published of Publications loop
                if Published.Improve_Task_Id = Spec.Id and then
-                 To_String (Published.Contract) = Improve.Model.Task_Contract_Fingerprint (Spec)
+                 To_String (Published.Contract) =
+                   Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id)
                then
                   View.Harness_Id := Published.Harness_Task_Id;
                   View.Harness_State := Published.State;
