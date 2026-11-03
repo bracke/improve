@@ -67,6 +67,7 @@ package body Improve_Test_Suite is
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
       Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
+      Replacement_Running_And_Completed,
       Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
@@ -1709,8 +1710,17 @@ package body Improve_Test_Suite is
                     (Improve_State, To_String (First.Plan.Plan_Id), Mappings);
                   Improve.Storage.Close (Improve_State);
                end;
+               Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "could not open harness to accept original native task");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "accepted");
+               Move_Task (To_String (Published.Tasks (3).Harness_Id), "accepted");
+               Move_Task (To_String (Published.Tasks (3).Harness_Id), "running");
+               Move_Task (To_String (Published.Tasks (3).Harness_Id), "failed");
+               Stores.Close (Harness);
 
                Draft.Tasks (1).Scope := To_Unbounded_String ("expanded scope contract marker");
+               Draft.Tasks (2).Scope := To_Unbounded_String ("replacement for candidate predecessor");
+               Draft.Tasks (3).Scope := To_Unbounded_String ("replacement for failed predecessor");
                Draft.Fingerprint := To_Unbounded_String
                  (Improve.Stable_Digest (To_String (Draft.Fingerprint) & ":expanded-scope"));
                declare Improve_State : Improve.Storage.Store; begin
@@ -1729,11 +1739,27 @@ package body Improve_Test_Suite is
                Tasks.Definition
                  (Harness, To_String (Republished.Tasks (1).Harness_Id), Definition, Status);
                Assert
-                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 4 and then
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 6 and then
                   Republished.Tasks (1).Harness_Id /= Published.Tasks (1).Harness_Id and then
+                  Tasks.State_Of (Harness, To_String (Published.Tasks (1).Harness_Id)) = "cancelled" and then
+                  Tasks.State_Of (Harness, To_String (Published.Tasks (2).Harness_Id)) = "rejected" and then
+                  Tasks.State_Of (Harness, To_String (Published.Tasks (3).Harness_Id)) = "cancelled" and then
+                  Tasks.State_Of (Harness, To_String (Republished.Tasks (1).Harness_Id)) = "candidate" and then
                   Ada.Strings.Fixed.Index
-                    (Records.Get (Definition, "notes"), "expanded scope contract marker") > 0,
-                  "changed task contract silently reused an obsolete native task");
+                    (Records.Get (Definition, "notes"), "expanded scope contract marker") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (Records.Get (Definition, "notes"),
+                     "Supersedes: " & To_String (Published.Tasks (1).Harness_Id)) > 0,
+                  "changed task contract did not retire and trace its accepted predecessor");
+               declare Work : constant Tasks.Next_Work := Tasks.Next_Work_Of (Harness); begin
+                  Assert
+                    (Work.Awaiting.Contains (To_String (Republished.Tasks (1).Harness_Id)) and then
+                     Work.Awaiting.Contains (To_String (Republished.Tasks (2).Harness_Id)) and then
+                     Work.Awaiting.Contains (To_String (Republished.Tasks (3).Harness_Id)) and then
+                     not Work.Runnable.Contains (To_String (Published.Tasks (1).Harness_Id)) and then
+                     not Work.Running.Contains (To_String (Published.Tasks (1).Harness_Id)),
+                     "normal work selection retained both predecessor and replacement");
+               end;
                Stores.Close (Harness);
                declare Replacement_Mappings : Improve.Storage.Publication_Vectors.Vector; begin
                   for Value of Republished.Tasks loop
@@ -1751,10 +1777,6 @@ package body Improve_Test_Suite is
                end;
                Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
                Assert (Errors.Is_Ok (Status), "could not open harness to establish distinct task states");
-               Move_Task (To_String (Published.Tasks (1).Harness_Id), "accepted");
-               Move_Task (To_String (Published.Tasks (1).Harness_Id), "running");
-               Move_Task (To_String (Published.Tasks (1).Harness_Id), "verification");
-               Move_Task (To_String (Published.Tasks (1).Harness_Id), "complete", Gates_Passed => True);
                Move_Task (To_String (Republished.Tasks (1).Harness_Id), "accepted");
                Move_Task (To_String (Republished.Tasks (1).Harness_Id), "running");
                Stores.Close (Harness);
@@ -1785,6 +1807,115 @@ package body Improve_Test_Suite is
                      Ada.Strings.Fixed.Index (To_String (Summary.Output), """harness_state"":""running""") > 0,
                      "status JSON selected the obsolete native contract mapping");
                end;
+               Remove (Data);
+            end;
+         when Replacement_Running_And_Completed =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data        : constant Fixture := Build_Fixture ("replacement_states", Harness_Project => True);
+               State       : constant String := To_String (Data.Directory) & "/improve.db";
+               Draft       : Improve.Model.Plan_Revision := Draft_For (Data);
+               First       : Improve.Storage.Save_Result;
+               Second      : Improve.Storage.Save_Result;
+               Published   : Improve.Workflow.Publication_Result;
+               Republished : Improve.Workflow.Publication_Result;
+               Mappings    : Improve.Storage.Publication_Vectors.Vector;
+               Harness     : Stores.Store;
+               Recovery    : Stores.Recovery_Report;
+               Status      : Errors.Error_Info;
+
+               procedure Move_Task (Id, Next : String; Gates_Passed : Boolean := False) is
+                  Change : Stores.Transaction;
+               begin
+                  Tasks.Move
+                    (Harness, Change, Id, Next, "", Gates_Passed => Gates_Passed,
+                     Status => Status, Actor => "improve-test");
+                  Assert (Errors.Is_Ok (Status), "could not move replacement-state task to " & Next);
+                  Stores.Commit (Harness, Change, Status);
+                  Assert (Errors.Is_Ok (Status), "could not commit replacement-state task " & Next);
+               end Move_Task;
+            begin
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  First := Improve.Storage.Save (Improve_State, Draft);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Initialize_Harness (To_String (Data.Target));
+               Published := Improve.Workflow.Publish (To_String (Data.Target), First.Plan, "auto");
+               for Value of Published.Tasks loop
+                  Mappings.Append
+                    (Improve.Storage.Publication_Record'
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
+                        Value.State, First.Plan.Revision));
+               end loop;
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Improve.Storage.Record_Publications
+                    (Improve_State, To_String (First.Plan.Plan_Id), Mappings);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "could not open replacement-state harness");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "accepted");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "running");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "verification");
+               Move_Task (To_String (Published.Tasks (1).Harness_Id), "complete", Gates_Passed => True);
+               Move_Task (To_String (Published.Tasks (2).Harness_Id), "accepted");
+               Move_Task (To_String (Published.Tasks (2).Harness_Id), "running");
+               Stores.Close (Harness);
+
+               Draft.Tasks (1).Scope := To_Unbounded_String ("replacement after completed predecessor");
+               Draft.Tasks (2).Scope := To_Unbounded_String ("replacement after running predecessor");
+               Draft.Fingerprint := To_Unbounded_String
+                 (Improve.Stable_Digest (To_String (Draft.Fingerprint) & ":running-complete"));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Second := Improve.Storage.Save (Improve_State, Draft);
+                  Mappings := Improve.Storage.Publications (Improve_State, To_String (First.Plan.Plan_Id));
+                  Improve.Storage.Close (Improve_State);
+               end;
+               declare Blocked : Boolean := False; begin
+                  begin
+                     Republished := Improve.Workflow.Publish
+                       (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+                  exception
+                     when Error : Improve.Data_Error =>
+                        Blocked := Ada.Strings.Fixed.Index
+                          (Ada.Exceptions.Exception_Message (Error), "while native predecessor") > 0;
+                  end;
+                  Assert (Blocked, "running native predecessor did not block automatic replacement");
+               end;
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 3 and then
+                  Tasks.State_Of (Harness, To_String (Published.Tasks (1).Harness_Id)) = "complete" and then
+                  Tasks.State_Of (Harness, To_String (Published.Tasks (2).Harness_Id)) = "running",
+                  "blocked replacement partially changed native task state");
+               Stores.Close (Harness);
+
+               Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
+               Move_Task (To_String (Published.Tasks (2).Harness_Id), "cancelled");
+               Stores.Close (Harness);
+               Republished := Improve.Workflow.Publish
+                 (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               declare Definition : Records.Item; begin
+                  Tasks.Definition
+                    (Harness, To_String (Republished.Tasks (1).Harness_Id), Definition, Status);
+                  Assert
+                    (Errors.Is_Ok (Status) and then Tasks.List (Harness).Length = 5 and then
+                     Tasks.State_Of (Harness, To_String (Published.Tasks (1).Harness_Id)) = "complete" and then
+                     Tasks.State_Of (Harness, To_String (Published.Tasks (2).Harness_Id)) = "cancelled" and then
+                     Tasks.State_Of (Harness, To_String (Republished.Tasks (1).Harness_Id)) = "candidate" and then
+                     Ada.Strings.Fixed.Index
+                       (Records.Get (Definition, "notes"),
+                        "Supersedes: " & To_String (Published.Tasks (1).Harness_Id)) > 0,
+                     "completed predecessor was not preserved as traced historical work");
+               end;
+               Stores.Close (Harness);
                Remove (Data);
             end;
          when Selective_Publication_Resolves_Dependency =>

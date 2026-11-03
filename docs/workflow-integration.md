@@ -37,6 +37,13 @@ instructions, and canonical contract digest. This handles the non-atomic boundar
 but recording the mapping in Improve state failed. Improve records the contract-qualified `IMP-` to `TASK-` mapping in
 a separate database transaction after the harness commit; conflicting reuse is rejected. A logical Improve task may
 continue across revisions, but a changed execution contract receives a distinct native origin and replacement task.
+The replacement notes name every earlier native predecessor with a `Supersedes:` relationship.
+
+Replacement is an explicit harness lifecycle operation authorized by the approved `apply`. Candidate predecessors move
+to `rejected`; accepted, blocked, and failed predecessors move to `cancelled`; cancelled and rejected predecessors stay
+historical; and completed predecessors remain completed. A predecessor in `running` or `verification` blocks automatic
+replacement until the operator resolves that active work through the normal harness workflow. Project transition policy
+is respected, and an unavailable retirement transition blocks publication.
 
 Recovery first runs an existing-only provenance probe. A completely committed harness transaction is adopted without
 replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current
@@ -47,9 +54,9 @@ A changed policy requires replanning before any harness transaction is opened, e
 this preserves authored acceptance intent. Toolchain changes are not blanket publication failures and remain subject to
 indicator-specific verification comparability.
 
-Tasks are staged in dependency order and `depends_on` contains the assigned native task IDs. The harness transaction is
-committed only after every selected definition validates. A dry run performs the same task-kind and native-definition
-validation in an uncommitted transaction opened on read-only harness state.
+Tasks are staged in dependency order and `depends_on` contains the assigned native task IDs. Predecessor retirement and
+replacement creation use the same harness transaction, which commits only after every selected definition validates. A
+dry run performs the same task-kind, lifecycle, and native-definition validation without changing harness state.
 
 The resulting native state is normally `candidate`. If project policy auto-accepts the task kind or Improve origin, the
 adapter reports the actual post-commit state and never overrides that policy.

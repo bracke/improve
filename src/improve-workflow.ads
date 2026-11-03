@@ -46,6 +46,8 @@ package Improve.Workflow is
       Dry_Run           : Boolean := False) return Publication_Result;
    --  Validate and publish native candidate tasks in one harness transaction.
    --  Stable origins recover a prior harness commit without duplicating tasks.
+   --  A changed contract retires safe predecessors in the same transaction,
+   --  preserves completed history, and rejects active execution replacement.
    --  @param Project_Directory Initialized model_runner project directory.
    --  @param Plan Immutable plan revision to publish.
    --  @param Requested_Kind Configured task kind or `auto`.
