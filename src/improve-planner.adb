@@ -176,7 +176,8 @@ package body Improve.Planner is
       Improve.Dependencies.Validate (Result.Tasks);
       declare
          Material : Unbounded_String := To_Unbounded_String
-           (Positive'Image (Selected.Project.Id) & "|" & Positive'Image (Selected.Assessment.Run.Id) & "|" &
+           (To_String (Selected.Project.Database_Id) & "|" & Positive'Image (Selected.Project.Id) & "|" &
+            Positive'Image (Selected.Assessment.Run.Id) & "|" &
             To_String (Selected.Baseline.Source_Id) & "|" & To_String (Selected.Baseline.Policy_Id) & "|" & Config_Id);
       begin
          Append (Material, "|" & To_String (Result.Working_Source_Id));

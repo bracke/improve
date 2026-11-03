@@ -2,7 +2,6 @@ with Ada.Containers;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Containers.Vectors;
-with Ada.Strings.Unbounded;
 with Interfaces;
 with Ada_Quality.Types;
 with Project_Tools.Files;
@@ -90,6 +89,7 @@ package body Improve.Source is
    begin
       if Item.Opened then Close (Item); end if;
       Ada_Quality.Reporting.Open (Item.Session, Path, Limits);
+      Item.Database_Id := To_Unbounded_String (Ada.Directories.Full_Name (Path));
       Item.Opened := True;
    exception
       when Error : Ada_Quality.Reporting.Reporting_Error | Ada_Quality.Reporting.Busy_Error =>
@@ -105,6 +105,7 @@ package body Improve.Source is
    begin
       Ada_Quality.Reporting.Close (Item.Session);
       Item.Opened := False;
+      Item.Database_Id := Null_Unbounded_String;
    end Close;
 
    procedure Require_Open (Item : Repository) is
@@ -123,6 +124,12 @@ package body Improve.Source is
       Require_Open (Item);
       return Ada_Quality.Reporting.Snapshot_Identity (Item.Session);
    end Identity;
+
+   function Database_Identity (Item : Repository) return String is
+   begin
+      Require_Open (Item);
+      return To_String (Item.Database_Id);
+   end Database_Identity;
 
    function Name_Of (Path : String) return String is
    begin
@@ -166,7 +173,8 @@ package body Improve.Source is
       return
         (Id   => Positive (Found_Id),
          Name => To_Unbounded_String (Name_Of (To_String (Found_Path))),
-         Path => Found_Path);
+         Path => Found_Path,
+         Database_Id => Item.Database_Id);
    end Resolve_Project;
 
    procedure Validate (Value : Ada_Quality.Reporting.Assessment_Record) is

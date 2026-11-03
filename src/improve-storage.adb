@@ -373,6 +373,7 @@ package body Improve.Storage is
      (Pair ("revision", Number (Revision)) & LF & Pair ("baseline_id", Number (Baseline_Id)) & LF &
       Pair ("project_id", Number (Value.Project.Id)) & LF & Pair ("project", To_String (Value.Project.Name)) & LF &
       Pair ("project_path", To_String (Value.Project.Path)) & LF &
+      Pair ("quality_database", To_String (Value.Project.Database_Id)) & LF &
       Pair ("run_id", Number (Value.Baseline.Run_Id)) & LF &
       Pair ("source", To_String (Value.Baseline.Source_Id)) & LF &
       Pair ("working_source", To_String (Value.Working_Source_Id)) & LF &
@@ -393,6 +394,11 @@ package body Improve.Storage is
       end loop;
       return 0;
    end Find_Revision;
+
+   function Project_Key (Value : Improve.Model.Project_Reference) return String is
+     (Stable_Digest
+        (To_String (Value.Database_Id) & Character'Val (0) & Number (Value.Id) & Character'Val (0) &
+         To_String (Value.Path)));
 
    function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result is
       Tx : Database.Transactions.Transaction;
@@ -419,7 +425,7 @@ package body Improve.Storage is
          Cursor       : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table);
       begin
          while Entity_Tables.Has_Element (Cursor) and then
-           S (Entity_Tables.Element (Cursor).Kind) /= Number (Stored.Project.Id)
+           S (Entity_Tables.Element (Cursor).Kind) /= Project_Key (Stored.Project)
          loop
             Advance (Item, Tx, Plans_Table, Cursor);
          end loop;
@@ -441,12 +447,13 @@ package body Improve.Storage is
             end;
          else
             Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Projects_Table),
-                   (Project_Row, 0, WW (Number (Stored.Project.Id)), WW ("active"), WW
+                   (Project_Row, 0, WW (Project_Key (Stored.Project)), WW ("active"), WW
                      (Pair ("name", To_String (Stored.Project.Name)) & LF &
-                      Pair ("path", To_String (Stored.Project.Path))),
+                      Pair ("path", To_String (Stored.Project.Path)) & LF &
+                      Pair ("quality_database", To_String (Stored.Project.Database_Id))),
                     True, Projects_Table)), "store project");
             Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Plans_Table),
-                   (Plan_Row, Stored.Project.Id, WW (Number (Stored.Project.Id)), WW ("active"), WW (""), True,
+                   (Plan_Row, Stored.Project.Id, WW (Project_Key (Stored.Project)), WW ("active"), WW (""), True,
                     Plans_Table)),
                    "store plan");
          end if;
@@ -621,7 +628,8 @@ package body Improve.Storage is
          Result.Revision := Positive'Value (Field (Payload, "revision"));
          Result.Project :=
            (Positive'Value (Field (Payload, "project_id")), To_Unbounded_String (Field (Payload, "project")),
-            To_Unbounded_String (Field (Payload, "project_path")));
+            To_Unbounded_String (Field (Payload, "project_path")),
+            To_Unbounded_String (Field_Or (Payload, "quality_database", "")));
          Result.Baseline :=
            (Result.Project.Id, Positive'Value (Field (Payload, "run_id")),
             To_Unbounded_String (Field (Payload, "source")), To_Unbounded_String (Field (Payload, "policy")),
@@ -869,6 +877,22 @@ package body Improve.Storage is
       when others =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
+   end List;
+
+   function List
+     (Item : in out Store; Project : Improve.Model.Project_Reference) return Summary_Vectors.Vector is
+      Result : Summary_Vectors.Vector;
+   begin
+      for Summary of List (Item) loop
+         declare Plan : constant Improve.Model.Plan_Revision := Load (Item, To_String (Summary.Plan_Id)); begin
+            if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
+              Plan.Project.Database_Id = Project.Database_Id
+            then
+               Result.Append (Summary);
+            end if;
+         end;
+      end loop;
+      return Result;
    end List;
 
    procedure Record_Publications

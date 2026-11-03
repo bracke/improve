@@ -63,7 +63,8 @@ package body Improve_Test_Suite is
       Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
-      Measurement_Source_Mismatch_Blocks_Plan,
+      Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
+      Quality_Database_Histories_Isolated,
       Native_Publication_And_Recovery, Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
@@ -1253,6 +1254,59 @@ package body Improve_Test_Suite is
                   then not Ada.Directories.Exists (State),
                   "planning silently combined measured evidence with unmeasured source");
                Remove (Data);
+            end;
+         when Quality_Database_Identity_Rejected =>
+            declare
+               First   : constant Fixture := Build_Fixture ("identity_first", Harness_Project => True);
+               Second  : constant Fixture := Build_Fixture ("identity_second", Harness_Project => True);
+               State   : constant String := To_String (First.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State);
+               Applied : Improve.CLI.Outcome;
+               Verified : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "database-identity fixture plan failed");
+               Initialize_Harness (To_String (First.Target));
+               Approve_Latest (State);
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Second.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Verified := Improve.CLI.Execute
+                 (Args ("verify|--task|IMP-000001|--database|" & To_String (Second.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = Improve.CLI.Failure_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Applied.Errors), "database does not own the stored plan") > 0,
+                  "apply accepted a same-numbered project from another quality database");
+               Assert
+                 (Verified.Exit_Code = Improve.CLI.Failure_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Verified.Errors), "database does not own the stored plan") > 0,
+                  "verification accepted a same-numbered project from another quality database");
+               Remove (First);
+               Remove (Second);
+            end;
+         when Quality_Database_Histories_Isolated =>
+            declare
+               First       : constant Fixture := Build_Fixture ("history_first", Harness_Project => True);
+               Second      : constant Fixture := Build_Fixture ("history_second", Harness_Project => True);
+               State_Path  : constant String := To_String (First.Directory) & "/improve.db";
+               First_Plan  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State_Path);
+               Second_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Second, State_Path);
+               Store       : Improve.Storage.Store;
+            begin
+               Assert
+                 (First.Project = Second.Project and then First_Plan.Exit_Code = 0 and then Second_Plan.Exit_Code = 0,
+                  "same-numbered database history fixture did not plan");
+               Improve.Storage.Open (Store, State_Path, Writable => False);
+               Assert
+                 (Improve.Storage.List (Store).Length = 2 and then
+                  Improve.Storage.List
+                    (Store, Draft_For (First).Project).Length = 1 and then
+                  Improve.Storage.List
+                    (Store, Draft_For (Second).Project).Length = 1,
+                  "same numeric project IDs shared remediation history");
+               Improve.Storage.Close (Store);
+               Remove (First);
+               Remove (Second);
             end;
          when Historical_Task_Lookup =>
             declare

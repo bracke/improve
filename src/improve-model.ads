@@ -15,14 +15,16 @@ package Improve.Model is
    --  Ordered text values.
 
    type Project_Reference is record
-      Id   : Positive;
-      Name : UString;
-      Path : UString;
+      Id          : Positive;
+      Name        : UString;
+      Path        : UString;
+      Database_Id : UString;
    end record;
    --  Ada Quality project registry entry selected for planning.
    --  @field Id Persistent Ada Quality project identity.
    --  @field Name Unique display name.
    --  @field Path Canonical project root.
+   --  @field Database_Id Canonical identity of the owning Ada Quality database.
 
    type Assessment_Baseline is record
       Project_Id   : Positive;

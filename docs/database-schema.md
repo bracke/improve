@@ -47,6 +47,9 @@ Task rows form a persistent logical-task-to-revision index. Historical lookup se
 the requested `IMP-NNNNNN` identity, or an explicitly requested revision, even when the task is absent from the plan's
 current revision.
 
+Project and plan keys include the canonical Ada Quality database identity, registry ID, and canonical project path.
+Numeric project IDs are never treated as globally unique across independent quality databases.
+
 Verification identity includes the stable plan ID, immutable plan revision, completed assessment, evaluation scope,
 and acceptance-contract fingerprint. Task-scoped records fingerprint the complete persisted task definition; plan and
 project records retain the immutable plan fingerprint. Thus two revisions can be evaluated against one assessment

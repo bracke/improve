@@ -161,6 +161,13 @@ package Improve.Storage is
    --  @param Project_Id Project identity or zero for every project.
    --  @return Stable plan summaries.
 
+   function List
+     (Item : in out Store; Project : Improve.Model.Project_Reference) return Summary_Vectors.Vector;
+   --  List latest plans for one database-qualified Ada Quality project.
+   --  @param Item Open store.
+   --  @param Project Full project identity including database and canonical path.
+   --  @return Stable plan summaries isolated from equal numeric IDs in other databases.
+
    procedure Record_Publications
      (Item    : in out Store;
       Plan_Id : String;

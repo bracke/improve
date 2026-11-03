@@ -1,3 +1,4 @@
+with Ada.Strings.Unbounded;
 with Ada_Quality.Reporting;
 with Improve.Model;
 
@@ -41,6 +42,11 @@ package Improve.Source is
    --  @param Item Open repository.
    --  @return Snapshot identity.
 
+   function Database_Identity (Item : Repository) return String;
+   --  Return the canonical identity of the open Ada Quality database.
+   --  @param Item Open repository.
+   --  @return Canonical database path used as persistent repository identity.
+
    function Resolve_Project (Item : Repository; Selector : String) return Improve.Model.Project_Reference;
    --  Resolve a positive identity, exact canonical path, or unique path basename.
    --  @param Item Open repository.
@@ -67,6 +73,7 @@ private
    type Repository is limited record
       Session : Ada_Quality.Reporting.Session;
       Opened  : Boolean := False;
+      Database_Id : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 end Improve.Source;
 

@@ -322,6 +322,17 @@ package body Improve.CLI is
    function State_Path (Item : Invocation) return String is
      (if Item.Has_State then To_String (Item.State) else ".improve.db");
 
+   procedure Require_Project_Identity
+     (Stored  : Improve.Model.Project_Reference;
+      Current : Improve.Model.Project_Reference) is
+   begin
+      if Stored.Database_Id /= Current.Database_Id then
+         raise Data_Error with "selected Ada Quality database does not own the stored plan";
+      elsif Stored.Id /= Current.Id or else Stored.Path /= Current.Path then
+         raise Data_Error with "selected Ada Quality project identity does not match the stored plan";
+      end if;
+   end Require_Project_Identity;
+
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Store : Improve.Source.Repository;
    begin
@@ -468,7 +479,7 @@ package body Improve.CLI is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project.Id);
+              Improve.Storage.List (State, Project);
             begin
                Improve.Storage.Close (State);
                if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
@@ -588,6 +599,7 @@ package body Improve.CLI is
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
             Latest  : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
          begin
+            Require_Project_Identity (Plan.Project, Project);
             if Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
               Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
             then
@@ -761,7 +773,7 @@ package body Improve.CLI is
 
       procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
          Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           Improve.Storage.List (State, Project.Id);
+           Improve.Storage.List (State, Project);
          Value     : Improve.Tasks.Project_Status;
          Last_Plan : Improve.Model.Plan_Revision;
          Last_Views : Improve.Tasks.View_Vectors.Vector;
@@ -944,7 +956,7 @@ package body Improve.CLI is
             Project := Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
             Improve.Source.Close (Quality);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project.Id);
+              Improve.Storage.List (State, Project);
             begin
                if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
                Plan :=
@@ -966,6 +978,7 @@ package body Improve.CLI is
             Current : constant Improve.Source.Selection :=
               Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
          begin
+            Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
@@ -1063,10 +1076,11 @@ package body Improve.CLI is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path (Item), Writable => False);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project.Id);
+              Improve.Storage.List (State, Project);
             begin
                if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
                Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
+               Require_Project_Identity (Plan.Project, Project);
                Publications := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
             end;
             Improve.Storage.Close (State);
