@@ -114,6 +114,8 @@ package Improve.Tasks is
       Baseline_Run  : Natural := 0;
       Latest_Run    : Natural := 0;
       Plan_Count    : Natural := 0;
+      Project_Quality : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
+      Has_Project_Verification : Boolean := False;
       Tasks         : View_Vectors.Vector;
       Findings      : Finding_Summary;
    end record;
@@ -123,6 +125,8 @@ package Improve.Tasks is
    --  @field Baseline_Run Assessment that generated the plan.
    --  @field Latest_Run Latest observed completed assessment.
    --  @field Plan_Count Number of remediation plans.
+   --  @field Project_Quality Latest independently persisted project-level outcome.
+   --  @field Has_Project_Verification Whether a project-level outcome has been recorded.
    --  @field Tasks Joined task views.
    --  @field Findings Aggregate finding disposition.
 

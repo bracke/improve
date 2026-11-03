@@ -65,6 +65,7 @@ package Improve.Storage is
       Task_Id      : Ada.Strings.Unbounded.Unbounded_String;
       Assessment_Id : Positive;
       Outcome      : Improve.Model.Quality_Outcome;
+      Project_Outcome : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Comparable   : Boolean;
       Explanation  : Ada.Strings.Unbounded.Unbounded_String;
    end record;
@@ -72,6 +73,7 @@ package Improve.Storage is
    --  @field Task_Id Improve task identity.
    --  @field Assessment_Id Completed assessment identity.
    --  @field Outcome Quality outcome.
+   --  @field Project_Outcome Project-level outcome for the same assessment.
    --  @field Comparable Whether baseline and current evidence are comparable.
    --  @field Explanation Evidence-based conclusion.
 

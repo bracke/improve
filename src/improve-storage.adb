@@ -973,6 +973,8 @@ package body Improve.Storage is
                     Field (Payload, "assessment_id") = Number (Value.Assessment_Id)
                   then
                      if S (Row.State) /= Improve.Model.Image (Value.Outcome) or else
+                       Field_Or (Payload, "project_outcome", S (Row.State)) /=
+                         Improve.Model.Image (Value.Project_Outcome) or else
                        Field (Payload, "comparable") /= Boolean_Image (Value.Comparable) or else
                        Field (Payload, "explanation") /= To_String (Value.Explanation)
                      then
@@ -991,6 +993,7 @@ package body Improve.Storage is
                      (Row_Id, 0, WW (To_String (Value.Task_Id)), WW (Improve.Model.Image (Value.Outcome)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
+                          Pair ("project_outcome", Improve.Model.Image (Value.Project_Outcome)) & LF &
                           Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
                           Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
                   "record verification evidence");
@@ -1036,6 +1039,7 @@ package body Improve.Storage is
                     (Task_Id       => To_Unbounded_String (S (Row.Kind)),
                      Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
                      Outcome       => Parse_Outcome (S (Row.State)),
+                     Project_Outcome => Parse_Outcome (Field_Or (Payload, "project_outcome", S (Row.State))),
                      Comparable    => Boolean'Value (Field (Payload, "comparable")),
                      Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
             end if;

@@ -700,7 +700,15 @@ package body Improve.CLI is
                Plan : constant Improve.Model.Plan_Revision :=
                  Improve.Storage.Load (State, To_String (Summary.Plan_Id));
                Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan);
+               Latest_Project_Run : Natural := 0;
             begin
+               for Evidence of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
+                  if Evidence.Assessment_Id >= Latest_Project_Run then
+                     Latest_Project_Run := Evidence.Assessment_Id;
+                     Value.Project_Quality := Evidence.Project_Outcome;
+                     Value.Has_Project_Verification := True;
+                  end if;
+               end loop;
                Value.Tasks.Append_Vector (Plan_Views);
                Last_Plan := Plan;
                Last_Views := Plan_Views;
@@ -760,7 +768,10 @@ package body Improve.CLI is
                Message ("status.baseline", [Arg ("run", Number (Value.Baseline_Run))]) & LF &
                Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
                Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
-               Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF);
+               Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF &
+               "Project quality: " &
+               (if Value.Has_Project_Verification then Improve.Model.Image (Value.Project_Quality)
+                else "unverified") & LF);
             for Status in Improve.Tasks.Operational_Status loop
                declare Count : Natural := 0; begin
                   for View of Value.Tasks loop
@@ -844,13 +855,6 @@ package body Improve.CLI is
             end;
          end;
       end if;
-      for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-         if Record_Value.Outcome = Improve.Model.Verified and then
-           not Previously_Verified.Contains (Record_Value.Task_Id)
-         then
-            Previously_Verified.Append (Record_Value.Task_Id);
-         end if;
-      end loop;
       Improve.Storage.Close (State);
       declare
          Quality : Improve.Source.Repository;
@@ -861,36 +865,53 @@ package body Improve.CLI is
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
             Current : constant Improve.Source.Selection :=
               Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
-            Report : constant Improve.Verification.Report :=
-              Improve.Verification.Evaluate
-                (Plan, Current, Settings, (if Item.Has_Task then To_String (Item.Task_Id) else ""),
-                 Previously_Verified);
-            Records : Improve.Storage.Verification_Vectors.Vector;
          begin
             Improve.Source.Close (Quality);
-            for Result of Report.Tasks loop
-               Records.Append
-                 (Improve.Storage.Verification_Record'
-                    (Result.Task_Id, Report.Verification_Run, Result.Outcome,
-                     Report.Comparable, Result.Explanation));
+            Improve.Storage.Open (State, State_Path (Item), Writable => False);
+            for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
+               if Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
+                 Record_Value.Outcome = Improve.Model.Verified and then
+                 not Previously_Verified.Contains (Record_Value.Task_Id)
+               then
+                  Previously_Verified.Append (Record_Value.Task_Id);
+               end if;
             end loop;
-            Improve.Storage.Open (State, State_Path (Item), Writable => True);
-            Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
             Improve.Storage.Close (State);
-            Negative := Report.Outcome /= Improve.Model.Verified;
-            if Item.Format = JSON_Format then return Improve.JSON.Verification (Report, Command); end if;
-            declare Output : Unbounded_String; begin
-               Append
-                 (Output,
-                  Improve.Presentation.Header
-                    (Message
-                       ((if Command = "refresh" then "refresh.title" else "verify.title"),
-                        [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
-               Append (Output, "Outcome: " & Improve.Model.Image (Report.Outcome) & LF);
+            declare
+               Report : constant Improve.Verification.Report :=
+                 Improve.Verification.Evaluate
+                   (Plan, Current, Settings, (if Item.Has_Task then To_String (Item.Task_Id) else ""),
+                    Previously_Verified);
+               Records : Improve.Storage.Verification_Vectors.Vector;
+            begin
                for Result of Report.Tasks loop
-                  Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
+                  Records.Append
+                    (Improve.Storage.Verification_Record'
+                       (Task_Id         => Result.Task_Id,
+                        Assessment_Id   => Report.Verification_Run,
+                        Outcome         => Result.Outcome,
+                        Project_Outcome => Report.Outcome,
+                        Comparable      => Report.Comparable,
+                        Explanation     => Result.Explanation));
                end loop;
-               return To_String (Output);
+               Improve.Storage.Open (State, State_Path (Item), Writable => True);
+               Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
+               Improve.Storage.Close (State);
+               Negative := Report.Outcome /= Improve.Model.Verified;
+               if Item.Format = JSON_Format then return Improve.JSON.Verification (Report, Command); end if;
+               declare Output : Unbounded_String; begin
+                  Append
+                    (Output,
+                     Improve.Presentation.Header
+                       (Message
+                          ((if Command = "refresh" then "refresh.title" else "verify.title"),
+                           [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
+                  Append (Output, "Outcome: " & Improve.Model.Image (Report.Outcome) & LF);
+                  for Result of Report.Tasks loop
+                     Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
+                  end loop;
+                  return To_String (Output);
+               end;
             end;
          end;
       end;

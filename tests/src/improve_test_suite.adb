@@ -44,6 +44,7 @@ package body Improve_Test_Suite is
    use type Improve.Config.Output_Format;
    use type Improve.Config.Severity_Level;
    use type Improve.Model.Candidate_Kind;
+   use type Improve.Model.Quality_Outcome;
    use type Improve.Model.Task_Vectors.Vector;
    use type Improve.Refinement.Refinement_Status;
    use type Improve.Refinement.Source_State;
@@ -61,6 +62,7 @@ package body Improve_Test_Suite is
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Native_Publication_And_Recovery, Refresh_Reconciles_State, Verification_Resolved, Verification_Still_Failing,
       Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
+      Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
       Verification_Policy_Changed, Verification_Incomplete_Rejected, Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
@@ -292,7 +294,8 @@ package body Improve_Test_Suite is
       Structure_State : Followup_State := All_Pass;
       Policy           : String := "policy-a";
       Source           : String := "source-c";
-      Toolchain        : String := "gnat-15.2.1") return Positive is
+      Toolchain        : String := "gnat-15.2.1";
+      New_Critical     : Boolean := False) return Positive is
       use Ada_Quality.Types;
       Store : Ada_Quality.Storage.Store;
       Run   : Positive;
@@ -344,6 +347,26 @@ package body Improve_Test_Suite is
                 Line          => 1,
                 Fingerprint   => To_Unbounded_String ("fixture-manifest")));
             Value.Results.Replace_Element (Value.Results.First_Index, Structure);
+         end;
+      end if;
+      if New_Critical then
+         declare
+            Index    : constant Positive := Value.Results.First_Index + Indicator_Id'Pos (SEC_01);
+            Security : Indicator_Result := Value.Results (Index);
+         begin
+            Security.Compliance := Violation;
+            Security.Summary := To_Unbounded_String ("new critical security violation");
+            Security.Measurement := (Kind => Boolean_Value, Boolean_Data => False);
+            Security.Findings.Append
+              (Finding'
+                 (Indicator     => SEC_01,
+                  Rule          => To_Unbounded_String ("security.new-critical"),
+                  Level         => Critical,
+                  Message       => To_Unbounded_String ("unrelated critical finding"),
+                  Relative_Path => To_Unbounded_String ("src/new_issue.adb"),
+                  Line          => 1,
+                  Fingerprint   => To_Unbounded_String ("fixture-new-critical")));
+            Value.Results.Replace_Element (Index, Security);
          end;
       end if;
       Run := Ada_Quality.Storage.Publish (Store, Value);
@@ -1310,6 +1333,72 @@ package body Improve_Test_Suite is
                        "returned deficiency was not recorded as a regression: " & To_String (Second_Run.Errors));
                Remove (Data);
             end;
+         when Unrelated_Critical_Project_Regression =>
+            declare
+               Data     : constant Fixture := Build_Fixture ("verification_project_regression");
+               State    : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Run      : Positive;
+               Result   : Improve.CLI.Outcome;
+               Status   : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "project regression fixture plan failed");
+               Run := Publish_Followup (Data, Source => "source-critical", New_Critical => True);
+               Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Result.Output), """outcome"":""regressed""") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), """new_critical"":1") > 0,
+                  "unrelated critical finding did not regress project verification");
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  for Evidence of Improve.Storage.Verifications (Improve_State, "PLAN-000001") loop
+                     Assert
+                       (Evidence.Outcome = Improve.Model.Verified and then
+                        Evidence.Project_Outcome = Improve.Model.Regressed,
+                        "task and project verification outcomes were not persisted separately");
+                  end loop;
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Status := Improve.CLI.Execute
+                 (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &
+                        To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Status.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Status.Output), """project_quality"":""regressed""") > 0,
+                  "project status lost the independently persisted regression");
+               Remove (Data);
+            end;
+         when Out_Of_Order_Verification_Not_Regression =>
+            declare
+               Data       : constant Fixture := Build_Fixture ("verification_order");
+               State      : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned    : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Older      : Positive;
+               Newer      : Positive;
+               New_Result : Improve.CLI.Outcome;
+               Old_Result : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "verification ordering fixture plan failed");
+               Older := Publish_Followup
+                 (Data, Structure_State => Structure_Failing, Source => "source-older-failing");
+               Newer := Publish_Followup (Data, Source => "source-newer-resolved");
+               New_Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Newer) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert (New_Result.Exit_Code = 0, "newer assessment was not verified first");
+               Old_Result := Improve.CLI.Execute
+                 (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Older) &
+                        "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Assert
+                 (Old_Result.Exit_Code = Improve.CLI.Negative_Exit and then Ada.Strings.Fixed.Index
+                    (To_String (Old_Result.Output), """outcome"":""still_failing""") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Old_Result.Output), """outcome"":""regressed""") = 0,
+                  "future verification evidence incorrectly regressed an older assessment");
+               Remove (Data);
+            end;
          when Verification_Policy_Changed =>
             declare
                Data   : constant Fixture := Build_Fixture ("verification_policy");
@@ -1886,7 +1975,8 @@ package body Improve_Test_Suite is
                   if Verified then
                      Evidence.Append
                        (Improve.Storage.Verification_Record'
-                          (Task_Id => Only.Id, Assessment_Id => 2, Outcome => Outcome, Comparable => True,
+                          (Task_Id => Only.Id, Assessment_Id => 2, Outcome => Outcome,
+                           Project_Outcome => Outcome, Comparable => True,
                            Explanation => To_Unbounded_String ("matrix")));
                   end if;
                   Views := Improve.Tasks.Build (Plan, Publications, Evidence);

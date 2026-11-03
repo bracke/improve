@@ -277,6 +277,11 @@ package body Improve.JSON is
             Doc.Insert (Item, "baseline_run", Doc.New_Integer (Long_Long_Integer (Value.Baseline_Run)));
             Doc.Insert (Item, "latest_run", Doc.New_Integer (Long_Long_Integer (Value.Latest_Run)));
             Doc.Insert (Item, "plan_count", Doc.New_Integer (Long_Long_Integer (Value.Plan_Count)));
+            Doc.Insert
+              (Item, "project_quality",
+               Doc.New_String
+                 (if Value.Has_Project_Verification then Improve.Model.Image (Value.Project_Quality)
+                  else "unverified"));
             for View of Value.Tasks loop Append_Task (Doc, Tasks, View); end loop;
             Doc.Insert (Item, "tasks", Tasks);
             Doc.Insert (Findings, "resolved", Doc.New_Integer (Long_Long_Integer (Value.Findings.Resolved)));
