@@ -64,7 +64,7 @@ package body Improve_Test_Suite is
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
-      Quality_Database_Histories_Isolated,
+      Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
       Native_Publication_And_Recovery, Selective_Publication_Resolves_Dependency, Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
       Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
@@ -1308,6 +1308,40 @@ package body Improve_Test_Suite is
                Improve.Storage.Close (Store);
                Remove (First);
                Remove (Second);
+            end;
+         when Publication_Policy_Change_Rejected =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("publication_policy", Harness_Project => True);
+               State   : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Baseline_Source : constant String := To_String (Draft_For (Data).Baseline.Source_Id);
+               Run     : Positive;
+               Applied : Improve.CLI.Outcome;
+            begin
+               Assert (Planned.Exit_Code = 0, "publication-policy fixture plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               Approve_Latest (State);
+               Run := Publish_Followup (Data, Policy => "policy-b", Source => Baseline_Source);
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Run > Data.Run and then Applied.Exit_Code = Improve.CLI.Failure_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Applied.Errors), "quality policy changed") > 0,
+                  "publication accepted a newer incompatible quality policy: " &
+                    To_String (Applied.Errors) & To_String (Applied.Output));
+               declare
+                  Store  : Model_Runner.Framework.Stores.Store;
+                  Status : Model_Runner.Errors.Error_Info;
+               begin
+                  Model_Runner.Framework.Stores.Open_To_Read (Store, To_String (Data.Target), Status);
+                  Assert
+                    (Model_Runner.Errors.Is_Ok (Status) and then
+                     Model_Runner.Framework.Tasks.List (Store).Is_Empty,
+                     "policy-change rejection modified harness state");
+                  Model_Runner.Framework.Stores.Close (Store);
+               end;
+               Remove (Data);
             end;
          when Historical_Task_Lookup =>
             declare

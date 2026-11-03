@@ -604,6 +604,11 @@ package body Improve.CLI is
               Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
             then
                raise Data_Error with "project source changed after planning; refresh the plan before publication";
+            elsif Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
+              Latest.Baseline.Policy_Id /= Plan.Baseline.Policy_Id
+            then
+               raise Data_Error with
+                 "quality policy changed after planning; replan before publication to preserve acceptance intent";
             end if;
          end;
          Improve.Source.Close (Quality);

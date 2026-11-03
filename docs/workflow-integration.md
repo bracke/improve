@@ -39,6 +39,11 @@ Recovery first runs an existing-only provenance probe. A completely committed ha
 replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current
 source fingerprint enforced by normal publication. Failed revalidation leaves the operation journal entry pending.
 
+Normal publication also compares the newest completed assessment policy fingerprint with the immutable plan baseline.
+A changed policy requires replanning before any harness transaction is opened, even when source identity is unchanged;
+this preserves authored acceptance intent. Toolchain changes are not blanket publication failures and remain subject to
+indicator-specific verification comparability.
+
 Tasks are staged in dependency order and `depends_on` contains the assigned native task IDs. The harness transaction is
 committed only after every selected definition validates. A dry run performs the same task-kind and native-definition
 validation in an uncommitted transaction opened on read-only harness state.
