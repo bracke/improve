@@ -98,6 +98,8 @@ package Improve.Tasks is
       Not_Measurable : Natural := 0;
       Regressed      : Natural := 0;
       Superseded     : Natural := 0;
+      Previously_Resolved : Natural := 0;
+      Unverified     : Natural := 0;
    end record;
    --  Aggregate baseline finding disposition.
    --  @field Resolved Findings independently verified as resolved.
@@ -105,6 +107,8 @@ package Improve.Tasks is
    --  @field Not_Measurable Findings whose current evidence is inconclusive.
    --  @field Regressed Findings that returned after resolution.
    --  @field Superseded Findings replaced by newer valid work.
+   --  @field Previously_Resolved Findings resolved by historical but not current verification.
+   --  @field Unverified Findings without an applicable current verification conclusion.
 
    function Findings
      (Plan  : Improve.Model.Plan_Revision;

@@ -2207,7 +2207,7 @@ package body Improve_Test_Suite is
                          (To_String (One.Output), """baseline_run"":1") > 0 and then Ada.Strings.Fixed.Index
                          (To_String (One.Output), """latest_run"":1") > 0 and then Ada.Strings.Fixed.Index
                          (To_String (One.Output), """plan_count"":1") > 0 and then Ada.Strings.Fixed.Index
-                         (To_String (One.Output), """outstanding"":3") > 0 and then Ada.Strings.Fixed.Index
+                         (To_String (One.Output), """unverified"":3") > 0 and then Ada.Strings.Fixed.Index
                          (To_String (All_Of.Output), """command"":""status""") > 0,
                        "project or all-project status summary is invalid");
                Remove (Data);
@@ -2256,6 +2256,12 @@ package body Improve_Test_Suite is
                   Ada.Strings.Fixed.Index
                     (To_String (JSON_View.Output), """verification_current"":false") > 0,
                   "task status did not distinguish historical verification from current evidence");
+               Assert
+                 (Ada.Strings.Fixed.Index (To_String (JSON_View.Output), """resolved"":0") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """previously_resolved"":3") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (JSON_View.Output), """unverified"":0") > 0,
+                  "finding summary reused historical resolution as a current result");
                Assert
                  (Text_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                     (To_String (Text_View.Output), "Project quality: unverified") > 0 and then

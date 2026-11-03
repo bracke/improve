@@ -345,6 +345,10 @@ package body Improve.JSON is
               (Findings, "not_measurable", Doc.New_Integer (Long_Long_Integer (Value.Findings.Not_Measurable)));
             Doc.Insert (Findings, "regressed", Doc.New_Integer (Long_Long_Integer (Value.Findings.Regressed)));
             Doc.Insert (Findings, "superseded", Doc.New_Integer (Long_Long_Integer (Value.Findings.Superseded)));
+            Doc.Insert
+              (Findings, "previously_resolved",
+               Doc.New_Integer (Long_Long_Integer (Value.Findings.Previously_Resolved)));
+            Doc.Insert (Findings, "unverified", Doc.New_Integer (Long_Long_Integer (Value.Findings.Unverified)));
             Doc.Insert (Item, "findings", Findings);
             Doc.Append (Projects, Item);
          end;

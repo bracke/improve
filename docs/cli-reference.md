@@ -62,6 +62,10 @@ terminal output reports `unverified`, the last verification assessment, and its 
 `plan_verification_run`, `plan_verification_current`, `previous_plan_quality`, and equivalent project fields. This
 freshness decision is made independently for every project in `status --all`.
 
+Finding summaries are assessment-scoped. `resolved`, `regressed`, `not_measurable`, and `superseded` require current
+verification. Historical resolution is reported as `previously_resolved`; findings lacking an applicable current
+conclusion are reported as `unverified` rather than silently counted as resolved or outstanding.
+
 Each JSON task view likewise reports `verification_run` and `verification_current`. Its historical `quality_outcome`
 is retained for audit, but the derived task status does not treat it as verified when a newer completed assessment is
 current or when the current assessment is unknown. This freshness rule applies to verified, regressed, superseded,

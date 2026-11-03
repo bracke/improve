@@ -143,15 +143,25 @@ package body Improve.Tasks is
             Any_Unknown  : Boolean := False;
             Any_Regressed : Boolean := False;
             All_Superseded : Boolean := True;
+            Any_Current : Boolean := False;
+            All_Previously_Verified : Boolean := True;
          begin
             for Index in 1 .. Natural (Plan.Tasks.Length) loop
                if Plan.Tasks (Index).Finding_Keys.Contains (Finding.Fingerprint) then
                   Linked := Linked + 1;
                   declare View : constant Task_View := Views (Index); begin
-                     All_Verified := All_Verified and then View.Quality = Improve.Model.Verified;
-                     All_Superseded := All_Superseded and then View.Quality = Improve.Model.Superseded;
-                     Any_Unknown := Any_Unknown or else View.Quality = Improve.Model.Inconclusive;
-                     Any_Regressed := Any_Regressed or else View.Quality = Improve.Model.Regressed;
+                     Any_Current := Any_Current or else View.Verification_Current;
+                     All_Verified := All_Verified and then
+                       View.Verification_Current and then View.Quality = Improve.Model.Verified;
+                     All_Superseded := All_Superseded and then
+                       View.Verification_Current and then View.Quality = Improve.Model.Superseded;
+                     Any_Unknown := Any_Unknown or else
+                       (View.Verification_Current and then View.Quality = Improve.Model.Inconclusive);
+                     Any_Regressed := Any_Regressed or else
+                       (View.Verification_Current and then View.Quality = Improve.Model.Regressed);
+                     All_Previously_Verified := All_Previously_Verified and then
+                       View.Has_Verification and then not View.Verification_Current and then
+                       View.Quality = Improve.Model.Verified;
                   end;
                end if;
             end loop;
@@ -160,6 +170,9 @@ package body Improve.Tasks is
             elsif All_Verified then Result.Resolved := Result.Resolved + 1;
             elsif All_Superseded then Result.Superseded := Result.Superseded + 1;
             elsif Any_Unknown then Result.Not_Measurable := Result.Not_Measurable + 1;
+            elsif not Any_Current and then All_Previously_Verified then
+               Result.Previously_Resolved := Result.Previously_Resolved + 1;
+            elsif not Any_Current then Result.Unverified := Result.Unverified + 1;
             else Result.Outstanding := Result.Outstanding + 1;
             end if;
          end;

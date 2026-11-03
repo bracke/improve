@@ -940,7 +940,9 @@ package body Improve.CLI is
                "  outstanding " & Number (Value.Findings.Outstanding) & LF &
                "  not_measurable " & Number (Value.Findings.Not_Measurable) & LF &
                "  regressed " & Number (Value.Findings.Regressed) & LF &
-               "  superseded " & Number (Value.Findings.Superseded) & LF);
+               "  superseded " & Number (Value.Findings.Superseded) & LF &
+               "  previously_resolved " & Number (Value.Findings.Previously_Resolved) & LF &
+               "  unverified " & Number (Value.Findings.Unverified) & LF);
          end loop;
          return To_String (Result);
       end;

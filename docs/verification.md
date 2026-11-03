@@ -46,3 +46,7 @@ incomplete assessment selection returns the normal unavailable-evidence error in
 Status never presents a historical conclusion as current quality. It compares the assessment named by the most recent
 exact-revision plan and project verification records with the latest completed assessment, reporting older evidence
 as a previous result and leaving the current assessment unverified.
+
+The same rule governs finding aggregation. Current verification drives resolved, regressed, inconclusive, and
+superseded counts; historical verified evidence is retained in a separate previously-resolved count, and absent current
+evidence is explicitly unverified.
