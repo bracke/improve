@@ -2718,7 +2718,8 @@ package body Improve_Test_Suite is
                  (Harness_State : String;
                   Expected      : Improve.Tasks.Operational_Status;
                   Verified      : Boolean := False;
-                  Outcome       : Improve.Model.Quality_Outcome := Improve.Model.Unverified) is
+                  Outcome       : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
+                  Current_Run   : Natural := 2) is
                   Publications : Improve.Storage.Publication_Vectors.Vector;
                   Evidence     : Improve.Storage.Verification_Vectors.Vector;
                   Views        : Improve.Tasks.View_Vectors.Vector;
@@ -2742,7 +2743,8 @@ package body Improve_Test_Suite is
                            Assessment_Id => 2, Outcome => Outcome, Comparable => True,
                            Explanation => To_Unbounded_String ("matrix")));
                   end if;
-                  Views := Improve.Tasks.Build (Plan, Publications, Evidence, Current_Assessment => 2);
+                  Views := Improve.Tasks.Build
+                    (Plan, Publications, Evidence, Current_Assessment => Current_Run);
                   Assert (Views.First_Element.Status = Expected, "unexpected operational task status");
                end Check;
             begin
@@ -2765,6 +2767,8 @@ package body Improve_Test_Suite is
                Check ("complete", Improve.Tasks.Inconclusive, True, Improve.Model.Inconclusive);
                Check ("running", Improve.Tasks.Regressed, True, Improve.Model.Regressed);
                Check ("running", Improve.Tasks.Superseded, True, Improve.Model.Superseded);
+               Check ("complete", Improve.Tasks.Awaiting_Verification, True, Improve.Model.Regressed, 3);
+               Check ("complete", Improve.Tasks.Awaiting_Verification, True, Improve.Model.Superseded, 3);
                Assert
                  (Improve.Tasks.Valid_Filter ("unresolved") and then
                   Improve.Tasks.Valid_Filter ("verified") and then
