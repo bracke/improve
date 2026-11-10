@@ -35,9 +35,6 @@ begin
    Project_Tools.Processes.Run
      ("AUnit suite", Tests, Project_Tools.Files.Join (Tests, "bin/improve_tests"),
       Project_Tools.Processes.No_Arguments);
-   Project_Tools.Processes.Run
-     ("repository release checks", Root, Project_Tools.Files.Join (Tools, "check_all"),
-      Project_Tools.Processes.No_Arguments);
    Ada.Text_IO.Put_Line (ASCII.LF & "==> GNATdoc public API audit");
    declare
       Run : constant Project_Tools.Processes.Captured_Process :=
@@ -77,6 +74,9 @@ begin
           Project_Tools.Processes.Argument ("-j1")]));
    Project_Tools.Processes.Run
      ("production coverage", Root, Project_Tools.Files.Join (Tools, "improve_coverage"),
+      Project_Tools.Processes.No_Arguments);
+   Project_Tools.Processes.Run
+     ("repository release checks", Root, Project_Tools.Files.Join (Tools, "check_all"),
       Project_Tools.Processes.No_Arguments);
    Project_Tools.Test_Fixtures.Cleanup (Docs);
    Ada.Text_IO.Put_Line ("Phase 9 release gate passed");

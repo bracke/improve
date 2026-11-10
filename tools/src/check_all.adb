@@ -2,6 +2,7 @@ with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Ada_Quality.Checks;
 with Project_Tools.Alire_Manifests;
 with Project_Tools.Files;
 with Project_Tools.Release_Checks;
@@ -58,6 +59,25 @@ procedure Check_All is
          Check.Require_Text ("docs/dependency-licenses.md", "| " & Name & " |");
       end if;
    end Require_Release_Dependency;
+
+   function Evidence_Value (Name : String) return String is
+      Text   : constant String := Project_Tools.Files.Read_Raw_File ("coverage/gcov-summary.txt");
+      Prefix : constant String := Name & "=";
+      Start  : Natural := Text'First;
+   begin
+      while Start <= Text'Last loop
+         declare Stop : Natural := Start; begin
+            while Stop <= Text'Last and then Text (Stop) /= ASCII.LF loop
+               Stop := Stop + 1;
+            end loop;
+            if Stop - Start >= Prefix'Length and then Text (Start .. Start + Prefix'Length - 1) = Prefix then
+               return Text (Start + Prefix'Length .. Stop - 1);
+            end if;
+            Start := Stop + 1;
+         end;
+      end loop;
+      return "";
+   end Evidence_Value;
 begin
    if Root = "" then
       Project_Tools.Release_Checks.Fail ("cannot locate Improve project root");
@@ -90,6 +110,11 @@ begin
    Check.Require_Text ("tests/alire.release.toml", "improve = { path = "".."" }");
    Check.Require_Text ("coverage/gcov-summary.txt", "complete=true");
    Check.Require_Text ("coverage/gcov-summary.txt", "inventory=gcov-production-lines-v2");
+   if Evidence_Value ("source_fingerprint") /= Ada_Quality.Checks.Source_Fingerprint (Root) then
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error, "coverage evidence does not match the current source fingerprint");
+      Failed := True;
+   end if;
    Check.Require_Text ("CHANGELOG.md", "## 0.1.0 — 2026-11-03");
    Check.Require_Text ("LICENSE", "MIT License");
    Require_Release_Dependency ("gnat_native", "=15.2.1");
@@ -114,6 +139,7 @@ begin
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "hostkit", "../hostkit");
       Project_Tools.Alire_Manifests.Require_Workspace_Pin
         (Root & "/alire.toml", "model_runner", "../model_runner");
+      Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "cryptolib", "../cryptolib");
    else
       Project_Tools.Alire_Manifests.Require_No_Local_Pins (Root & "/alire.toml");
    end if;
