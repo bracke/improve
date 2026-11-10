@@ -15,6 +15,7 @@ with Improve;
 with Improve.CLI;
 with Improve_CLI_Test_Suite;
 with Improve_Source_Test_Suite;
+with Improve_Storage_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
@@ -3638,6 +3639,7 @@ package body Improve_Test_Suite is
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
       Result.Add_Test (Improve_Source_Test_Suite.Suite);
+      Result.Add_Test (Improve_Storage_Test_Suite.Suite);
       for Id in Test_Id loop
          declare
             Item : constant Case_Access := new Case_Test (Id);

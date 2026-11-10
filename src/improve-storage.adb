@@ -426,30 +426,6 @@ package body Improve.Storage is
       return Stable_Digest (Field (Payload, "finding_keys"));
    end Stored_Finding_Set;
 
-   function Task_Detail
-     (Item    : in out Store;
-      Tx      : in out Database.Transactions.Transaction;
-      Task_Id : Positive;
-      Payload : String;
-      Name    : String) return String is
-      Inline : constant String := Field_Or (Payload, Name, "");
-      Cursor : Entity_Tables.Cursor;
-   begin
-      if Inline /= "" then
-         return Inline;
-      end if;
-      Cursor := Scan (Item, Tx, Task_Details_Table);
-      while Entity_Tables.Has_Element (Cursor) loop
-         declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-            if Row.Parent_Id = Task_Id and then S (Row.Kind) = Name then
-               return S (Row.Payload);
-            end if;
-         end;
-         Advance (Item, Tx, Task_Details_Table, Cursor);
-      end loop;
-      return "";
-   end Task_Detail;
-
    function Revision_Payload (Value : Improve.Model.Plan_Revision; Baseline_Id, Revision : Positive) return String is
      (Pair ("revision", Number (Revision)) & LF & Pair ("baseline_id", Number (Baseline_Id)) & LF &
       Pair ("project_id", Number (Value.Project.Id)) & LF & Pair ("project", To_String (Value.Project.Name)) & LF &
@@ -587,31 +563,63 @@ package body Improve.Storage is
               Reserve_Ids (Item, Tx, Tasks_Table, Natural (Stored.Tasks.Length));
             Original_Ids : Improve.Model.UString_Vectors.Vector;
             Assigned_Ids : Improve.Model.UString_Vectors.Vector;
+            Previous_Tasks : String_Value_Maps.Map;
 
-            function Previous_Task_Id
-              (Spec : Improve.Model.Task_Specification) return Ada.Strings.Unbounded.Unbounded_String is
-               Tasks : Entity_Tables.Cursor;
+            function Identity_Key
+              (Category, Title, Acceptance, Finding_Set : String) return String is
+              (Stable_Digest
+                 (Number (Category'Length) & ":" & Category & Number (Title'Length) & ":" & Title &
+                  Number (Acceptance'Length) & ":" & Acceptance & Number (Finding_Set'Length) & ":" & Finding_Set));
+
+            procedure Index_Previous_Tasks is
+               Acceptance_By_Task : String_Value_Maps.Map;
+               Details : Entity_Tables.Cursor;
+               Tasks   : Entity_Tables.Cursor;
             begin
-               if Previous_Revision = 0 then return Null_Unbounded_String; end if;
+               if Previous_Revision = 0 then
+                  return;
+               end if;
+               Details := Scan (Item, Tx, Task_Details_Table);
+               while Entity_Tables.Has_Element (Details) loop
+                  declare Row : constant Entity := Entity_Tables.Element (Details); begin
+                     if S (Row.Kind) = "acceptance" then
+                        Acceptance_By_Task.Include (Number (Row.Parent_Id), To_Unbounded_String (S (Row.Payload)));
+                     end if;
+                  end;
+                  Advance (Item, Tx, Task_Details_Table, Details);
+               end loop;
                Tasks := Scan (Item, Tx, Tasks_Table);
                while Entity_Tables.Has_Element (Tasks) loop
                   declare
-                     Row     : constant Entity := Entity_Tables.Element (Tasks);
-                     Payload : constant String := S (Row.Payload);
+                     Row        : constant Entity := Entity_Tables.Element (Tasks);
+                     Payload    : constant String := S (Row.Payload);
+                     Acceptance : constant String :=
+                       (if Field_Or (Payload, "acceptance", "") /= "" then Field (Payload, "acceptance")
+                        elsif Acceptance_By_Task.Contains (Number (Row.Id))
+                        then To_String (Acceptance_By_Task.Element (Number (Row.Id))) else "");
+                     Key : constant String :=
+                       Identity_Key
+                         (S (Row.Kind), Field (Payload, "title"), Acceptance, Stored_Finding_Set (Payload));
                   begin
-                     if Row.Parent_Id = Previous_Revision and then S (Row.Kind) = To_String (Spec.Category) and then
-                       Field (Payload, "title") = To_String (Spec.Title) and then
-                       Task_Detail (Item, Tx, Row.Id, Payload, "acceptance") = To_String (Spec.Acceptance) and then
-                       Stored_Finding_Set (Payload) = Stable_Digest (Pack (Spec.Finding_Keys))
-                     then
-                        return To_Unbounded_String (Field (Payload, "draft_id"));
+                     if Row.Parent_Id = Previous_Revision and then not Previous_Tasks.Contains (Key) then
+                        Previous_Tasks.Insert (Key, To_Unbounded_String (Field (Payload, "draft_id")));
                      end if;
                   end;
                   Advance (Item, Tx, Tasks_Table, Tasks);
                end loop;
-               return Null_Unbounded_String;
+            end Index_Previous_Tasks;
+
+            function Previous_Task_Id
+              (Spec : Improve.Model.Task_Specification) return Ada.Strings.Unbounded.Unbounded_String is
+               Key : constant String :=
+                 Identity_Key
+                   (To_String (Spec.Category), To_String (Spec.Title), To_String (Spec.Acceptance),
+                    Stable_Digest (Pack (Spec.Finding_Keys)));
+            begin
+               return (if Previous_Tasks.Contains (Key) then Previous_Tasks.Element (Key) else Null_Unbounded_String);
             end Previous_Task_Id;
          begin
+            Index_Previous_Tasks;
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
                Original_Ids.Append (Stored.Tasks (Index).Id);
                declare
@@ -1016,37 +1024,46 @@ package body Improve.Storage is
          raise;
    end Load_Task;
 
+   function Latest_Revisions
+     (Item : in out Store; Tx : in out Database.Transactions.Transaction) return String_Id_Maps.Map is
+      Result    : String_Id_Maps.Map;
+      Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+   begin
+      while Entity_Tables.Has_Element (Revisions) loop
+         declare
+            Row : constant Entity := Entity_Tables.Element (Revisions);
+            Key : constant String := Number (Row.Parent_Id);
+         begin
+            if not Result.Contains (Key) or else Result.Element (Key) < Row.Id then
+               Result.Include (Key, Row.Id);
+            end if;
+         end;
+         Advance (Item, Tx, Revisions_Table, Revisions);
+      end loop;
+      return Result;
+   end Latest_Revisions;
+
    function List
      (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
+      Latest : String_Id_Maps.Map;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
+      Latest := Latest_Revisions (Item, Tx);
       Plans := Scan (Item, Tx, Plans_Table);
       while Entity_Tables.Has_Element (Plans) loop
          declare Row : constant Entity := Entity_Tables.Element (Plans); begin
-            if Project_Id = 0 or else Row.Parent_Id = Project_Id then
+            if (Project_Id = 0 or else Row.Parent_Id = Project_Id) and then Latest.Contains (Number (Row.Id)) then
                declare
-                  Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
-                  Latest : Natural := 0;
+                  Plan : constant Improve.Model.Plan_Revision :=
+                    Load_Revision (Item, Latest.Element (Number (Row.Id)));
                begin
-                  while Entity_Tables.Has_Element (Revisions) loop
-                     if Entity_Tables.Element (Revisions).Parent_Id = Row.Id then
-                        Latest := Natural'Max (Latest, Entity_Tables.Element (Revisions).Id);
-                     end if;
-                     Advance (Item, Tx, Revisions_Table, Revisions);
-                  end loop;
-                  if Latest > 0 then
-                     declare
-                        Plan : constant Improve.Model.Plan_Revision := Load_Revision (Item, Positive (Latest));
-                     begin
-                        Result.Append
-                          (Plan_Summary'
-                             (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
-                              Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
-                     end;
-                  end if;
+                  Result.Append
+                    (Plan_Summary'
+                       (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
+                        Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
                end;
             end if;
          end;
@@ -1065,37 +1082,29 @@ package body Improve.Storage is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
+      Latest : String_Id_Maps.Map;
       Current_Key : constant String := Project_Key (Project);
       Legacy_Key  : constant String := Legacy_Project_Key (Project);
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
+      Latest := Latest_Revisions (Item, Tx);
       Plans := Scan (Item, Tx, Plans_Table);
       while Entity_Tables.Has_Element (Plans) loop
          declare Row : constant Entity := Entity_Tables.Element (Plans); begin
-            if S (Row.Kind) = Current_Key or else S (Row.Kind) = Legacy_Key then
+            if (S (Row.Kind) = Current_Key or else S (Row.Kind) = Legacy_Key) and then
+              Latest.Contains (Number (Row.Id))
+            then
                declare
-                  Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
-                  Latest    : Natural := 0;
+                  Plan : constant Improve.Model.Plan_Revision :=
+                    Load_Revision (Item, Latest.Element (Number (Row.Id)));
                begin
-                  while Entity_Tables.Has_Element (Revisions) loop
-                     if Entity_Tables.Element (Revisions).Parent_Id = Row.Id then
-                        Latest := Natural'Max (Latest, Entity_Tables.Element (Revisions).Id);
-                     end if;
-                     Advance (Item, Tx, Revisions_Table, Revisions);
-                  end loop;
-                  if Latest > 0 then
-                     declare
-                        Plan : constant Improve.Model.Plan_Revision := Load_Revision (Item, Positive (Latest));
-                     begin
-                        if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
-                          Plan.Project.Database_Id = Project.Database_Id
-                        then
-                           Result.Append
-                             (Plan_Summary'
-                                (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
-                                 Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
-                        end if;
-                     end;
+                  if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
+                    Plan.Project.Database_Id = Project.Database_Id
+                  then
+                     Result.Append
+                       (Plan_Summary'
+                          (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
+                           Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
                   end if;
                end;
             end if;

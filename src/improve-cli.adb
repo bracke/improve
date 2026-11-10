@@ -11,6 +11,8 @@ with Improve.CLI.Parsing;
 with Improve.Findings;
 with Improve.JSON;
 with Improve.Model;
+with Improve.Operations.Publication;
+with Improve.Operations.Verification;
 with Improve.Planner;
 with Improve.Presentation;
 with Improve.Recovery;
@@ -19,7 +21,6 @@ with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
 with Improve.Workflow;
-with Improve.Verification;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
 with Project_Tools.Files;
@@ -343,119 +344,33 @@ package body Improve.CLI is
    end Plan_Output;
 
    function Apply_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      State        : Improve.Storage.Store;
-      Plan         : Improve.Model.Plan_Revision;
-      Existing     : Improve.Storage.Publication_Vectors.Vector;
-      Selected_Task_Ids : Improve.Model.UString_Vectors.Vector;
-      Approved     : Boolean := False;
-      Operation_Id : Natural := 0;
+      Executed : constant Improve.Operations.Publication.Result :=
+        Improve.Operations.Publication.Run
+          (State_Path       => State_Path (Item),
+           Quality_Path     => Quality_Path (Item, Settings),
+           Plan_Id          => To_String (Item.Target),
+           Selected_Task_Id => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
+           Task_Kind        => To_String (Settings.Task_Kind),
+           Dry_Run          => Item.Dry_Run);
    begin
-      Improve.Storage.Open (State, State_Path (Item), Writable => False);
-      Plan := Improve.Storage.Load (State, To_String (Item.Target));
-      Existing := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
-      Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision);
-      Improve.Storage.Close (State);
-      if Item.Has_Task then
-         if (for all Spec of Plan.Tasks => To_String (Spec.Id) /= To_String (Item.Task_Id)) then
-            raise Argument_Error with "task does not belong to plan: " & To_String (Item.Task_Id);
-         end if;
-         Selected_Task_Ids.Append (Item.Task_Id);
+      if Item.Format = JSON_Format then
+         return Improve.JSON.Publication
+           (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
       end if;
-      if not Item.Dry_Run and then
-        (To_String (Plan.Review_Status) = "pending" or else
-         (for some Spec of Plan.Tasks => Spec.Requires_Review)) and then not Approved
-      then
-         raise Argument_Error with
-           "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
-      end if;
-      declare
-         Current_Source : constant String :=
-           Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path));
-      begin
-         if Current_Source /= To_String (Plan.Working_Source_Id) then
-            raise Data_Error with
-              "current project source differs from the assessment baseline; remeasure and refresh the plan";
-         end if;
-      end;
-      declare
-         Quality : Improve.Source.Repository;
-      begin
-         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-         declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
-            Latest  : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
-         begin
-            Require_Project_Identity (Plan.Project, Project);
-            if Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
-            then
-               raise Data_Error with "project source changed after planning; refresh the plan before publication";
-            elsif Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Policy_Id /= Plan.Baseline.Policy_Id
-            then
-               raise Data_Error with
-                 "quality policy changed after planning; replan before publication to preserve acceptance intent";
-            end if;
-         end;
-         Improve.Source.Close (Quality);
-      end;
-      if not Item.Dry_Run then
-         declare
-            Preflight : constant Improve.Workflow.Publication_Result :=
-              Improve.Workflow.Publish
-                (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
-                 Selected_Task_Ids => Selected_Task_Ids, Existing_Only => False, Dry_Run => True);
-            pragma Unreferenced (Preflight);
-            Task_Ids : Improve.Model.UString_Vectors.Vector;
-         begin
-            if Selected_Task_Ids.Is_Empty then
-               for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
-            else
-               Task_Ids := Selected_Task_Ids;
-            end if;
-            Improve.Storage.Open (State, State_Path (Item), Writable => True);
-            Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids);
-            Improve.Storage.Close (State);
-         end;
-      end if;
-      declare
-         Published : constant Improve.Workflow.Publication_Result :=
-           Improve.Workflow.Publish
-             (To_String (Plan.Project.Path), Plan, To_String (Settings.Task_Kind), Existing,
-              Selected_Task_Ids, False, Item.Dry_Run);
-      begin
-         if not Item.Dry_Run then
-            declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin
-               for Value of Published.Tasks loop
-                  Mappings.Append
-                    (Improve.Storage.Publication_Record'
-                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract, Value.State, Plan.Revision));
-               end loop;
-               Improve.Storage.Open (State, State_Path (Item), Writable => True);
-               Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
-               Improve.Storage.Complete_Publication (State, Positive (Operation_Id));
-               Improve.Storage.Close (State);
-            end;
-         end if;
-         if Item.Format = JSON_Format then
-            return Improve.JSON.Publication (To_String (Plan.Plan_Id), Published, Item.Dry_Run);
-         end if;
-         declare Result : Unbounded_String; begin
+      declare Result : Unbounded_String; begin
+         Append
+           (Result,
+            Improve.Presentation.Header
+              (Message ("apply.title", [Arg ("plan", To_String (Executed.Plan.Plan_Id))])) & LF);
+         Append (Result, Message (if Item.Dry_Run then "apply.preview" else "apply.complete") & LF);
+         for Value of Executed.Published.Tasks loop
             Append
               (Result,
-               Improve.Presentation.Header
-                 (Message ("apply.title", [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
-            Append (Result, Message (if Item.Dry_Run then "apply.preview" else "apply.complete") & LF);
-            for Value of Published.Tasks loop
-               Append
-                 (Result,
-                  To_String (Value.Improve_Id) & " -> " &
-                  (if Length (Value.Harness_Id) = 0 then "candidate" else To_String (Value.Harness_Id)) &
-                  "  " & To_String (Value.State) & (if Value.Recovered then " (recovered)" else "") & LF);
-            end loop;
-            return To_String (Result);
-         end;
+               To_String (Value.Improve_Id) & " -> " &
+               (if Length (Value.Harness_Id) = 0 then "candidate" else To_String (Value.Harness_Id)) &
+               "  " & To_String (Value.State) & (if Value.Recovered then " (recovered)" else "") & LF);
+         end loop;
+         return To_String (Result);
       end;
    end Apply_Output;
 
@@ -754,130 +669,32 @@ package body Improve.CLI is
       Settings : Improve.Config.Settings;
       Negative : out Boolean;
       Command  : String := "verify") return String is
-      State : Improve.Storage.Store;
-      Plan  : Improve.Model.Plan_Revision;
-      Previously_Verified : Improve.Model.UString_Vectors.Vector;
+      Executed : constant Improve.Operations.Verification.Result :=
+        Improve.Operations.Verification.Run
+          (State_Path       => State_Path (Item),
+           Quality_Path     => Quality_Path (Item, Settings),
+           Project_Selector => To_String (Item.Project),
+           Task_Id          => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
+           Revision         => (if Item.Has_Revision then Item.Revision else 0),
+           Run_Id           => Item.Run_Id,
+           Settings         => Settings);
    begin
-      Improve.Storage.Open (State, State_Path (Item), Writable => False);
-      if Item.Has_Task then
-         Plan := Improve.Storage.Load_Task (State, To_String (Item.Task_Id), Item.Revision);
-      else
-         declare
-            Quality : Improve.Source.Repository;
-            Project : Improve.Model.Project_Reference;
-         begin
-            Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-            Project := Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
-            Improve.Source.Close (Quality);
-            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project);
-            begin
-               if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
-               Plan :=
-                 (if Item.Has_Revision then
-                     Improve.Storage.Load
-                       (State, To_String (Values.Last_Element.Plan_Id), Positive (Item.Revision))
-                  else Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id)));
-            end;
-         end;
+      Negative := Executed.Report.Outcome /= Improve.Model.Verified;
+      if Item.Format = JSON_Format then
+         return Improve.JSON.Verification (Executed.Report, Command);
       end if;
-      Improve.Storage.Close (State);
-      declare
-         Quality : Improve.Source.Repository;
-      begin
-         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-         declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
-            Current : constant Improve.Source.Selection :=
-              Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
-         begin
-            Require_Project_Identity (Plan.Project, Project);
-            Improve.Source.Close (Quality);
-            Improve.Storage.Open (State, State_Path (Item), Writable => False);
-            for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-               for Spec of Plan.Tasks loop
-                  if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
-                    Record_Value.Task_Id = Spec.Id and then
-                    To_String (Record_Value.Contract_Fingerprint) =
-                      Improve.Verification.Contract_Fingerprint (Spec) and then
-                    Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
-                    Record_Value.Outcome = Improve.Model.Verified and then
-                    not Previously_Verified.Contains (Record_Value.Task_Id)
-                  then
-                     Previously_Verified.Append (Record_Value.Task_Id);
-                     exit;
-                  end if;
-               end loop;
-            end loop;
-            Improve.Storage.Close (State);
-            declare
-               Report : constant Improve.Verification.Report :=
-                 Improve.Verification.Evaluate
-                   (Plan, Current, Settings, (if Item.Has_Task then To_String (Item.Task_Id) else ""),
-                    Previously_Verified);
-               Records : Improve.Storage.Verification_Vectors.Vector;
-            begin
-               for Result of Report.Tasks loop
-                  for Spec of Plan.Tasks loop
-                     if Spec.Id = Result.Task_Id then
-                        Records.Append
-                          (Improve.Storage.Verification_Record'
-                             (Scope           => Improve.Storage.Task_Evaluation,
-                              Task_Id         => Result.Task_Id,
-                              Plan_Revision   => Plan.Revision,
-                              Contract_Fingerprint => To_Unbounded_String
-                                (Improve.Verification.Contract_Fingerprint (Spec)),
-                              Assessment_Id   => Report.Verification_Run,
-                              Outcome         => Result.Outcome,
-                              Comparable      => Report.Comparable,
-                              Explanation     => Result.Explanation));
-                        exit;
-                     end if;
-                  end loop;
-               end loop;
-               if not Item.Has_Task then
-                  Records.Append
-                    (Improve.Storage.Verification_Record'
-                       (Scope         => Improve.Storage.Plan_Evaluation,
-                        Task_Id       => Null_Unbounded_String,
-                        Plan_Revision => Plan.Revision,
-                        Contract_Fingerprint => Plan.Fingerprint,
-                        Assessment_Id => Report.Verification_Run,
-                        Outcome       => Report.Plan_Outcome,
-                        Comparable    => Report.Comparable,
-                        Explanation   => Report.Explanation));
-                  Records.Append
-                    (Improve.Storage.Verification_Record'
-                       (Scope         => Improve.Storage.Project_Evaluation,
-                        Task_Id       => Null_Unbounded_String,
-                        Plan_Revision => Plan.Revision,
-                        Contract_Fingerprint => Plan.Fingerprint,
-                        Assessment_Id => Report.Verification_Run,
-                        Outcome       => Report.Project_Outcome,
-                        Comparable    => Report.Comparable,
-                        Explanation   => Report.Explanation));
-               end if;
-               Improve.Storage.Open (State, State_Path (Item), Writable => True);
-               Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
-               Improve.Storage.Close (State);
-               Negative := Report.Outcome /= Improve.Model.Verified;
-               if Item.Format = JSON_Format then return Improve.JSON.Verification (Report, Command); end if;
-               declare Output : Unbounded_String; begin
-                  Append
-                    (Output,
-                     Improve.Presentation.Header
-                       (Message
-                          ((if Command = "refresh" then "refresh.title" else "verify.title"),
-                           [Arg ("plan", To_String (Plan.Plan_Id))])) & LF);
-                  Append (Output, "Outcome: " & Improve.Model.Image (Report.Outcome) & LF);
-                  for Result of Report.Tasks loop
-                     Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
-                  end loop;
-                  return To_String (Output);
-               end;
-            end;
-         end;
+      declare Output : Unbounded_String; begin
+         Append
+           (Output,
+            Improve.Presentation.Header
+              (Message
+                 ((if Command = "refresh" then "refresh.title" else "verify.title"),
+                  [Arg ("plan", To_String (Executed.Plan.Plan_Id))])) & LF);
+         Append (Output, "Outcome: " & Improve.Model.Image (Executed.Report.Outcome) & LF);
+         for Result of Executed.Report.Tasks loop
+            Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
+         end loop;
+         return To_String (Output);
       end;
    end Verify_Output;
 
