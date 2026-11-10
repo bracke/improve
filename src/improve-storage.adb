@@ -1,6 +1,8 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
+with Ada.Strings.Hash;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Wide_Wide_Unbounded;
@@ -12,6 +14,7 @@ with Database.Tables;
 with Database.Transactions;
 with Database.Types;
 with Database.Values;
+with Interfaces;
 
 package body Improve.Storage is
    use Ada.Strings.Unbounded;
@@ -98,6 +101,15 @@ package body Improve.Storage is
 
    package Entity_Tables is new Database.Tables.Typed
      (Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
+
+   package String_Id_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type => String, Element_Type => Positive, Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+
+   package String_Value_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Ada.Strings.Unbounded.Unbounded_String,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
 
    function Encode (Text : String) return Wide_Wide_String is
      (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Text));
@@ -282,15 +294,35 @@ package body Improve.Storage is
 
    function Next_Id
      (Item : in out Store; Tx : in out Database.Transactions.Transaction; Table : Positive) return Positive is
-      Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Table);
-      Highest : Natural := 0;
+      Result : Positive;
    begin
-      while Entity_Tables.Has_Element (Cursor) loop
-         Highest := Natural'Max (Highest, Entity_Tables.Element (Cursor).Id);
-         Advance (Item, Tx, Table, Cursor);
-      end loop;
-      return Highest + 1;
+      if Item.Next_Ids (Table) = 0 then
+         declare
+            Cursor  : Entity_Tables.Cursor := Scan (Item, Tx, Table);
+            Highest : Natural := 0;
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               Highest := Natural'Max (Highest, Entity_Tables.Element (Cursor).Id);
+               Advance (Item, Tx, Table, Cursor);
+            end loop;
+            Item.Next_Ids (Table) := Highest + 1;
+         end;
+      end if;
+      Result := Positive (Item.Next_Ids (Table));
+      Item.Next_Ids (Table) := Item.Next_Ids (Table) + 1;
+      return Result;
    end Next_Id;
+
+   function Reserve_Ids
+     (Item  : in out Store;
+      Tx    : in out Database.Transactions.Transaction;
+      Table : Positive;
+      Count : Natural) return Positive is
+      First : constant Positive := Next_Id (Item, Tx, Table);
+   begin
+      Item.Next_Ids (Table) := Item.Next_Ids (Table) + Natural'Max (1, Count) - 1;
+      return First;
+   end Reserve_Ids;
 
    procedure Open (Item : in out Store; Path : String; Writable : Boolean) is
       Exists : constant Boolean := Ada.Directories.Exists (Path);
@@ -308,6 +340,7 @@ package body Improve.Storage is
       end if;
       Item.Opened := True;
       Item.Writable := Writable;
+      Item.Next_Ids := [others => 0];
       Item.Schemas (1) := New_Schema ("improve_records");
       if Writable then Check (Entity_Tables.Register (Item.DB, Item.Schemas (1)), "register Improve table"); end if;
       for Table in 2 .. Logical_Table_Count loop Item.Schemas (Table) := Item.Schemas (1); end loop;
@@ -359,6 +392,7 @@ package body Improve.Storage is
       if Item.Opened then Database.Close (Item.DB); end if;
       Item.Opened := False;
       Item.Writable := False;
+      Item.Next_Ids := [others => 0];
    end Close;
 
    function Finding_Payload (Value : Improve.Model.Finding_Reference) return String is
@@ -440,6 +474,25 @@ package body Improve.Storage is
         (To_String (Value.Database_Id) & Character'Val (0) & Number (Value.Id) & Character'Val (0) &
          To_String (Value.Path)));
 
+   function Legacy_Project_Key (Value : Improve.Model.Project_Reference) return String is
+      use type Interfaces.Unsigned_64;
+      Text : constant String :=
+        To_String (Value.Database_Id) & Character'Val (0) & Number (Value.Id) & Character'Val (0) &
+        To_String (Value.Path);
+      Hash : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
+      Hex  : constant String := "0123456789abcdef";
+      Result : String (1 .. 24) := "fnv1a64:0000000000000000";
+   begin
+      for Byte of Text loop
+         Hash := (Hash xor Interfaces.Unsigned_64 (Character'Pos (Byte))) * 16#100000001B3#;
+      end loop;
+      for Index in reverse 9 .. Result'Last loop
+         Result (Index) := Hex (Natural (Hash and 16#F#) + 1);
+         Hash := Interfaces.Shift_Right (Hash, 4);
+      end loop;
+      return Result;
+   end Legacy_Project_Key;
+
    function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result is
       Tx : Database.Transactions.Transaction;
       Stored : Improve.Model.Plan_Revision := Value;
@@ -465,7 +518,8 @@ package body Improve.Storage is
          Cursor       : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table);
       begin
          while Entity_Tables.Has_Element (Cursor) and then
-           S (Entity_Tables.Element (Cursor).Kind) /= Project_Key (Stored.Project)
+           S (Entity_Tables.Element (Cursor).Kind) not in
+             Project_Key (Stored.Project) | Legacy_Project_Key (Stored.Project)
          loop
             Advance (Item, Tx, Plans_Table, Cursor);
          end loop;
@@ -511,21 +565,19 @@ package body Improve.Storage is
                  WW (Revision_Payload (Stored, Baseline_Row, Revision_No)), True, Revisions_Table)),
                 "store plan revision");
          declare
-            Finding_Row : Positive := Next_Id (Item, Tx, Findings_Table);
+            Finding_Row : Positive;
          begin
             for Finding of Stored.Findings loop
+               Finding_Row := Next_Id (Item, Tx, Findings_Table);
                Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Findings_Table),
                       (Finding_Row, Revision_Row, WW (To_String (Finding.Fingerprint)),
                        WW (Improve.Model.Image (Finding.Kind)), WW (Finding_Payload (Finding)), True, Findings_Table)),
                       "store finding");
-               Finding_Row := Finding_Row + 1;
             end loop;
          end;
          declare
-            First_Task_Row : constant Positive := Next_Id (Item, Tx, Tasks_Table);
-            Link_Row : Positive := Next_Id (Item, Tx, Task_Findings_Table);
-            Dependency_Row : Positive := Next_Id (Item, Tx, Task_Dependencies_Table);
-            Detail_Row : Positive := Next_Id (Item, Tx, Task_Details_Table);
+            First_Task_Row : constant Positive :=
+              Reserve_Ids (Item, Tx, Tasks_Table, Natural (Stored.Tasks.Length));
             Original_Ids : Improve.Model.UString_Vectors.Vector;
             Assigned_Ids : Improve.Model.UString_Vectors.Vector;
 
@@ -598,10 +650,9 @@ package body Improve.Storage is
                         Check
                           (Entity_Tables.Insert
                              (Tx, Item.DB, Item.Schemas (Task_Details_Table),
-                              (Detail_Row, Task_Row, WW (Name), WW ("value"), WW (Value), True,
-                               Task_Details_Table)),
+                              (Next_Id (Item, Tx, Task_Details_Table), Task_Row, WW (Name), WW ("value"),
+                               WW (Value), True, Task_Details_Table)),
                            "store task detail");
-                        Detail_Row := Detail_Row + 1;
                      end Add_Detail;
                   begin
                      Add_Detail ("goal", To_String (Persisted.Goal));
@@ -613,18 +664,21 @@ package body Improve.Storage is
                      Add_Detail ("verification", To_String (Persisted.Verification));
                   end;
                   for Key of Persisted.Finding_Keys loop
-                     Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Task_Findings_Table),
-                            (Link_Row, Task_Row, WW (To_String (Key)), WW ("linked"), WW (""), True,
-                             Task_Findings_Table)),
-                            "store task finding link");
-                     Link_Row := Link_Row + 1;
+                     Check
+                       (Entity_Tables.Insert
+                          (Tx, Item.DB, Item.Schemas (Task_Findings_Table),
+                           (Next_Id (Item, Tx, Task_Findings_Table), Task_Row, WW (To_String (Key)),
+                            WW ("linked"), WW (""), True, Task_Findings_Table)),
+                        "store task finding link");
                   end loop;
                   for Dependency of Persisted.Dependencies loop
-                     Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Task_Dependencies_Table),
-                            (Dependency_Row, Task_Row, WW (To_String (Dependency)), WW ("required"), WW (""), True,
-                             Task_Dependencies_Table)),
-                            "store task dependency");
-                     Dependency_Row := Dependency_Row + 1;
+                     Check
+                       (Entity_Tables.Insert
+                          (Tx, Item.DB, Item.Schemas (Task_Dependencies_Table),
+                           (Next_Id (Item, Tx, Task_Dependencies_Table), Task_Row,
+                            WW (To_String (Dependency)), WW ("required"), WW (""), True,
+                            Task_Dependencies_Table)),
+                        "store task dependency");
                   end loop;
                end;
             end loop;
@@ -673,6 +727,33 @@ package body Improve.Storage is
       Tx : Database.Transactions.Transaction;
       Revision : Entity;
       Result : Improve.Model.Plan_Revision;
+      Details : String_Value_Maps.Map;
+      Dependency_Packs : String_Value_Maps.Map;
+      Finding_Packs : String_Value_Maps.Map;
+
+      procedure Append_Packed
+        (Values : in out String_Value_Maps.Map;
+         Key    : String;
+         Value  : String) is
+         Current : Unbounded_String :=
+           (if Values.Contains (Key) then Values.Element (Key) else Null_Unbounded_String);
+      begin
+         Append (Current, Number (Value'Length) & ":" & Value);
+         Values.Include (Key, Current);
+      end Append_Packed;
+
+      function Loaded_Detail (Payload : String; Task_Id : Positive; Name : String) return String is
+         Inline : constant String := Field_Or (Payload, Name, "");
+         Key    : constant String := Number (Task_Id) & Character'Val (0) & Name;
+      begin
+         if Inline /= "" then
+            return Inline;
+         elsif Details.Contains (Key) then
+            return To_String (Details.Element (Key));
+         else
+            return "";
+         end if;
+      end Loaded_Detail;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
       declare
@@ -730,6 +811,32 @@ package body Improve.Storage is
             Advance (Item, Tx, Findings_Table, Cursor);
          end loop;
       end;
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Details_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               Details.Include
+                 (Number (Row.Parent_Id) & Character'Val (0) & S (Row.Kind),
+                  To_Unbounded_String (S (Row.Payload)));
+            end;
+            Advance (Item, Tx, Task_Details_Table, Cursor);
+         end loop;
+      end;
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Dependencies_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               Append_Packed (Dependency_Packs, Number (Row.Parent_Id), S (Row.Kind));
+            end;
+            Advance (Item, Tx, Task_Dependencies_Table, Cursor);
+         end loop;
+      end;
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Findings_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               Append_Packed (Finding_Packs, Number (Row.Parent_Id), S (Row.Kind));
+            end;
+            Advance (Item, Tx, Task_Findings_Table, Cursor);
+         end loop;
+      end;
       declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
@@ -744,42 +851,22 @@ package body Improve.Storage is
                   Spec.Title := To_Unbounded_String (Field (Payload, "title"));
                   Spec.Category := To_Unbounded_String (S (Row.Kind));
                   Spec.Task_Priority := Priority_Value (Field (Payload, "priority"));
-                  Spec.Goal := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "goal"));
-                  Spec.Problem := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "problem"));
-                  Spec.Evidence := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "evidence"));
+                  Spec.Goal := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "goal"));
+                  Spec.Problem := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "problem"));
+                  Spec.Evidence := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "evidence"));
                   Spec.Relevant_Files := Unpack (Field (Payload, "files"));
                   Spec.Scope := To_Unbounded_String (Field (Payload, "scope"));
-                  Spec.Out_Of_Scope := To_Unbounded_String
-                    (Task_Detail (Item, Tx, Row.Id, Payload, "out_of_scope"));
-                  Spec.Requirements := To_Unbounded_String
-                    (Task_Detail (Item, Tx, Row.Id, Payload, "requirements"));
-                  Spec.Acceptance := To_Unbounded_String
-                    (Task_Detail (Item, Tx, Row.Id, Payload, "acceptance"));
-                  Spec.Verification := To_Unbounded_String
-                    (Task_Detail (Item, Tx, Row.Id, Payload, "verification"));
+                  Spec.Out_Of_Scope := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "out_of_scope"));
+                  Spec.Requirements := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "requirements"));
+                  Spec.Acceptance := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "acceptance"));
+                  Spec.Verification := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "verification"));
                   Spec.Dependencies := Unpack (Field_Or (Payload, "dependencies", ""));
                   Spec.Finding_Keys := Unpack (Field_Or (Payload, "finding_keys", ""));
-                  if Spec.Dependencies.Is_Empty then
-                     declare Links : Entity_Tables.Cursor := Scan (Item, Tx, Task_Dependencies_Table); begin
-                        while Entity_Tables.Has_Element (Links) loop
-                           if Entity_Tables.Element (Links).Parent_Id = Row.Id then
-                              Spec.Dependencies.Append
-                                (To_Unbounded_String (S (Entity_Tables.Element (Links).Kind)));
-                           end if;
-                           Advance (Item, Tx, Task_Dependencies_Table, Links);
-                        end loop;
-                     end;
+                  if Spec.Dependencies.Is_Empty and then Dependency_Packs.Contains (Number (Row.Id)) then
+                     Spec.Dependencies := Unpack (To_String (Dependency_Packs.Element (Number (Row.Id))));
                   end if;
-                  if Spec.Finding_Keys.Is_Empty then
-                     declare Links : Entity_Tables.Cursor := Scan (Item, Tx, Task_Findings_Table); begin
-                        while Entity_Tables.Has_Element (Links) loop
-                           if Entity_Tables.Element (Links).Parent_Id = Row.Id then
-                              Spec.Finding_Keys.Append
-                                (To_Unbounded_String (S (Entity_Tables.Element (Links).Kind)));
-                           end if;
-                           Advance (Item, Tx, Task_Findings_Table, Links);
-                        end loop;
-                     end;
+                  if Spec.Finding_Keys.Is_Empty and then Finding_Packs.Contains (Number (Row.Id)) then
+                     Spec.Finding_Keys := Unpack (To_String (Finding_Packs.Element (Number (Row.Id))));
                   end if;
                   Spec.Confidence := Natural'Value (Field (Payload, "confidence"));
                   Spec.Requires_Review := Boolean'Value (Field (Payload, "review"));
@@ -969,17 +1056,51 @@ package body Improve.Storage is
    function List
      (Item : in out Store; Project : Improve.Model.Project_Reference) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
+      Tx : Database.Transactions.Transaction;
+      Plans : Entity_Tables.Cursor;
+      Current_Key : constant String := Project_Key (Project);
+      Legacy_Key  : constant String := Legacy_Project_Key (Project);
    begin
-      for Summary of List (Item) loop
-         declare Plan : constant Improve.Model.Plan_Revision := Load (Item, To_String (Summary.Plan_Id)); begin
-            if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
-              Plan.Project.Database_Id = Project.Database_Id
-            then
-               Result.Append (Summary);
+      Database.Transactions.Begin_Read (Item.DB, Tx);
+      Plans := Scan (Item, Tx, Plans_Table);
+      while Entity_Tables.Has_Element (Plans) loop
+         declare Row : constant Entity := Entity_Tables.Element (Plans); begin
+            if S (Row.Kind) = Current_Key or else S (Row.Kind) = Legacy_Key then
+               declare
+                  Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+                  Latest    : Natural := 0;
+               begin
+                  while Entity_Tables.Has_Element (Revisions) loop
+                     if Entity_Tables.Element (Revisions).Parent_Id = Row.Id then
+                        Latest := Natural'Max (Latest, Entity_Tables.Element (Revisions).Id);
+                     end if;
+                     Advance (Item, Tx, Revisions_Table, Revisions);
+                  end loop;
+                  if Latest > 0 then
+                     declare
+                        Plan : constant Improve.Model.Plan_Revision := Load_Revision (Item, Positive (Latest));
+                     begin
+                        if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
+                          Plan.Project.Database_Id = Project.Database_Id
+                        then
+                           Result.Append
+                             (Plan_Summary'
+                                (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
+                                 Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
+                        end if;
+                     end;
+                  end if;
+               end;
             end if;
          end;
+         Advance (Item, Tx, Plans_Table, Plans);
       end loop;
+      Database.Transactions.Rollback (Tx);
       return Result;
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
    end List;
 
    procedure Record_Publications
@@ -988,34 +1109,42 @@ package body Improve.Storage is
       Values  : Publication_Vectors.Vector) is
       Tx     : Database.Transactions.Transaction;
       Row_Id : Positive;
+      Stored : String_Value_Maps.Map;
+
+      function Mapping_Key (Task_Id, Contract : String) return String is
+        (Task_Id & Character'Val (0) & Contract);
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for publication recording";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
-      Row_Id := Next_Id (Item, Tx, Publications_Table);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare
+               Row     : constant Entity := Entity_Tables.Element (Cursor);
+               Payload : constant String := S (Row.Payload);
+            begin
+               Stored.Include
+                 (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")),
+                  To_Unbounded_String
+                    (Field (Payload, "harness_id") & Character'Val (0) & Field (Payload, "origin")));
+            end;
+            Advance (Item, Tx, Publications_Table, Cursor);
+         end loop;
+      end;
       for Value of Values loop
          declare
-            Cursor   : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table);
-            Existing : Boolean := False;
+            Key      : constant String := Mapping_Key
+              (To_String (Value.Improve_Task_Id), To_String (Value.Contract));
+            Expected : constant String :=
+              To_String (Value.Harness_Task_Id) & Character'Val (0) & To_String (Value.Origin);
+            Existing : constant Boolean := Stored.Contains (Key);
          begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) and then
-                    Field_Or (S (Row.Payload), "contract", "") = To_String (Value.Contract)
-                  then
-                     if Field (S (Row.Payload), "harness_id") /= To_String (Value.Harness_Task_Id) or else
-                       Field (S (Row.Payload), "origin") /= To_String (Value.Origin)
-                     then
-                        raise Data_Error with "published task identity is already mapped to unrelated work";
-                     end if;
-                     Existing := True;
-                     exit;
-                  end if;
-               end;
-               Advance (Item, Tx, Publications_Table, Cursor);
-            end loop;
+            if Existing and then To_String (Stored.Element (Key)) /= Expected then
+               raise Data_Error with "published task identity is already mapped to unrelated work";
+            end if;
             if not Existing then
+               Row_Id := Next_Id (Item, Tx, Publications_Table);
                Check
                  (Entity_Tables.Insert
                     (Tx, Item.DB, Item.Schemas (Publications_Table),
@@ -1026,7 +1155,7 @@ package body Improve.Storage is
                           Pair ("contract", To_String (Value.Contract)) & LF &
                           Pair ("plan_revision", Number (Value.Plan_Revision))), True, Publications_Table)),
                   "record publication mapping");
-               Row_Id := Row_Id + 1;
+               Stored.Insert (Key, To_Unbounded_String (Expected));
             end if;
          end;
       end loop;
@@ -1075,42 +1204,52 @@ package body Improve.Storage is
      (Item   : in out Store;
       Values : Publication_Vectors.Vector) is
       Tx : Database.Transactions.Transaction;
+      Rows : String_Id_Maps.Map;
+
+      function Mapping_Key (Task_Id, Contract : String) return String is
+        (Task_Id & Character'Val (0) & Contract);
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for publication reconciliation";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare
+               Row     : constant Entity := Entity_Tables.Element (Cursor);
+               Payload : constant String := S (Row.Payload);
+            begin
+               Rows.Include
+                 (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")), Row.Id);
+            end;
+            Advance (Item, Tx, Publications_Table, Cursor);
+         end loop;
+      end;
       for Value of Values loop
          declare
-            Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table);
-            Found  : Boolean := False;
+            Key : constant String := Mapping_Key
+              (To_String (Value.Improve_Task_Id), To_String (Value.Contract));
+            Row : Entity;
+            Status : Database.Status.Result;
          begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare
-                  Row     : Entity := Entity_Tables.Element (Cursor);
-                  Payload : constant String := S (Row.Payload);
-               begin
-                  if S (Row.Kind) = To_String (Value.Improve_Task_Id) and then
-                    Field_Or (Payload, "contract", "") = To_String (Value.Contract)
-                  then
-                     if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
-                       Field (Payload, "origin") /= To_String (Value.Origin)
-                     then
-                        raise Data_Error with "publication reconciliation identity does not match stored mapping";
-                     end if;
-                     Row.State := WW (To_String (Value.State));
-                     Check
-                       (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Publications_Table), Row),
-                        "update reconciled publication state");
-                     Found := True;
-                     exit;
-                  end if;
-               end;
-               Advance (Item, Tx, Publications_Table, Cursor);
-            end loop;
-            if not Found then
+            if not Rows.Contains (Key) then
                raise Data_Error with "publication reconciliation references an unknown Improve task";
             end if;
+            Status := Entity_Tables.Find
+              (Tx, Item.DB, Item.Schemas (Publications_Table),
+               Physical_Key (Publications_Table, Rows.Element (Key)), Row);
+            Check (Status, "read publication mapping for reconciliation");
+            declare Payload : constant String := S (Row.Payload); begin
+               if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
+                 Field (Payload, "origin") /= To_String (Value.Origin)
+               then
+                  raise Data_Error with "publication reconciliation identity does not match stored mapping";
+               end if;
+            end;
+            Row.State := WW (To_String (Value.State));
+            Check
+              (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Publications_Table), Row),
+               "update reconciled publication state");
          end;
       end loop;
       Database.Transactions.Commit (Tx);
@@ -1126,6 +1265,7 @@ package body Improve.Storage is
       Values  : Verification_Vectors.Vector) is
       Tx     : Database.Transactions.Transaction;
       Row_Id : Positive;
+      Stored : String_Value_Maps.Map;
 
       function Scope_Image (Value : Verification_Scope) return String is
         (case Value is
@@ -1138,47 +1278,58 @@ package body Improve.Storage is
             when Task_Evaluation => To_String (Value.Task_Id),
             when Plan_Evaluation => "@plan",
             when Project_Evaluation => "@project");
+
+      function Identity_Key
+        (Key, Plan, Assessment, Revision, Contract : String) return String is
+        (Key & Character'Val (0) & Plan & Character'Val (0) & Assessment & Character'Val (0) &
+         Revision & Character'Val (0) & Contract);
+
+      function Stored_Value (State, Scope, Comparable, Explanation : String) return String is
+        (State & Character'Val (0) & Scope & Character'Val (0) & Comparable & Character'Val (0) & Explanation);
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for verification recording";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
-      Row_Id := Next_Id (Item, Tx, Verifications_Table);
+      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare
+               Row     : constant Entity := Entity_Tables.Element (Cursor);
+               Payload : constant String := S (Row.Payload);
+            begin
+               Stored.Include
+                 (Identity_Key
+                    (S (Row.Kind), Field (Payload, "plan_id"), Field (Payload, "assessment_id"),
+                     Field_Or (Payload, "plan_revision", "1"), Field_Or (Payload, "contract", "")),
+                  To_Unbounded_String
+                    (Stored_Value
+                       (S (Row.State), Field_Or (Payload, "scope", "task"),
+                        Field (Payload, "comparable"), Field (Payload, "explanation"))));
+            end;
+            Advance (Item, Tx, Verifications_Table, Cursor);
+         end loop;
+      end;
       for Value of Values loop
          declare
-            Cursor   : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table);
-            Existing : Boolean := False;
             Key      : constant String := Record_Key (Value);
+            Identity : constant String := Identity_Key
+              (Key, Plan_Id, Number (Value.Assessment_Id), Number (Value.Plan_Revision),
+               To_String (Value.Contract_Fingerprint));
+            Expected : constant String := Stored_Value
+              (Improve.Model.Image (Value.Outcome), Scope_Image (Value.Scope), Boolean_Image (Value.Comparable),
+               To_String (Value.Explanation));
+            Existing : constant Boolean := Stored.Contains (Identity);
          begin
             if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
                raise Data_Error with "task verification has no task identity";
             elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
                raise Data_Error with "aggregate verification must not name a task";
             end if;
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare
-                  Row     : constant Entity := Entity_Tables.Element (Cursor);
-                  Payload : constant String := S (Row.Payload);
-               begin
-                  if S (Row.Kind) = Key and then Field (Payload, "plan_id") = Plan_Id and then
-                    Field (Payload, "assessment_id") = Number (Value.Assessment_Id) and then
-                    Field_Or (Payload, "plan_revision", "1") = Number (Value.Plan_Revision) and then
-                    Field_Or (Payload, "contract", "") = To_String (Value.Contract_Fingerprint)
-                  then
-                     if S (Row.State) /= Improve.Model.Image (Value.Outcome) or else
-                       Field_Or (Payload, "scope", "task") /= Scope_Image (Value.Scope) or else
-                       Field (Payload, "comparable") /= Boolean_Image (Value.Comparable) or else
-                       Field (Payload, "explanation") /= To_String (Value.Explanation)
-                     then
-                        raise Data_Error with "verification evidence conflicts for task and assessment";
-                     end if;
-                     Existing := True;
-                     exit;
-                  end if;
-               end;
-               Advance (Item, Tx, Verifications_Table, Cursor);
-            end loop;
+            if Existing and then To_String (Stored.Element (Identity)) /= Expected then
+               raise Data_Error with "verification evidence conflicts for task and assessment";
+            end if;
             if not Existing then
+               Row_Id := Next_Id (Item, Tx, Verifications_Table);
                Check
                  (Entity_Tables.Insert
                     (Tx, Item.DB, Item.Schemas (Verifications_Table),
@@ -1192,7 +1343,7 @@ package body Improve.Storage is
                           Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
                           Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
                   "record verification evidence");
-               Row_Id := Row_Id + 1;
+               Stored.Insert (Identity, To_Unbounded_String (Expected));
             end if;
          end;
       end loop;

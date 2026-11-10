@@ -260,10 +260,12 @@ package Improve.Storage is
 private
    Logical_Table_Count : constant := 13;
    type Schema_Array is array (Positive range 1 .. Logical_Table_Count) of Database.Schema.Table_Schema;
+   type Id_Array is array (Positive range 1 .. Logical_Table_Count) of Natural;
 
    type Store is limited record
       DB       : Database.Handle;
       Schemas  : Schema_Array;
+      Next_Ids : Id_Array := [others => 0];
       Opened   : Boolean := False;
       Writable : Boolean := False;
    end record;
