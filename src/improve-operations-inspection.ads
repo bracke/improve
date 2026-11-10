@@ -14,6 +14,14 @@ package Improve.Operations.Inspection is
       Filter           : String;
       Maximum_Items    : Positive) return Improve.Tasks.View_Vectors.Vector;
    --  Return filtered task views for an optional database-qualified project or task.
+   --  @param State_Path Existing Improve state database.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Project_Selector Project identity or unique project name, or empty for every stored project.
+   --  @param Task_Id One logical task identity, or empty for every matching task.
+   --  @param Revision Exact historical plan revision, or zero for the latest task definition.
+   --  @param Filter Valid operational status filter.
+   --  @param Maximum_Items Hard result-size limit.
+   --  @return Stable, filtered, assessment-aware task views.
 
    function Status
      (State_Path       : String;
@@ -22,8 +30,16 @@ package Improve.Operations.Inspection is
       All_Projects     : Boolean;
       Maximum_Items    : Positive) return Improve.Tasks.Status_Vectors.Vector;
    --  Return assessment-aware remediation status for one or every registered project.
+   --  @param State_Path Existing Improve state database.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Project_Selector Project identity or unique name; ignored when All_Projects is true.
+   --  @param All_Projects Whether to inspect every registered project.
+   --  @param Maximum_Items Hard project and task result-size limit.
+   --  @return Stable project status models with freshness-qualified evidence.
 
    procedure Require_Project_Identity
      (Stored, Current : Improve.Model.Project_Reference);
    --  Reject equal numeric project identifiers from different quality databases or roots.
+   --  @param Stored Project identity preserved with the Improve plan.
+   --  @param Current Project identity resolved from the selected quality database.
 end Improve.Operations.Inspection;

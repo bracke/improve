@@ -7,4 +7,7 @@ package Improve.Operations.Reconciliation is
       Quality_Path     : String;
       Project_Selector : String);
    --  Reconcile the latest plan for one database-qualified project.
+   --  @param State_Path Existing Improve state database.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Project_Selector Project identity or unique project name.
 end Improve.Operations.Reconciliation;

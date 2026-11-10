@@ -28,7 +28,7 @@ temporary tree is removed after success or failure.
 The gate requires all of the following:
 
 1. The application and test crate build in validation mode with warnings treated as errors.
-2. All 89 AUnit cases pass.
+2. All 92 AUnit cases pass.
 3. Repository structure, 120-column Ada source policy, required release files, and the Ada-only tooling rule pass.
 4. GNATdoc accepts every Improve package without warnings while excluding dependency-owned APIs.
 5. GNATprove proves every source unit that declares `SPARK_Mode` at level 2; the repository check rejects an omitted
@@ -38,8 +38,9 @@ The gate requires all of the following:
 7. Version, license, release dependency, pin, and dependency-license records are internally consistent.
 
 The coverage driver inventories production units through Ada Quality, requires gcov records for every unit, and rejects
-missing objects. It does not hide uncovered packages or count test sources as production. The current Phase 9
-implementation measures 3,923 of 4,331 production lines, or 90.57%.
+missing objects. The only zero-line exception is the explicitly reviewed empty `Improve.Operations` namespace; future
+spec-only units fail closed. Test sources are never counted as production. The generated result and fingerprints are
+recorded in `coverage/gcov-summary.txt`.
 
 ## Publication dependency gate
 
