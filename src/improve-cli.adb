@@ -1,5 +1,4 @@
 with Ada.Command_Line;
-with Ada.Containers;
 with Ada.Exceptions;
 with Ada.IO_Exceptions;
 with Ada.Strings.Fixed;
@@ -11,7 +10,9 @@ with Improve.CLI.Parsing;
 with Improve.Findings;
 with Improve.JSON;
 with Improve.Model;
+with Improve.Operations.Inspection;
 with Improve.Operations.Publication;
+with Improve.Operations.Reconciliation;
 with Improve.Operations.Verification;
 with Improve.Planner;
 with Improve.Presentation;
@@ -20,7 +21,6 @@ with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
-with Improve.Workflow;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
 with Project_Tools.Files;
@@ -29,9 +29,7 @@ package body Improve.CLI is
    use Ada.Strings.Unbounded;
    use Improve.Config;
    use Improve.Text;
-   use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
-   use type Improve.Storage.Verification_Scope;
    use type Improve.Tasks.Operational_Status;
 
    LF : constant Character := Character'Val (10);
@@ -109,17 +107,6 @@ package body Improve.CLI is
 
    function State_Path (Item : Invocation) return String is
      (if Item.Has_State then To_String (Item.State) else ".improve.db");
-
-   procedure Require_Project_Identity
-     (Stored  : Improve.Model.Project_Reference;
-      Current : Improve.Model.Project_Reference) is
-   begin
-      if Stored.Database_Id /= Current.Database_Id then
-         raise Data_Error with "selected Ada Quality database does not own the stored plan";
-      elsif Stored.Id /= Current.Id or else Stored.Path /= Current.Path then
-         raise Data_Error with "selected Ada Quality project identity does not match the stored plan";
-      end if;
-   end Require_Project_Identity;
 
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Store : Improve.Source.Repository;
@@ -383,94 +370,18 @@ package body Improve.CLI is
       return Result;
    end One_Line;
 
-   function Views_For
-     (State : in out Improve.Storage.Store;
-      Plan  : Improve.Model.Plan_Revision;
-      Current_Assessment : Natural := 0) return Improve.Tasks.View_Vectors.Vector is
-     (Improve.Tasks.Build
-        (Plan,
-         Improve.Storage.Publications (State, To_String (Plan.Plan_Id)),
-         Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)),
-         Current_Assessment));
-
    function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      State      : Improve.Storage.Store;
-      Project_Id : Natural := 0;
-      Selected_Project : Improve.Model.Project_Reference :=
-        (Id => 1, Name | Path | Database_Id => Null_Unbounded_String);
-      Current_Assessment : Natural := 0;
-      Filtered   : Improve.Tasks.View_Vectors.Vector;
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
-      Found_Task : Boolean := not Item.Has_Task;
+      Filtered   : constant Improve.Tasks.View_Vectors.Vector :=
+        Improve.Operations.Inspection.Tasks
+          (State_Path       => State_Path (Item),
+           Quality_Path     => Quality_Path (Item, Settings),
+           Project_Selector => (if Item.Has_Project then To_String (Item.Project) else ""),
+           Task_Id          => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
+           Revision         => Item.Revision,
+           Filter           => Filter,
+           Maximum_Items    => Settings.Maximum_Output_Items);
    begin
-      if not Improve.Tasks.Valid_Filter (Filter) then
-         raise Argument_Error with "invalid task status filter: " & Filter;
-      end if;
-      if Item.Has_Project then
-         declare Quality : Improve.Source.Repository; begin
-            Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-            declare
-               Project : constant Improve.Model.Project_Reference :=
-                 Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
-               Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
-            begin
-               Project_Id := Project.Id;
-               Selected_Project := Project;
-               Current_Assessment := Selected.Baseline.Run_Id;
-            end;
-            Improve.Source.Close (Quality);
-         end;
-      end if;
-      Improve.Storage.Open (State, State_Path (Item), Writable => False);
-      if Item.Has_Task then
-         declare
-            Plan : constant Improve.Model.Plan_Revision :=
-              Improve.Storage.Load_Task (State, To_String (Item.Task_Id), Item.Revision);
-            Plan_Views : constant Improve.Tasks.View_Vectors.Vector :=
-              Views_For (State, Plan, Current_Assessment);
-         begin
-            if Project_Id /= 0 then
-               begin
-                  Require_Project_Identity (Plan.Project, Selected_Project);
-               exception
-                  when Data_Error => raise Argument_Error with "task does not belong to selected project";
-               end;
-            end if;
-            for View of Plan_Views loop
-               if View.Improve_Id = Item.Task_Id then
-                  Found_Task := True;
-                  if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
-               end if;
-            end loop;
-         end;
-      else
-         declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           (if Project_Id = 0 then Improve.Storage.List (State)
-            else Improve.Storage.List (State, Selected_Project));
-         begin
-            if Summaries.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
-               raise Data_Error with "task query exceeds output.maximum_output_items";
-            end if;
-            for Summary of Summaries loop
-               declare
-                  Plan : constant Improve.Model.Plan_Revision :=
-                    Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-                  Plan_Views : constant Improve.Tasks.View_Vectors.Vector :=
-                    Views_For (State, Plan, Current_Assessment);
-               begin
-                  for View of Plan_Views loop
-                     if Improve.Tasks.Matches (View, Filter) then Filtered.Append (View); end if;
-                  end loop;
-               end;
-            end loop;
-         end;
-      end if;
-      Improve.Storage.Close (State);
-      if not Found_Task then raise Argument_Error with "unknown Improve task " & To_String (Item.Task_Id); end if;
-      if Filtered.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
-         raise Data_Error with "task query exceeds output.maximum_output_items";
-      end if;
-      Improve.Tasks.Sort (Filtered);
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
       declare Result : Unbounded_String; begin
          Append (Result, Improve.Presentation.Header (Message ("tasks.title")) & LF);
@@ -493,100 +404,14 @@ package body Improve.CLI is
    end Tasks_Output;
 
    function Status_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      State   : Improve.Storage.Store;
-      Quality : Improve.Source.Repository;
-      Values  : Improve.Tasks.Status_Vectors.Vector;
-      Total_Items : Natural := 0;
-
-      procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
-         Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           Improve.Storage.List (State, Project);
-         Value     : Improve.Tasks.Project_Status;
-         Last_Plan : Improve.Model.Plan_Revision;
-         Last_Views : Improve.Tasks.View_Vectors.Vector;
-         Has_Plan  : Boolean := False;
-      begin
-         Value.Project_Id := Project.Id;
-         Value.Project := Project.Name;
-         Value.Latest_Run := Latest_Run;
-         Value.Plan_Count := Natural (Summaries.Length);
-         for Summary of Summaries loop
-            declare
-               Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
-               Plan_Views : constant Improve.Tasks.View_Vectors.Vector := Views_For (State, Plan, Latest_Run);
-               Latest_Project_Run : Natural := 0;
-               Latest_Plan_Run : Natural := 0;
-            begin
-               for Evidence of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
-                  if Evidence.Plan_Revision = Plan.Revision and then
-                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
-                    Evidence.Scope = Improve.Storage.Project_Evaluation and then
-                    Evidence.Assessment_Id >= Latest_Project_Run
-                  then
-                     Latest_Project_Run := Evidence.Assessment_Id;
-                     Value.Project_Quality := Evidence.Outcome;
-                     Value.Has_Project_Verification := True;
-                     Value.Project_Verification_Run := Evidence.Assessment_Id;
-                  elsif Evidence.Plan_Revision = Plan.Revision and then
-                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
-                    Evidence.Scope = Improve.Storage.Plan_Evaluation and then
-                    Evidence.Assessment_Id >= Latest_Plan_Run
-                  then
-                     Latest_Plan_Run := Evidence.Assessment_Id;
-                     Value.Plan_Quality := Evidence.Outcome;
-                     Value.Has_Plan_Verification := True;
-                     Value.Plan_Verification_Run := Evidence.Assessment_Id;
-                  end if;
-               end loop;
-               Value.Tasks.Append_Vector (Plan_Views);
-               Last_Plan := Plan;
-               Last_Views := Plan_Views;
-               Value.Baseline_Run := Plan.Baseline.Run_Id;
-               Has_Plan := True;
-               Total_Items := Total_Items + Natural (Plan_Views.Length);
-            end;
-         end loop;
-         if Has_Plan then Value.Findings := Improve.Tasks.Findings (Last_Plan, Last_Views); end if;
-         Improve.Tasks.Sort (Value.Tasks);
-         Values.Append (Value);
-      end Add_Project;
-
-      procedure Add_Resolved_Project (Project : Improve.Model.Project_Reference) is
-         Latest : Natural := 0;
-      begin
-         begin
-            declare Selected : constant Improve.Source.Selection :=
-              Improve.Source.Select_Assessment (Quality, Project);
-            begin
-               Latest := Selected.Baseline.Run_Id;
-            end;
-         exception
-            when Dependency_Error => null;
-         end;
-         Add_Project (Project, Latest);
-      end Add_Resolved_Project;
+      Values : constant Improve.Tasks.Status_Vectors.Vector :=
+        Improve.Operations.Inspection.Status
+          (State_Path       => State_Path (Item),
+           Quality_Path     => Quality_Path (Item, Settings),
+           Project_Selector => (if Item.All_Projects then "" else To_String (Item.Project)),
+           All_Projects     => Item.All_Projects,
+           Maximum_Items    => Settings.Maximum_Output_Items);
    begin
-      Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-      Improve.Storage.Open (State, State_Path (Item), Writable => False);
-      if Item.All_Projects then
-         declare Projects : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);
-         begin
-            if Projects.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
-               raise Data_Error with "status query exceeds output.maximum_output_items";
-            end if;
-            for Registered of Projects loop
-               Add_Resolved_Project (Improve.Source.Resolve_Project (Quality, Number (Registered.Id)));
-            end loop;
-         end;
-      else
-         Add_Resolved_Project (Improve.Source.Resolve_Project (Quality, To_String (Item.Project)));
-      end if;
-      Improve.Storage.Close (State);
-      Improve.Source.Close (Quality);
-      if Total_Items > Settings.Maximum_Output_Items then
-         raise Data_Error with "status query exceeds output.maximum_output_items";
-      end if;
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
       declare Result : Unbounded_String; begin
          for Value of Values loop
@@ -699,62 +524,10 @@ package body Improve.CLI is
    end Verify_Output;
 
    function Refresh_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      State       : Improve.Storage.Store;
-      Plan        : Improve.Model.Plan_Revision;
-      Publications : Improve.Storage.Publication_Vectors.Vector;
       Ignored     : Boolean;
    begin
-      declare Quality : Improve.Source.Repository; begin
-         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
-         declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
-         begin
-            Improve.Source.Close (Quality);
-            Improve.Storage.Open (State, State_Path (Item), Writable => False);
-            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project);
-            begin
-               if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
-               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
-               Require_Project_Identity (Plan.Project, Project);
-               Publications := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
-            end;
-            Improve.Storage.Close (State);
-         end;
-      end;
-      if not Publications.Is_Empty then
-         declare
-            Published  : Improve.Workflow.Published_Vectors.Vector;
-            Reconciled : Improve.Workflow.Published_Vectors.Vector;
-            Updates    : Improve.Storage.Publication_Vectors.Vector;
-         begin
-            for Value of Publications loop
-               Published.Append
-                 (Improve.Workflow.Published_Task'
-                    (Improve_Id => Value.Improve_Task_Id,
-                     Harness_Id => Value.Harness_Task_Id,
-                     Origin     => Value.Origin,
-                     Contract   => Value.Contract,
-                     State      => Value.State,
-                     Recovered  => True));
-            end loop;
-            Reconciled := Improve.Workflow.Reconcile (To_String (Plan.Project.Path), Published);
-            for Value of Reconciled loop
-               Updates.Append
-                 (Improve.Storage.Publication_Record'
-                    (Improve_Task_Id => Value.Improve_Id,
-                     Harness_Task_Id => Value.Harness_Id,
-                     Origin          => Value.Origin,
-                     Contract        => Value.Contract,
-                     State           => Value.State,
-                     Plan_Revision   => Plan.Revision));
-            end loop;
-            Improve.Storage.Open (State, State_Path (Item), Writable => True);
-            Improve.Storage.Update_Publication_States (State, Updates);
-            Improve.Storage.Close (State);
-         end;
-      end if;
+      Improve.Operations.Reconciliation.Run
+        (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 
