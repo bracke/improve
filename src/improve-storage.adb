@@ -395,6 +395,13 @@ package body Improve.Storage is
       Item.Next_Ids := [others => 0];
    end Close;
 
+   overriding procedure Finalize (Item : in out Store) is
+   begin
+      Close (Item);
+   exception
+      when others => null;
+   end Finalize;
+
    function Finding_Payload (Value : Improve.Model.Finding_Reference) return String is
      (Pair ("indicator", Ada_Quality.Types.Image (Value.Indicator)) & LF & Pair ("rule", To_String (Value.Rule)) & LF &
       Pair ("severity", Ada_Quality.Types.Severity'Image (Value.Level)) & LF &

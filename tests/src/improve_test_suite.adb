@@ -63,6 +63,7 @@ package body Improve_Test_Suite is
       Plan_Fingerprint_Severity_Sensitive, Plan_Fingerprint_Ignores_Unrelated_Snapshot,
       Dependency_Cycle_Rejected, Dense_Contract_Fingerprints, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
+      Storage_Finalizes_On_Error,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
@@ -1296,6 +1297,36 @@ package body Improve_Test_Suite is
                Result := Improve.CLI.Execute (Args ("plan|show|PLAN-000001|--state|" & State));
                Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then not Ada.Directories.Exists (State),
                        "read-only plan inspection initialized missing state");
+               Project_Tools.Files.Delete_Tree (Directory);
+            end;
+         when Storage_Finalizes_On_Error =>
+            declare
+               Directory : constant String := "/tmp/improve_storage_finalize";
+               State     : constant String := Directory & "/state.db";
+               Rejected  : Boolean := False;
+            begin
+               Project_Tools.Files.Delete_Tree (Directory);
+               Ada.Directories.Create_Directory (Directory);
+               declare Store : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Store, State, Writable => True);
+               end;
+               begin
+                  declare
+                     Store : Improve.Storage.Store;
+                     Plan  : Improve.Model.Plan_Revision;
+                  begin
+                     Improve.Storage.Open (Store, State, Writable => False);
+                     Plan := Improve.Storage.Load (Store, "PLAN-999999");
+                     Assert (To_String (Plan.Plan_Id) = "", "unexpected missing plan identity");
+                  end;
+               exception
+                  when Improve.Argument_Error => Rejected := True;
+               end;
+               Assert (Rejected, "invalid storage lookup did not fail");
+               declare Store : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Store, State, Writable => True);
+                  Improve.Storage.Close (Store);
+               end;
                Project_Tools.Files.Delete_Tree (Directory);
             end;
          when Plan_Approval_Required =>

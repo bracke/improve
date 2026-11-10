@@ -1,4 +1,5 @@
 with Ada.Containers.Vectors;
+with Ada.Finalization;
 with Ada.Strings.Unbounded;
 with Database;
 with Database.Schema;
@@ -262,11 +263,13 @@ private
    type Schema_Array is array (Positive range 1 .. Logical_Table_Count) of Database.Schema.Table_Schema;
    type Id_Array is array (Positive range 1 .. Logical_Table_Count) of Natural;
 
-   type Store is limited record
+   type Store is new Ada.Finalization.Limited_Controlled with record
       DB       : Database.Handle;
       Schemas  : Schema_Array;
       Next_Ids : Id_Array := [others => 0];
       Opened   : Boolean := False;
       Writable : Boolean := False;
    end record;
+
+   overriding procedure Finalize (Item : in out Store);
 end Improve.Storage;
