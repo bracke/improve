@@ -107,7 +107,12 @@ begin
             if Run.Status /= 0 then Fail ("gcov failed for " & Object_Name); end if;
             Include (Unit.Body_Path);
             Include (Unit.Spec_Path);
-            if not Has_Record then Fail ("gcov output is incomplete for " & To_String (Unit.Stem)); end if;
+            --  GNAT emits a .gcno with "no functions found" for an empty
+            --  namespace specification. Bodies must always yield a source
+            --  record; a spec-only unit without one contributes 0/0 lines.
+            if not Has_Record and then Length (Unit.Body_Path) > 0 then
+               Fail ("gcov output is incomplete for " & To_String (Unit.Stem));
+            end if;
             Covered := Covered + Unit_Covered;
             Total := Total + Unit_Total;
             Ada.Text_IO.Put_Line

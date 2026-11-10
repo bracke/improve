@@ -3,10 +3,15 @@ with Improve.Workflow;
 
 --  Publication authorization, journaling, and native task creation.
 package Improve.Operations.Publication is
+   --  Complete publication use case independent of presentation.
+
    type Result is record
       Plan      : Improve.Model.Plan_Revision;
       Published : Improve.Workflow.Publication_Result;
    end record;
+   --  Plan and native task mappings produced by publication.
+   --  @field Plan Exact immutable plan revision that was published.
+   --  @field Published Created or safely adopted native task mappings.
 
    function Run
      (State_Path       : String;
@@ -15,4 +20,13 @@ package Improve.Operations.Publication is
       Selected_Task_Id : String;
       Task_Kind        : String;
       Dry_Run          : Boolean) return Result;
+   --  Validate approval and source/evidence identity, journal the operation,
+   --  publish through one native harness transaction, and persist mappings.
+   --  @param State_Path Existing Improve state database.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Plan_Id Stable plan identity, optionally with an exact revision.
+   --  @param Selected_Task_Id One task to publish, or empty for the plan.
+   --  @param Task_Kind Configured harness task kind or `auto`.
+   --  @param Dry_Run Whether to validate without changing either writable store.
+   --  @return Exact plan and resulting native publication mappings.
 end Improve.Operations.Publication;
