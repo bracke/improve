@@ -1,4 +1,6 @@
 with Ada.Containers;
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Strings.Hash;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Records;
 with Model_Runner.Framework.Stores;
@@ -14,6 +16,12 @@ package body Improve.Workflow is
    package Stores renames Model_Runner.Framework.Stores;
    package Tasks renames Model_Runner.Framework.Tasks;
    package Transitions renames Model_Runner.Framework.Transitions;
+
+   package Native_Origin_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Unbounded_String,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
 
    function Detail (Status : Errors.Error_Info) return String is
       Name   : constant String := Errors.Text_Of (Status, "name");
@@ -109,28 +117,6 @@ package body Improve.Workflow is
       end if;
    end Require_Compatible_Definition;
 
-   function Existing_By_Origin
-     (Store  : Stores.Store;
-      Origin : String;
-      Spec   : Improve.Model.Task_Specification;
-      Kind   : String;
-      Binding : String;
-      Predecessors : Improve.Model.UString_Vectors.Vector) return String is
-      Status : Errors.Error_Info;
-      Value  : Records.Item;
-   begin
-      for Id of Tasks.List (Store) loop
-         Tasks.Definition (Store, Id, Value, Status);
-         if Errors.Is_Ok (Status) and then Records.Get (Value, "created_by") = "improve" and then
-           Records.Get (Value, "origin") = Origin
-         then
-            Require_Compatible_Definition (Value, Spec, Kind, Origin, Binding, Predecessors);
-            return Id;
-         end if;
-      end loop;
-      return "";
-   end Existing_By_Origin;
-
    function Publish
      (Project_Directory : String;
       Plan              : Improve.Model.Plan_Revision;
@@ -148,6 +134,47 @@ package body Improve.Workflow is
       Selected : Improve.Model.Task_Vectors.Vector;
       Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
+      Native_By_Origin : Native_Origin_Maps.Map;
+
+      procedure Index_Native_Tasks is
+      begin
+         for Id of Tasks.List (Store) loop
+            declare Definition : Records.Item; begin
+               Tasks.Definition (Store, Id, Definition, Status);
+               if Errors.Is_Ok (Status) and then Records.Get (Definition, "created_by") = "improve" then
+                  declare Origin : constant String := Records.Get (Definition, "origin"); begin
+                     if Origin /= "" then
+                        if Native_By_Origin.Contains (Origin) and then
+                          To_String (Native_By_Origin.Element (Origin)) /= Id
+                        then
+                           raise Data_Error with "duplicate native task origin " & Origin;
+                        end if;
+                        Native_By_Origin.Include (Origin, To_Unbounded_String (Id));
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+      end Index_Native_Tasks;
+
+      function Existing_By_Origin
+        (Origin       : String;
+         Spec         : Improve.Model.Task_Specification;
+         Kind         : String;
+         Binding      : String;
+         Predecessors : Improve.Model.UString_Vectors.Vector) return String is
+      begin
+         if not Native_By_Origin.Contains (Origin) then return ""; end if;
+         declare
+            Id         : constant String := To_String (Native_By_Origin.Element (Origin));
+            Definition : Records.Item;
+         begin
+            Tasks.Definition (Store, Id, Definition, Status);
+            Require_Ok (Status, "read native task by Improve origin");
+            Require_Compatible_Definition (Definition, Spec, Kind, Origin, Binding, Predecessors);
+            return Id;
+         end;
+      end Existing_By_Origin;
 
       function Is_Selected (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
         (Selected_Task_Ids.Is_Empty or else Selected_Task_Ids.Contains (Task_Id));
@@ -286,6 +313,7 @@ package body Improve.Workflow is
          Stores.Open (Store, Project_Directory, Report, Status);
       end if;
       Require_Ok (Status, "open model_runner project state");
+      Index_Native_Tasks;
       declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
          Result.Task_Kind := To_Unbounded_String (Kind);
          declare Replaced : Improve.Model.UString_Vectors.Vector; begin
@@ -368,7 +396,7 @@ package body Improve.Workflow is
                if not Was_Mapped then
                   Harness_Id := To_Unbounded_String
                     (Existing_By_Origin
-                       (Store, To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
+                       (To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
                end if;
                Result.Tasks.Append
                  (Published_Task'
