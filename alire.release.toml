@@ -40,6 +40,9 @@ hostkit = "^0.1.0"
 [[depends-on]]
 model_runner = "^0.1.0"
 
+[[depends-on]]
+cryptolib = "^0.1.0"
+
 [build-profiles]
 "*" = "release"
 

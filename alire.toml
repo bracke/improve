@@ -37,6 +37,9 @@ hostkit = "*"
 [[depends-on]]
 model_runner = "*"
 
+[[depends-on]]
+cryptolib = "*"
+
 [build-profiles]
 "*" = "development"
 

@@ -1,6 +1,6 @@
 # Dependency licenses
 
-The `0.1.0` release manifest has eight direct Ada library dependencies. The versions validated in the development
+The `0.1.0` release manifest has nine direct Ada library dependencies. The versions validated in the development
 workspace and their declared licenses are:
 
 | Crate | Validated version | Release constraint | Declared license |
@@ -13,6 +13,7 @@ workspace and their declared licenses are:
 | project_tools | 0.1.0 | `^0.1.0` | MIT |
 | hostkit | 0.1.0-dev | `^0.1.0` | MIT |
 | model_runner | 0.1.0-dev | `^0.1.0` | MIT |
+| cryptolib | 0.1.0-dev | `^0.1.0` | MIT |
 
 `gnat_native =15.2.1` is the compiler toolchain dependency rather than an application library. Transitive dependency
 licenses remain the responsibility of their direct parent crates and the selected Alire solution. Publication must not

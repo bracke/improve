@@ -101,6 +101,7 @@ begin
    Require_Release_Dependency ("project_tools", "^0.1.0");
    Require_Release_Dependency ("hostkit", "^0.1.0");
    Require_Release_Dependency ("model_runner", "^0.1.0");
+   Require_Release_Dependency ("cryptolib", "^0.1.0");
    if Project_Tools.Files.File_Contains (Root & "/alire.toml", "[[pins]]") then
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "database", "../database");
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "ada_quality", "../ada_quality");

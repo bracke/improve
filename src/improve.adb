@@ -1,20 +1,32 @@
-with Interfaces;
+with Ada.Streams;
+with CryptoLib.Hashes;
 
 package body Improve with SPARK_Mode is
-   function Stable_Digest (Text : String) return String is
-      use type Interfaces.Unsigned_64;
-      Value  : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
-      Hex_Digits : constant String := "0123456789abcdef";
-      Result : String (1 .. 24) := "fnv1a64:0000000000000000";
-      Work   : Interfaces.Unsigned_64;
+   function Calculate_SHA256
+     (Data : Ada.Streams.Stream_Element_Array) return CryptoLib.Hashes.SHA256_Digest
+     with Global => null;
+
+   function Calculate_SHA256
+     (Data : Ada.Streams.Stream_Element_Array) return CryptoLib.Hashes.SHA256_Digest
+     with SPARK_Mode => Off is
    begin
-      for Byte of Text loop
-         Value := (Value xor Interfaces.Unsigned_64 (Character'Pos (Byte))) * 16#100000001B3#;
+      return CryptoLib.Hashes.SHA256 (Data);
+   end Calculate_SHA256;
+
+   function Stable_Digest (Text : String) return String is
+      use Ada.Streams;
+      Data       : Stream_Element_Array (1 .. Text'Length) := [others => 0];
+      Digest     : CryptoLib.Hashes.SHA256_Digest;
+      Hex_Digits : constant String := "0123456789abcdef";
+      Result     : String (1 .. 71) := "sha256:" & [1 .. 64 => '0'];
+   begin
+      for Index in Text'Range loop
+         Data (Stream_Element_Offset (Index - Text'First + 1)) := Stream_Element (Character'Pos (Text (Index)));
       end loop;
-      Work := Value;
-      for Index in reverse 9 .. Result'Last loop
-         Result (Index) := Hex_Digits (Natural (Work and 16#F#) + 1);
-         Work := Interfaces.Shift_Right (Work, 4);
+      Digest := Calculate_SHA256 (Data);
+      for Index in Digest'Range loop
+         Result (8 + 2 * (Index - Digest'First)) := Hex_Digits (Natural (Digest (Index)) / 16 + 1);
+         Result (9 + 2 * (Index - Digest'First)) := Hex_Digits (Natural (Digest (Index)) mod 16 + 1);
       end loop;
       return Result;
    end Stable_Digest;

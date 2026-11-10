@@ -1,3 +1,5 @@
+with "cryptolib";
+
 project Improve_Spark is
    for Languages use ("Ada");
    for Source_Dirs use ("src");

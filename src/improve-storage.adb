@@ -33,6 +33,7 @@ package body Improve.Storage is
    Publications_Table        : constant Positive := 10;
    Verifications_Table       : constant Positive := 11;
    Operations_Table          : constant Positive := 12;
+   Task_Details_Table        : constant Positive := 13;
 
    Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
      [new Wide_Wide_String'("schema_metadata"), new Wide_Wide_String'("projects"),
@@ -40,7 +41,8 @@ package body Improve.Storage is
       new Wide_Wide_String'("plans"), new Wide_Wide_String'("plan_revisions"),
       new Wide_Wide_String'("remediation_tasks"), new Wide_Wide_String'("task_finding_links"),
       new Wide_Wide_String'("task_dependencies"), new Wide_Wide_String'("publications"),
-      new Wide_Wide_String'("verification_records"), new Wide_Wide_String'("operations")];
+      new Wide_Wide_String'("verification_records"), new Wide_Wide_String'("operations"),
+      new Wide_Wide_String'("task_details")];
 
    function Decode (Text : Wide_Wide_String) return String;
 
@@ -331,6 +333,16 @@ package body Improve.Storage is
             Database.Transactions.Commit (Tx);
          elsif not Database.Status.Is_Ok (Status) then
             raise Data_Error with "Improve schema metadata is missing or unreadable";
+         elsif S (Metadata.State) = "1" then
+            if Writable then
+               Metadata.State := WW (Number (Current_Schema_Version));
+               Metadata.Payload := WW ("created_by=improve" & LF & "logical_tables=" & Logical_Table_List);
+               Database.Transactions.Begin_Write (Item.DB, Tx);
+               Check
+                 (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
+                  "migrate Improve schema metadata");
+               Database.Transactions.Commit (Tx);
+            end if;
          elsif S (Metadata.State) /= Number (Current_Schema_Version) then
             raise Data_Error with "unsupported Improve schema version " & S (Metadata.State);
          end if;
@@ -359,15 +371,43 @@ package body Improve.Storage is
 
    function Task_Payload (Value : Improve.Model.Task_Specification) return String is
      (Pair ("draft_id", To_String (Value.Id)) & LF & Pair ("title", To_String (Value.Title)) & LF &
-      Pair ("priority", Improve.Model.Image (Value.Task_Priority)) & LF & Pair ("goal", To_String (Value.Goal)) & LF &
-      Pair ("problem", To_String (Value.Problem)) & LF & Pair ("evidence", To_String (Value.Evidence)) & LF &
+      Pair ("priority", Improve.Model.Image (Value.Task_Priority)) & LF &
       Pair ("files", Pack (Value.Relevant_Files)) & LF & Pair ("scope", To_String (Value.Scope)) & LF &
-      Pair ("out_of_scope", To_String (Value.Out_Of_Scope)) & LF &
-      Pair ("requirements", To_String (Value.Requirements)) & LF &
-      Pair ("acceptance", To_String (Value.Acceptance)) & LF &
-      Pair ("verification", To_String (Value.Verification)) & LF &
-      Pair ("dependencies", Pack (Value.Dependencies)) & LF & Pair ("finding_keys", Pack (Value.Finding_Keys)) & LF &
+      Pair ("finding_set", Stable_Digest (Pack (Value.Finding_Keys))) & LF &
       Pair ("confidence", Number (Value.Confidence)) & LF & Pair ("review", Boolean_Image (Value.Requires_Review)));
+
+   function Stored_Finding_Set (Payload : String) return String is
+      Current : constant String := Field_Or (Payload, "finding_set", "");
+   begin
+      if Current /= "" then
+         return Current;
+      end if;
+      return Stable_Digest (Field (Payload, "finding_keys"));
+   end Stored_Finding_Set;
+
+   function Task_Detail
+     (Item    : in out Store;
+      Tx      : in out Database.Transactions.Transaction;
+      Task_Id : Positive;
+      Payload : String;
+      Name    : String) return String is
+      Inline : constant String := Field_Or (Payload, Name, "");
+      Cursor : Entity_Tables.Cursor;
+   begin
+      if Inline /= "" then
+         return Inline;
+      end if;
+      Cursor := Scan (Item, Tx, Task_Details_Table);
+      while Entity_Tables.Has_Element (Cursor) loop
+         declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+            if Row.Parent_Id = Task_Id and then S (Row.Kind) = Name then
+               return S (Row.Payload);
+            end if;
+         end;
+         Advance (Item, Tx, Task_Details_Table, Cursor);
+      end loop;
+      return "";
+   end Task_Detail;
 
    function Revision_Payload (Value : Improve.Model.Plan_Revision; Baseline_Id, Revision : Positive) return String is
      (Pair ("revision", Number (Revision)) & LF & Pair ("baseline_id", Number (Baseline_Id)) & LF &
@@ -485,6 +525,7 @@ package body Improve.Storage is
             First_Task_Row : constant Positive := Next_Id (Item, Tx, Tasks_Table);
             Link_Row : Positive := Next_Id (Item, Tx, Task_Findings_Table);
             Dependency_Row : Positive := Next_Id (Item, Tx, Task_Dependencies_Table);
+            Detail_Row : Positive := Next_Id (Item, Tx, Task_Details_Table);
             Original_Ids : Improve.Model.UString_Vectors.Vector;
             Assigned_Ids : Improve.Model.UString_Vectors.Vector;
 
@@ -501,8 +542,8 @@ package body Improve.Storage is
                   begin
                      if Row.Parent_Id = Previous_Revision and then S (Row.Kind) = To_String (Spec.Category) and then
                        Field (Payload, "title") = To_String (Spec.Title) and then
-                       Field (Payload, "acceptance") = To_String (Spec.Acceptance) and then
-                       Field (Payload, "finding_keys") = Pack (Spec.Finding_Keys)
+                       Task_Detail (Item, Tx, Row.Id, Payload, "acceptance") = To_String (Spec.Acceptance) and then
+                       Stored_Finding_Set (Payload) = Stable_Digest (Pack (Spec.Finding_Keys))
                      then
                         return To_Unbounded_String (Field (Payload, "draft_id"));
                      end if;
@@ -551,6 +592,26 @@ package body Improve.Storage is
                          (Task_Row, Revision_Row, WW (To_String (Persisted.Category)),
                           WW (Improve.Model.Image (Persisted.Kind)), WW (Task_Payload (Persisted)), True, Tasks_Table)),
                          "store task");
+                  declare
+                     procedure Add_Detail (Name, Value : String) is
+                     begin
+                        Check
+                          (Entity_Tables.Insert
+                             (Tx, Item.DB, Item.Schemas (Task_Details_Table),
+                              (Detail_Row, Task_Row, WW (Name), WW ("value"), WW (Value), True,
+                               Task_Details_Table)),
+                           "store task detail");
+                        Detail_Row := Detail_Row + 1;
+                     end Add_Detail;
+                  begin
+                     Add_Detail ("goal", To_String (Persisted.Goal));
+                     Add_Detail ("problem", To_String (Persisted.Problem));
+                     Add_Detail ("evidence", To_String (Persisted.Evidence));
+                     Add_Detail ("out_of_scope", To_String (Persisted.Out_Of_Scope));
+                     Add_Detail ("requirements", To_String (Persisted.Requirements));
+                     Add_Detail ("acceptance", To_String (Persisted.Acceptance));
+                     Add_Detail ("verification", To_String (Persisted.Verification));
+                  end;
                   for Key of Persisted.Finding_Keys loop
                      Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Task_Findings_Table),
                             (Link_Row, Task_Row, WW (To_String (Key)), WW ("linked"), WW (""), True,
@@ -683,17 +744,43 @@ package body Improve.Storage is
                   Spec.Title := To_Unbounded_String (Field (Payload, "title"));
                   Spec.Category := To_Unbounded_String (S (Row.Kind));
                   Spec.Task_Priority := Priority_Value (Field (Payload, "priority"));
-                  Spec.Goal := To_Unbounded_String (Field (Payload, "goal"));
-                  Spec.Problem := To_Unbounded_String (Field (Payload, "problem"));
-                  Spec.Evidence := To_Unbounded_String (Field (Payload, "evidence"));
+                  Spec.Goal := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "goal"));
+                  Spec.Problem := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "problem"));
+                  Spec.Evidence := To_Unbounded_String (Task_Detail (Item, Tx, Row.Id, Payload, "evidence"));
                   Spec.Relevant_Files := Unpack (Field (Payload, "files"));
                   Spec.Scope := To_Unbounded_String (Field (Payload, "scope"));
-                  Spec.Out_Of_Scope := To_Unbounded_String (Field (Payload, "out_of_scope"));
-                  Spec.Requirements := To_Unbounded_String (Field (Payload, "requirements"));
-                  Spec.Acceptance := To_Unbounded_String (Field (Payload, "acceptance"));
-                  Spec.Verification := To_Unbounded_String (Field (Payload, "verification"));
-                  Spec.Dependencies := Unpack (Field (Payload, "dependencies"));
-                  Spec.Finding_Keys := Unpack (Field (Payload, "finding_keys"));
+                  Spec.Out_Of_Scope := To_Unbounded_String
+                    (Task_Detail (Item, Tx, Row.Id, Payload, "out_of_scope"));
+                  Spec.Requirements := To_Unbounded_String
+                    (Task_Detail (Item, Tx, Row.Id, Payload, "requirements"));
+                  Spec.Acceptance := To_Unbounded_String
+                    (Task_Detail (Item, Tx, Row.Id, Payload, "acceptance"));
+                  Spec.Verification := To_Unbounded_String
+                    (Task_Detail (Item, Tx, Row.Id, Payload, "verification"));
+                  Spec.Dependencies := Unpack (Field_Or (Payload, "dependencies", ""));
+                  Spec.Finding_Keys := Unpack (Field_Or (Payload, "finding_keys", ""));
+                  if Spec.Dependencies.Is_Empty then
+                     declare Links : Entity_Tables.Cursor := Scan (Item, Tx, Task_Dependencies_Table); begin
+                        while Entity_Tables.Has_Element (Links) loop
+                           if Entity_Tables.Element (Links).Parent_Id = Row.Id then
+                              Spec.Dependencies.Append
+                                (To_Unbounded_String (S (Entity_Tables.Element (Links).Kind)));
+                           end if;
+                           Advance (Item, Tx, Task_Dependencies_Table, Links);
+                        end loop;
+                     end;
+                  end if;
+                  if Spec.Finding_Keys.Is_Empty then
+                     declare Links : Entity_Tables.Cursor := Scan (Item, Tx, Task_Findings_Table); begin
+                        while Entity_Tables.Has_Element (Links) loop
+                           if Entity_Tables.Element (Links).Parent_Id = Row.Id then
+                              Spec.Finding_Keys.Append
+                                (To_Unbounded_String (S (Entity_Tables.Element (Links).Kind)));
+                           end if;
+                           Advance (Item, Tx, Task_Findings_Table, Links);
+                        end loop;
+                     end;
+                  end if;
                   Spec.Confidence := Natural'Value (Field (Payload, "confidence"));
                   Spec.Requires_Review := Boolean'Value (Field (Payload, "review"));
                   Spec.Kind := Kind_Value (S (Row.State));

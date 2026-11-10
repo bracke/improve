@@ -9,7 +9,7 @@ with Improve.Model;
 package Improve.Storage is
    --  Improve-owned transactional persistence for immutable plans and append-only evidence.
 
-   Current_Schema_Version : constant Positive := 1;
+   Current_Schema_Version : constant Positive := 2;
    --  Supported Improve state schema version.
 
    type Store is limited private;
@@ -258,7 +258,7 @@ package Improve.Storage is
    --  @return Pending publication operations.
 
 private
-   Logical_Table_Count : constant := 12;
+   Logical_Table_Count : constant := 13;
    type Schema_Array is array (Positive range 1 .. Logical_Table_Count) of Database.Schema.Table_Schema;
 
    type Store is limited record

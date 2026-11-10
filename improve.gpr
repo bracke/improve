@@ -7,6 +7,7 @@ with "terminal_styles";
 with "project_tools";
 with "hostkit";
 with "model_runner";
+with "cryptolib";
 
 project Improve is
    Database_Root := external ("DATABASE_ALIRE_PREFIX", "../database");

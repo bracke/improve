@@ -665,9 +665,13 @@ package body Improve_Test_Suite is
                Assert (Improve.Presentation.Header ("Improve") /= "", "styled header was empty");
                Improve.Presentation.Configure (Improve.Config.Terminal_Format, Improve.Config.Color_Never);
             end;
-         when Digest => Assert (Improve.Stable_Digest ("improve") = Improve.Stable_Digest ("improve") and then
-                                Improve.Stable_Digest ("improve") /= Improve.Stable_Digest ("Improve"),
-                                "stable digest is not deterministic or discriminating");
+         when Digest =>
+            Assert
+              (Improve.Stable_Digest ("") =
+                 "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" and then
+               Improve.Stable_Digest ("improve") = Improve.Stable_Digest ("improve") and then
+               Improve.Stable_Digest ("improve") /= Improve.Stable_Digest ("Improve"),
+               "SHA-256 stable digest is incorrect or nondeterministic");
          when Project_Discovery =>
             declare
                Data       : constant Fixture := Build_Fixture ("projects");

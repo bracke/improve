@@ -136,6 +136,7 @@ begin
                   Project_Tools.Processes.Argument ("gnatls"),
                   Project_Tools.Processes.Argument ("--version")]));
          Digest : constant String := Improve.Stable_Digest (To_String (Toolchain.Output));
+         Separator : constant Natural := Ada.Strings.Fixed.Index (Digest, ":");
          Evidence_Dir : constant String := Project_Tools.Files.Join (Root, "coverage");
          Evidence : constant String := Project_Tools.Files.Join (Evidence_Dir, "gcov-summary.txt");
       begin
@@ -151,7 +152,7 @@ begin
             "complete=true" & ASCII.LF &
             "inventory=gcov-production-lines-v2" & ASCII.LF &
             "source_fingerprint=" & Ada_Quality.Checks.Source_Fingerprint (Root) & ASCII.LF &
-            "toolchain_fingerprint=" & Digest (9 .. Digest'Last) & ASCII.LF);
+            "toolchain_fingerprint=" & Digest (Separator + 1 .. Digest'Last) & ASCII.LF);
       end;
    end;
    Project_Tools.Test_Fixtures.Cleanup (Scratch);

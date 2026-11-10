@@ -16,7 +16,7 @@ package Improve with SPARK_Mode is
    --  Storage, integrity, publication, or internal processing failure; exit code 4.
 
    function Stable_Digest (Text : String) return String;
-   --  Return a deterministic FNV-1a identity in the form `fnv1a64:` plus sixteen lowercase hexadecimal digits.
+   --  Return a collision-resistant identity in the form `sha256:` plus sixty-four lowercase hexadecimal digits.
    --  @param Text Bytes to identify.
    --  @return Stable digest.
 end Improve;
