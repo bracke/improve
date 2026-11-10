@@ -190,6 +190,33 @@ package Improve.Model is
    --  @field Fingerprint Deterministic revision identity.
    --  @field Review_Status Review state.
 
+   type Task_Contract_Binding is record
+      Task_Id     : UString;
+      Fingerprint : UString;
+   end record;
+   --  Memoized dependency-qualified contract for one task.
+   --  @field Task_Id Logical Improve task identity.
+   --  @field Fingerprint Effective execution contract including prerequisites.
+
+   package Task_Contract_Binding_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Task_Contract_Binding);
+   --  Effective contracts in plan task order.
+
+   function Effective_Task_Contracts
+     (Plan : Plan_Revision) return Task_Contract_Binding_Vectors.Vector;
+   --  Calculate every effective task contract once in dependency order.
+   --  @param Plan Complete immutable plan containing the dependency graph.
+   --  @return Memoized contracts in plan task order.
+
+   function Effective_Task_Contract
+     (Bindings : Task_Contract_Binding_Vectors.Vector;
+      Task_Id  : UString) return String;
+   --  Look up one previously calculated effective task contract.
+   --  @param Bindings Contracts returned by Effective_Task_Contracts.
+   --  @param Task_Id Logical task identity.
+   --  @return Dependency-qualified execution fingerprint.
+   --  @exception Data_Error The task identity is absent.
+
    function Effective_Task_Contract_Fingerprint
      (Plan    : Plan_Revision;
       Task_Id : UString) return String;

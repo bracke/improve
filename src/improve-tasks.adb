@@ -59,6 +59,8 @@ package body Improve.Tasks is
       Verifications : Improve.Storage.Verification_Vectors.Vector;
       Current_Assessment : Natural := 0) return View_Vectors.Vector is
       Result : View_Vectors.Vector;
+      Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
+        Improve.Model.Effective_Task_Contracts (Plan);
    begin
       for Spec of Plan.Tasks loop
          declare
@@ -73,7 +75,7 @@ package body Improve.Tasks is
             for Published of Publications loop
                if Published.Improve_Task_Id = Spec.Id and then
                  To_String (Published.Contract) =
-                   Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Spec.Id)
+                   Improve.Model.Effective_Task_Contract (Contracts, Spec.Id)
                then
                   View.Harness_Id := Published.Harness_Task_Id;
                   View.Harness_State := Published.State;

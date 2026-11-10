@@ -1,3 +1,6 @@
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Strings.Hash;
+
 package body Improve.Model is
    use Ada.Strings.Unbounded;
    function Image (Item : Candidate_Kind) return String is
@@ -58,41 +61,99 @@ package body Improve.Model is
       return Stable_Digest (To_String (Material));
    end Task_Contract_Fingerprint;
 
-   function Effective_Task_Contract_Fingerprint
-     (Plan    : Plan_Revision;
-      Task_Id : UString) return String is
-      function Digest
-        (Identity : UString;
-         Trail    : UString_Vectors.Vector) return String is
-         Next_Trail : UString_Vectors.Vector := Trail;
-         Material   : Unbounded_String;
+   function Effective_Task_Contracts
+     (Plan : Plan_Revision) return Task_Contract_Binding_Vectors.Vector is
+      package Task_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+        (Key_Type        => String,
+         Element_Type    => Positive,
+         Hash            => Ada.Strings.Hash,
+         Equivalent_Keys => "=");
+
+      type Visit_State is (Unvisited, Visiting, Visited);
+      type State_Array is array (Natural range <>) of Visit_State;
+      type Digest_Array is array (Natural range <>) of UString;
+
+      Count   : constant Natural := Natural (Plan.Tasks.Length);
+      Indexes : Task_Maps.Map;
+      States  : State_Array (1 .. Count) := [others => Unvisited];
+      Digests : Digest_Array (1 .. Count);
+      Result  : Task_Contract_Binding_Vectors.Vector;
+
+      function Digest (Index : Positive) return String is
+         Spec     : constant Task_Specification := Plan.Tasks (Index);
+         Material : Unbounded_String;
       begin
-         if Trail.Contains (Identity) then
-            raise Data_Error with "task dependency cycle while fingerprinting " & To_String (Identity);
+         if States (Index) = Visiting then
+            raise Data_Error with "task dependency cycle while fingerprinting " & To_String (Spec.Id);
+         elsif States (Index) = Visited then
+            return To_String (Digests (Index));
          end if;
-         Next_Trail.Append (Identity);
-         for Spec of Plan.Tasks loop
-            if Spec.Id = Identity then
-               if Spec.Dependencies.Is_Empty then
-                  return Task_Contract_Fingerprint (Spec);
-               end if;
-               Append (Material, "contract:" & Task_Contract_Fingerprint (Spec));
-               for Dependency of Spec.Dependencies loop
+
+         States (Index) := Visiting;
+         if Spec.Dependencies.Is_Empty then
+            Digests (Index) := To_Unbounded_String (Task_Contract_Fingerprint (Spec));
+         else
+            Append (Material, "contract:" & Task_Contract_Fingerprint (Spec));
+            for Dependency of Spec.Dependencies loop
+               declare
+                  Name : constant String := To_String (Dependency);
+               begin
+                  if not Indexes.Contains (Name) then
+                     raise Data_Error with "unknown task dependency while fingerprinting " & Name;
+                  end if;
                   declare
-                     Name  : constant String := To_String (Dependency);
-                     Value : constant String := Digest (Dependency, Next_Trail);
+                     Value : constant String := Digest (Indexes.Element (Name));
                   begin
                      Append (Material, Natural'Image (Name'Length) & ":" & Name);
                      Append (Material, Natural'Image (Value'Length) & ":" & Value);
                   end;
-               end loop;
-               return Stable_Digest (To_String (Material));
-            end if;
-         end loop;
-         raise Data_Error with "unknown task dependency while fingerprinting " & To_String (Identity);
+               end;
+            end loop;
+            Digests (Index) := To_Unbounded_String (Stable_Digest (To_String (Material)));
+         end if;
+         States (Index) := Visited;
+         return To_String (Digests (Index));
       end Digest;
    begin
-      return Digest (Task_Id, UString_Vectors.Empty_Vector);
+      for Index in 1 .. Count loop
+         declare
+            Identity : constant String := To_String (Plan.Tasks (Index).Id);
+         begin
+            if Identity = "" then
+               raise Data_Error with "task identity must not be empty while fingerprinting";
+            elsif Indexes.Contains (Identity) then
+               raise Data_Error with "duplicate task identity while fingerprinting " & Identity;
+            end if;
+            Indexes.Insert (Identity, Index);
+         end;
+      end loop;
+      for Index in 1 .. Count loop
+         Result.Append
+           (Task_Contract_Binding'
+              (Task_Id     => Plan.Tasks (Index).Id,
+               Fingerprint => To_Unbounded_String (Digest (Index))));
+      end loop;
+      return Result;
+   end Effective_Task_Contracts;
+
+   function Effective_Task_Contract
+     (Bindings : Task_Contract_Binding_Vectors.Vector;
+      Task_Id  : UString) return String is
+   begin
+      for Binding of Bindings loop
+         if Binding.Task_Id = Task_Id then
+            return To_String (Binding.Fingerprint);
+         end if;
+      end loop;
+      raise Data_Error with "unknown task contract " & To_String (Task_Id);
+   end Effective_Task_Contract;
+
+   function Effective_Task_Contract_Fingerprint
+     (Plan    : Plan_Revision;
+      Task_Id : UString) return String is
+      Bindings : constant Task_Contract_Binding_Vectors.Vector := Effective_Task_Contracts (Plan);
+   begin
+      return Effective_Task_Contract (Bindings, Task_Id);
    end Effective_Task_Contract_Fingerprint;
 end Improve.Model;
 

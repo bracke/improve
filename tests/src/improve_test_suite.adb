@@ -61,7 +61,7 @@ package body Improve_Test_Suite is
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Plan_Fingerprint_Severity_Sensitive, Plan_Fingerprint_Ignores_Unrelated_Snapshot,
-      Dependency_Cycle_Rejected, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
+      Dependency_Cycle_Rejected, Dense_Contract_Fingerprints, Plan_Dry_Run_CLI, Persistent_Plan_Roundtrip,
       Repeated_Plan_Idempotent, Persisted_Dependency_Translation, Read_Only_Does_Not_Initialize,
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
@@ -1163,6 +1163,36 @@ package body Improve_Test_Suite is
                Values.Append (First);
                Values.Append (Second);
                Expect_Rejection (Values, "dependency cycle");
+            end;
+         when Dense_Contract_Fingerprints =>
+            declare
+               Plan : Improve.Model.Plan_Revision;
+            begin
+               for Index in 1 .. 32 loop
+                  declare
+                     Spec : Improve.Model.Task_Specification;
+                  begin
+                     Spec.Id := To_Unbounded_String ("IMP-DENSE-" & Id_Image (Index));
+                     Spec.Title := Spec.Id;
+                     Spec.Acceptance := To_Unbounded_String ("complete");
+                     for Dependency in 1 .. Index - 1 loop
+                        Spec.Dependencies.Append
+                          (To_Unbounded_String ("IMP-DENSE-" & Id_Image (Dependency)));
+                     end loop;
+                     Plan.Tasks.Append (Spec);
+                  end;
+               end loop;
+               declare
+                  First : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
+                    Improve.Model.Effective_Task_Contracts (Plan);
+                  Second : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
+                    Improve.Model.Effective_Task_Contracts (Plan);
+               begin
+                  Assert
+                    (First.Length = Plan.Tasks.Length and then
+                     First.Last_Element.Fingerprint = Second.Last_Element.Fingerprint,
+                     "dense dependency contracts were not calculated deterministically");
+               end;
             end;
          when Plan_Dry_Run_CLI =>
             declare
