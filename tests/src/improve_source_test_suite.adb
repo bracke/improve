@@ -1,4 +1,6 @@
 with Ada.Directories;
+with Ada.Streams;
+with Ada.Streams.Stream_IO;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
@@ -8,7 +10,7 @@ with Project_Tools.Files;
 package body Improve_Source_Test_Suite is
    use AUnit.Assertions;
 
-   type Test_Id is (Fingerprint_Deterministic, Fingerprint_Boundary_Safe);
+   type Test_Id is (Fingerprint_Deterministic, Fingerprint_Boundary_Safe, Oversized_File_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -47,6 +49,26 @@ package body Improve_Source_Test_Suite is
                Assert
                  (Two_Files /= Improve.Source.Working_Fingerprint (Root),
                   "different source inventories collided at a path/content boundary");
+            end;
+         when Oversized_File_Rejected =>
+            declare
+               use Ada.Streams;
+               File     : Ada.Streams.Stream_IO.File_Type;
+               Byte     : constant Stream_Element_Array := [1 => 0];
+               Rejected : Boolean := False;
+            begin
+               Ada.Streams.Stream_IO.Create (File, Ada.Streams.Stream_IO.Out_File, Root & "/oversized.bin");
+               Ada.Streams.Stream_IO.Set_Index (File, 16_777_217);
+               Ada.Streams.Stream_IO.Write (File, Byte);
+               Ada.Streams.Stream_IO.Close (File);
+               begin
+                  declare Value : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                     Assert (Value = "", "oversized source unexpectedly produced a fingerprint");
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "oversized source file was read instead of rejected before allocation");
             end;
       end case;
       Project_Tools.Files.Delete_Tree (Root);

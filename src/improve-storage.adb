@@ -197,12 +197,24 @@ package body Improve.Storage is
       raise Data_Error with "missing persisted field " & Name;
    end Field;
 
-   function Field_Or (Payload, Name, Default : String) return String is
+   function Has_Field (Payload, Name : String) return Boolean is
+      Prefix : constant String := Name & "=";
+      Start  : Natural := Payload'First;
    begin
-      return Field (Payload, Name);
-   exception
-      when Data_Error => return Default;
-   end Field_Or;
+      while Start <= Payload'Last loop
+         declare Stop : Natural := Start; begin
+            while Stop <= Payload'Last and then Payload (Stop) /= LF loop Stop := Stop + 1; end loop;
+            if Stop - Start >= Prefix'Length and then Payload (Start .. Start + Prefix'Length - 1) = Prefix then
+               return True;
+            end if;
+            Start := Stop + 1;
+         end;
+      end loop;
+      return False;
+   end Has_Field;
+
+   function Field_Or (Payload, Name, Default : String) return String is
+     (if Has_Field (Payload, Name) then Field (Payload, Name) else Default);
 
    function Pair (Name, Value : String) return String is (Name & "=" & Escape (Value));
 
