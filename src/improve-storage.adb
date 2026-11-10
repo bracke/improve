@@ -20,6 +20,7 @@ package body Improve.Storage is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
    use type Database.Status_Code;
+   use type Database.Predicates.Predicate;
 
    LF : constant Character := Character'Val (10);
    CR : constant Character := Character'Val (13);
@@ -273,6 +274,16 @@ package body Improve.Storage is
       return Prefix & [1 .. Integer'Max (0, 6 - Value_Text'Length) => '0'] & Value_Text;
    end Id_Image;
 
+   function Plan_Row_Id (Plan_Id : String) return Positive is
+   begin
+      if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
+         raise Argument_Error with "invalid plan identity " & Plan_Id;
+      end if;
+      return Positive'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
+   exception
+      when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
+   end Plan_Row_Id;
+
    function Scan
      (Item      : in out Store;
       Tx        : in out Database.Transactions.Transaction;
@@ -303,6 +314,39 @@ package body Improve.Storage is
               (1, Database.Values.From_Integer (Integer (Table))), Cursor),
          "advance table scan");
    end Advance;
+
+   function Child_Predicate (Table, Parent : Positive) return Database.Predicates.Predicate is
+     (Database.Predicates.Column_Equals
+        (1, Database.Values.From_Integer (Integer (Table))) and
+      Database.Predicates.Column_Equals
+        (3, Database.Values.From_Integer (Integer (Parent))));
+
+   function Scan_Children
+     (Item   : in out Store;
+      Tx     : in out Database.Transactions.Transaction;
+      Table  : Positive;
+      Parent : Positive) return Entity_Tables.Cursor is
+      Cursor : Entity_Tables.Cursor;
+   begin
+      Check
+        (Entity_Tables.Scan
+           (Tx, Item.DB, Item.Schemas (Table), Child_Predicate (Table, Parent), Cursor),
+         "scan child records");
+      return Cursor;
+   end Scan_Children;
+
+   procedure Advance_Children
+     (Item   : in out Store;
+      Tx     : in out Database.Transactions.Transaction;
+      Table  : Positive;
+      Parent : Positive;
+      Cursor : in out Entity_Tables.Cursor) is
+   begin
+      Check
+        (Entity_Tables.Next
+           (Tx, Item.DB, Item.Schemas (Table), Child_Predicate (Table, Parent), Cursor),
+         "advance child record scan");
+   end Advance_Children;
 
    function Next_Id
      (Item : in out Store; Tx : in out Database.Transactions.Transaction; Table : Positive) return Positive is
@@ -1140,6 +1184,7 @@ package body Improve.Storage is
       Tx     : Database.Transactions.Transaction;
       Row_Id : Positive;
       Stored : String_Value_Maps.Map;
+      Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
 
       function Mapping_Key (Task_Id, Contract : String) return String is
         (Task_Id & Character'Val (0) & Contract);
@@ -1178,7 +1223,7 @@ package body Improve.Storage is
                Check
                  (Entity_Tables.Insert
                     (Tx, Item.DB, Item.Schemas (Publications_Table),
-                     (Row_Id, 0, WW (To_String (Value.Improve_Task_Id)), WW (To_String (Value.State)),
+                     (Row_Id, Plan_Row, WW (To_String (Value.Improve_Task_Id)), WW (To_String (Value.State)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
                           Pair ("origin", To_String (Value.Origin)) & LF &
@@ -1199,29 +1244,54 @@ package body Improve.Storage is
    function Publications
      (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
-      Cursor : Entity_Tables.Cursor;
       Result : Publication_Vectors.Vector;
+
+      procedure Append_Row (Row : Entity) is
+         Payload : constant String := S (Row.Payload);
+      begin
+         Result.Append
+           (Publication_Record'
+              (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
+               Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
+               Origin          => To_Unbounded_String (Field (Payload, "origin")),
+               Contract        => To_Unbounded_String (Field_Or (Payload, "contract", "")),
+               State           => To_Unbounded_String (S (Row.State)),
+               Plan_Revision   => Positive'Value (Field_Or (Payload, "plan_revision", "1"))));
+      end Append_Row;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      Cursor := Scan (Item, Tx, Publications_Table);
-      while Entity_Tables.Has_Element (Cursor) loop
-         declare
-            Row     : constant Entity := Entity_Tables.Element (Cursor);
-            Payload : constant String := S (Row.Payload);
-         begin
-            if Plan_Id = "" or else Field (Payload, "plan_id") = Plan_Id then
-               Result.Append
-                 (Publication_Record'
-                    (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
-                     Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
-                     Origin          => To_Unbounded_String (Field (Payload, "origin")),
-                     Contract        => To_Unbounded_String (Field_Or (Payload, "contract", "")),
-                     State           => To_Unbounded_String (S (Row.State)),
-                     Plan_Revision   => Positive'Value (Field_Or (Payload, "plan_revision", "1"))));
-            end if;
+      if Plan_Id = "" then
+         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               Append_Row (Entity_Tables.Element (Cursor));
+               Advance (Item, Tx, Publications_Table, Cursor);
+            end loop;
          end;
-         Advance (Item, Tx, Publications_Table, Cursor);
-      end loop;
+      else
+         declare
+            Parent : constant Positive := Plan_Row_Id (Plan_Id);
+            Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Parent);
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               Append_Row (Entity_Tables.Element (Cursor));
+               Advance_Children (Item, Tx, Publications_Table, Parent, Cursor);
+            end loop;
+         end;
+         --  Older rows have no physical parent. New writes use the indexed relationship.
+         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               declare
+                  Row : constant Entity := Entity_Tables.Element (Cursor);
+                  Payload : constant String := S (Row.Payload);
+               begin
+                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
+                     Append_Row (Row);
+                  end if;
+               end;
+               Advance (Item, Tx, Publications_Table, Cursor);
+            end loop;
+         end;
+      end if;
       Database.Transactions.Rollback (Tx);
       return Result;
    exception
@@ -1296,6 +1366,7 @@ package body Improve.Storage is
       Tx     : Database.Transactions.Transaction;
       Row_Id : Positive;
       Stored : String_Value_Maps.Map;
+      Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
 
       function Scope_Image (Value : Verification_Scope) return String is
         (case Value is
@@ -1363,7 +1434,7 @@ package body Improve.Storage is
                Check
                  (Entity_Tables.Insert
                     (Tx, Item.DB, Item.Schemas (Verifications_Table),
-                     (Row_Id, 0, WW (Key), WW (Improve.Model.Image (Value.Outcome)),
+                     (Row_Id, Plan_Row, WW (Key), WW (Improve.Model.Image (Value.Outcome)),
                       WW (Pair ("plan_id", Plan_Id) & LF &
                           Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
                           Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
@@ -1406,38 +1477,62 @@ package body Improve.Storage is
       Plan_Id : String := "";
       Task_Id : String := "") return Verification_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
-      Cursor : Entity_Tables.Cursor;
       Result : Verification_Vectors.Vector;
+
+      procedure Append_Row (Row : Entity) is
+         Payload : constant String := S (Row.Payload);
+         Scope   : constant Verification_Scope := Parse_Scope (Field_Or (Payload, "scope", "task"));
+         Stored_Task : constant String :=
+           (if Scope = Task_Evaluation then Field_Or (Payload, "task_id", S (Row.Kind)) else "");
+      begin
+         if Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id) then
+            Result.Append
+              (Verification_Record'
+                 (Scope         => Scope,
+                  Task_Id       => To_Unbounded_String (Stored_Task),
+                  Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")),
+                  Contract_Fingerprint => To_Unbounded_String (Field_Or (Payload, "contract", "")),
+                  Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
+                  Outcome       => Parse_Outcome (S (Row.State)),
+                  Comparable    => Boolean'Value (Field (Payload, "comparable")),
+                  Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
+         end if;
+      exception
+         when Constraint_Error => raise Data_Error with "stored verification evidence is malformed";
+      end Append_Row;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      Cursor := Scan (Item, Tx, Verifications_Table);
-      while Entity_Tables.Has_Element (Cursor) loop
-         declare
-            Row     : constant Entity := Entity_Tables.Element (Cursor);
-            Payload : constant String := S (Row.Payload);
-            Scope   : constant Verification_Scope := Parse_Scope (Field_Or (Payload, "scope", "task"));
-            Stored_Task : constant String :=
-              (if Scope = Task_Evaluation then Field_Or (Payload, "task_id", S (Row.Kind)) else "");
-         begin
-            if (Plan_Id = "" or else Field (Payload, "plan_id") = Plan_Id) and then
-              (Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id))
-            then
-               Result.Append
-                 (Verification_Record'
-                    (Scope         => Scope,
-                     Task_Id       => To_Unbounded_String (Stored_Task),
-                     Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")),
-                     Contract_Fingerprint => To_Unbounded_String (Field_Or (Payload, "contract", "")),
-                     Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
-                     Outcome       => Parse_Outcome (S (Row.State)),
-                     Comparable    => Boolean'Value (Field (Payload, "comparable")),
-                     Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
-            end if;
-         exception
-            when Constraint_Error => raise Data_Error with "stored verification evidence is malformed";
+      if Plan_Id = "" then
+         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               Append_Row (Entity_Tables.Element (Cursor));
+               Advance (Item, Tx, Verifications_Table, Cursor);
+            end loop;
          end;
-         Advance (Item, Tx, Verifications_Table, Cursor);
-      end loop;
+      else
+         declare
+            Parent : constant Positive := Plan_Row_Id (Plan_Id);
+            Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Parent);
+         begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               Append_Row (Entity_Tables.Element (Cursor));
+               Advance_Children (Item, Tx, Verifications_Table, Parent, Cursor);
+            end loop;
+         end;
+         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
+            while Entity_Tables.Has_Element (Cursor) loop
+               declare
+                  Row : constant Entity := Entity_Tables.Element (Cursor);
+                  Payload : constant String := S (Row.Payload);
+               begin
+                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
+                     Append_Row (Row);
+                  end if;
+               end;
+               Advance (Item, Tx, Verifications_Table, Cursor);
+            end loop;
+         end;
+      end if;
       Database.Transactions.Rollback (Tx);
       return Result;
    exception
