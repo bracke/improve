@@ -60,6 +60,8 @@ package Improve.CLI is
       Has_Status    : Boolean := False;
       Has_Run       : Boolean := False;
       Has_Revision  : Boolean := False;
+      Has_Format    : Boolean := False;
+      Has_Color     : Boolean := False;
       Dry_Run       : Boolean := False;
       All_Projects  : Boolean := False;
       Verbose       : Boolean := False;
@@ -86,6 +88,8 @@ package Improve.CLI is
    --  @field Has_Status Whether Status_Filter was supplied.
    --  @field Has_Run Whether Run_Id was supplied.
    --  @field Has_Revision Whether Revision was supplied.
+   --  @field Has_Format Whether Format was supplied explicitly.
+   --  @field Has_Color Whether Color was supplied explicitly.
    --  @field Dry_Run Whether modification is disabled.
    --  @field All_Projects Whether every project is selected.
    --  @field Verbose Whether verbose diagnostics are requested.

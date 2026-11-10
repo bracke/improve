@@ -758,9 +758,11 @@ package body Improve.CLI is
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 
-   function Dispatch (Item : Invocation; Negative : out Boolean) return String is
+   function Dispatch
+     (Item     : Invocation;
+      Settings : Improve.Config.Settings;
+      Negative : out Boolean) return String is
       Plain : Unbounded_String;
-      Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path);
    begin
       Negative := False;
       Improve.Presentation.Configure (Item.Format, Item.Color);
@@ -799,10 +801,29 @@ package body Improve.CLI is
       Negative : Boolean := False;
    begin
       Item := Parse (Arguments);
-      declare Output : constant String := Dispatch (Item, Negative); begin
-         return
-           ((if Negative then Negative_Exit else Success_Exit),
-            To_Unbounded_String (Output), Null_Unbounded_String);
+      declare Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path); begin
+         if not Item.Has_Format then Item.Format := Settings.Format; end if;
+         if not Item.Has_Color then Item.Color := Settings.Color; end if;
+         if Item.Format = JSON_Format then Item.Color := Color_Never; end if;
+         declare
+            Base_Output : constant String := Dispatch (Item, Settings, Negative);
+            Output      : Unbounded_String := To_Unbounded_String (Base_Output);
+         begin
+            if Item.Format = Terminal_Format and then Item.Quiet then
+               Output := Null_Unbounded_String;
+            elsif Item.Format = Terminal_Format and then Item.Verbose then
+               Append
+                 (Output,
+                  Message
+                    ("verbose.context",
+                     [Arg ("command", Name (Item.Command)),
+                      Arg ("database", Quality_Path (Item, Settings)),
+                      Arg ("state", State_Path (Item))]) & LF);
+            end if;
+            return
+              ((if Negative then Negative_Exit else Success_Exit),
+               Output, Null_Unbounded_String);
+         end;
       end;
    exception
       when Error : Argument_Error =>

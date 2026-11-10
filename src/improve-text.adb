@@ -15,6 +15,7 @@ package body Improve.Text is
      "en.error.hint = run improve help for usage" & LF &
      "en.error.internal = internal error: {message}" & LF &
      "en.error.output = cannot write output: {message}" & LF &
+     "en.verbose.context = command {command}; quality database {database}; state {state}" & LF &
      "en.help.usage = Usage: improve <command> [options]" & LF &
      "en.help.commands = Commands:" & LF &
      "en.help.cmd.projects = List available projects" & LF &

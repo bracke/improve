@@ -142,6 +142,9 @@ package body Improve.Config is
          end if;
          Result.Task_Kind := To_Unbounded_String (Kind);
          Result.Require_Initialized := Boolean_Value ("require_initialized_project", True);
+         if not Result.Require_Initialized then
+            raise Argument_Error with "workflow.require_initialized_project must be true";
+         end if;
          Result.Require_Fresh_Measurement := Boolean_Value ("require_fresh_measurement", True);
          Result.Require_Same_Policy := Boolean_Value ("require_same_policy", True);
          Result.Require_Same_Toolchain := Boolean_Value ("require_same_toolchain", False);

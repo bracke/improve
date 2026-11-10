@@ -3167,7 +3167,7 @@ package body Improve_Test_Suite is
                   "maximum_recovery_operations = 9" & ASCII.LF &
                   "task_kind = ""remediation""" & ASCII.LF &
                   "publication = ""candidate""" & ASCII.LF &
-                  "require_initialized_project = false" & ASCII.LF &
+                  "require_initialized_project = true" & ASCII.LF &
                   "require_fresh_measurement = false" & ASCII.LF &
                   "require_same_policy = false" & ASCII.LF &
                   "require_same_toolchain = true" & ASCII.LF &
@@ -3181,7 +3181,7 @@ package body Improve_Test_Suite is
                      not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
                      Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
                      Value.Maximum_Recovery_Operations = 9 and then Value.Format = Improve.Config.JSON_Format and then
-                     Value.Color = Improve.Config.Color_Never and then
+                     Value.Color = Improve.Config.Color_Never and then Value.Require_Initialized and then
                      Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "operations.maximum") > 0,
                      "valid nondefault configuration was not preserved");
                end;
@@ -3203,6 +3203,7 @@ package body Improve_Test_Suite is
                Reject ("minimum_severity = ""urgent""", "severity");
                Reject ("task_kind = """"", "task kind");
                Reject ("publication = ""accepted""", "publication mode");
+               Reject ("require_initialized_project = false", "initialized project policy");
                Reject ("format = ""yaml""", "output format");
                Reject ("color = ""sometimes""", "color policy");
                Reject ("maximum_tasks_per_plan = 0", "zero task limit");

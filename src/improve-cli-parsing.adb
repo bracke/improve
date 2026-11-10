@@ -89,6 +89,7 @@ package body Improve.CLI.Parsing is
             Result.Project := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
          elsif Option = "--format" then
             Once (Seen_Format, Option);
+            Result.Has_Format := True;
             declare
                Value : constant String := Value_Of (Option, Inline, Has_Inline);
             begin
@@ -102,6 +103,7 @@ package body Improve.CLI.Parsing is
             end;
          elsif Option = "--color" then
             Once (Seen_Color, Option);
+            Result.Has_Color := True;
             declare
                Value : constant String := Value_Of (Option, Inline, Has_Inline);
             begin

@@ -16,7 +16,7 @@ package body Improve_CLI_Test_Suite is
 
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
-      JSON_Disables_Color, Help_Smoke, Version_Smoke, Config_Smoke, Invalid_Smoke);
+      JSON_Disables_Color, Help_Smoke, Version_Smoke, Quiet_Smoke, Verbose_Smoke, Config_Smoke, Invalid_Smoke);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -105,6 +105,17 @@ package body Improve_CLI_Test_Suite is
                  (Result.Exit_Code = 0 and then
                   Ada.Strings.Fixed.Index (To_String (Result.Output), """schema_version"":1") > 0,
                   "JSON version output is not versioned");
+            end;
+         when Quiet_Smoke =>
+            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("version|--quiet")); begin
+               Assert (Result.Exit_Code = 0 and then Length (Result.Output) = 0, "quiet output was not suppressed");
+            end;
+         when Verbose_Smoke =>
+            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("version|--verbose")); begin
+               Assert
+                 (Result.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), "command version") > 0,
+                  "verbose output omitted operational context");
             end;
          when Config_Smoke =>
             declare
