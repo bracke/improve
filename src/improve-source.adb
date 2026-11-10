@@ -2,8 +2,9 @@ with Ada.Containers;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Containers.Vectors;
-with Interfaces;
+with Ada.Streams;
 with Ada_Quality.Types;
+with CryptoLib.Hashes;
 with Project_Tools.Files;
 
 package body Improve.Source is
@@ -11,7 +12,6 @@ package body Improve.Source is
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Assessment_Status;
    use type Ada_Quality.Types.Indicator_Id;
-   use type Interfaces.Unsigned_64;
 
    function Working_Fingerprint (Root : String) return String is
       package Paths is new Ada.Containers.Vectors
@@ -26,25 +26,32 @@ package body Improve.Source is
          To_Unbounded_String ("lib"), To_Unbounded_String ("gnatprove")];
       Listed : constant Project_Tools.Files.Path_List := Project_Tools.Files.List_Tree (Root, "*", Skip);
       Values : Paths.Vector;
-      Hash   : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
-      Prime  : constant Interfaces.Unsigned_64 := 16#100000001B3#;
+      Context : CryptoLib.Hashes.SHA256_Context;
       Total  : Natural := 0;
 
       procedure Add (Text : String) is
+         use Ada.Streams;
+         Data : Stream_Element_Array (1 .. Text'Length) := [others => 0];
       begin
-         for C of Text loop
-            Hash := (Hash xor Interfaces.Unsigned_64 (Character'Pos (C))) * Prime;
+         for Index in Text'Range loop
+            Data (Stream_Element_Offset (Index - Text'First + 1)) :=
+              Stream_Element (Character'Pos (Text (Index)));
          end loop;
+         CryptoLib.Hashes.Update (Context, Data);
       end Add;
 
-      function Hex return String is
-         Hex_Chars : constant String := "0123456789abcdef";
-         Work   : Interfaces.Unsigned_64 := Hash;
-         Result : String (1 .. 16);
+      procedure Add_Length (Value : Natural) is
       begin
-         for Index in reverse Result'Range loop
-            Result (Index) := Hex_Chars (Natural (Work and 16#F#) + 1);
-            Work := Interfaces.Shift_Right (Work, 4);
+         Add (Natural'Image (Value) & Character'Val (0));
+      end Add_Length;
+
+      function Hex (Digest : CryptoLib.Hashes.SHA256_Digest) return String is
+         Hex_Chars : constant String := "0123456789abcdef";
+         Result : String (1 .. 64);
+      begin
+         for Index in Digest'Range loop
+            Result (2 * Index - 1) := Hex_Chars (Natural (Digest (Index)) / 16 + 1);
+            Result (2 * Index) := Hex_Chars (Natural (Digest (Index)) mod 16 + 1);
          end loop;
          return Result;
       end Hex;
@@ -58,6 +65,9 @@ package body Improve.Source is
       if Listed'Length > 100_000 then raise Data_Error with "project source exceeds fingerprint file limit"; end if;
       for Path of Listed loop Values.Append (Path); end loop;
       Sorting.Sort (Values);
+      CryptoLib.Hashes.Initialize_SHA256 (Context);
+      Add ("improve-working-source-v2" & Character'Val (0));
+      Add_Length (Natural (Values.Length));
       for Path of Values loop
          declare
             Full : constant String := To_String (Path);
@@ -74,12 +84,15 @@ package body Improve.Source is
                      raise Data_Error with "project source exceeds fingerprint byte limit";
                   end if;
                   Total := Total + Data'Length;
-                  Add (Name & Character'Val (0) & Data);
+                  Add_Length (Name'Length);
+                  Add (Name);
+                  Add_Length (Data'Length);
+                  Add (Data);
                end;
             end if;
          end;
       end loop;
-      return "working-fnv1a64:" & Hex;
+      return "working-sha256-v2:" & Hex (CryptoLib.Hashes.Finalize (Context));
    end Working_Fingerprint;
 
    procedure Open

@@ -14,6 +14,7 @@ with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
 with Improve_CLI_Test_Suite;
+with Improve_Source_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
@@ -30,11 +31,12 @@ with Improve.Text;
 with Improve.Verification;
 with Improve.Workflow;
 with Model_Runner.Errors;
-with Model_Runner.Framework.Configurations;
+with Model_Runner.Framework.Configuration_Records;
 with Model_Runner.Framework.Records;
+with Model_Runner.Framework.Schemas;
 with Model_Runner.Framework.Stores;
+with Model_Runner.Framework.Task_Eligibility;
 with Model_Runner.Framework.Tasks;
-with Model_Runner.Framework.Templates;
 with Project_Tools.Files;
 
 package body Improve_Test_Suite is
@@ -66,7 +68,7 @@ package body Improve_Test_Suite is
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
       Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
-      Replacement_Running_And_Completed,
+      Replacement_Running_And_Completed, Workspace_Lifecycle_Fails_Closed,
       Selective_Publication_Resolves_Dependency, Prerequisite_Replacement_Migrates_Dependents,
       Refresh_Reconciles_State,
       Verification_Resolved, Verification_Still_Failing,
@@ -94,6 +96,13 @@ package body Improve_Test_Suite is
 
    overriding function Name (Item : Case_Test) return AUnit.Message_String is
      (AUnit.Format ("IMP_" & Test_Id'Image (Item.Id)));
+
+   function Execution_Available
+     (Item : Model_Runner.Framework.Stores.Store; Task_Id : String) return String is
+      pragma Unreferenced (Item, Task_Id);
+   begin
+      return "";
+   end Execution_Available;
 
    function Args (Text : String) return Improve.CLI.String_Vectors.Vector is
       Result : Improve.CLI.String_Vectors.Vector;
@@ -299,33 +308,25 @@ package body Improve_Test_Suite is
    end Add_Fixture_Project;
 
    procedure Initialize_Harness (Directory : String) is
-      package Config renames Model_Runner.Framework.Configurations;
+      package Config renames Model_Runner.Framework.Configuration_Records;
       package Errors renames Model_Runner.Errors;
+      package Records renames Model_Runner.Framework.Records;
+      package Schemas renames Model_Runner.Framework.Schemas;
       package Stores renames Model_Runner.Framework.Stores;
-      package Templates renames Model_Runner.Framework.Templates;
-      Template : Templates.Template;
-      Registry : Templates.Registry;
-      Composed : Templates.Composition;
-      Given    : Config.Value_Maps.Map;
-      Planned  : Config.Plan;
-      Done     : Config.Outcome;
       Store    : Stores.Store;
+      Initial  : Stores.Transaction;
+      Resolved : Records.Item := Records.Create (Schemas.Configuration_Schema, 1, "CONFIG", 1);
       Status   : Errors.Error_Info;
    begin
-      Templates.Parse
-        ("template = improve-tests" & Character'Val (10) &
-         "name = Improve tests" & Character'Val (10) &
-         "description = Native Improve task publication fixture" & Character'Val (10) &
-         "version = 1" & Character'Val (10) &
-         "task_kind remediation = acceptance, notes?" & Character'Val (10),
-         "improve-tests", Template, Status);
-      Assert (Errors.Is_Ok (Status), "harness template parsing failed");
-      Templates.Add (Registry, Template);
-      Templates.Compose (Registry, "improve-tests", Composed, Status);
-      Assert (Errors.Is_Ok (Status), "harness template composition failed");
-      Config.Prepare (Composed, Directory, Given, Planned, Status);
-      Assert (Errors.Is_Ok (Status), "harness fixture preparation failed");
-      Config.Initialize (Store, Directory, Planned, Done, Status);
+      Records.Set (Resolved, "template_id", "improve-tests");
+      Records.Set (Resolved, "template_version", "1");
+      Records.Set (Resolved, "template_fingerprint", "fixture");
+      Records.Set (Resolved, "template_origin", "Improve tests");
+      Records.Set (Resolved, "template_order", "improve-tests");
+      Records.Set (Resolved, "task_kind.remediation", "acceptance, notes?");
+      Records.Set (Resolved, "configuration_fingerprint", Config.Fingerprint (Resolved));
+      Stores.Put (Initial, Model_Runner.Framework.Config_Area, "resolved", Resolved);
+      Stores.Create (Store, Directory, "Improve tests", Status, Initial);
       Assert (Errors.Is_Ok (Status), "harness fixture initialization failed");
       Stores.Close (Store);
    end Initialize_Harness;
@@ -1941,6 +1942,61 @@ package body Improve_Test_Suite is
                      "completed predecessor was not preserved as traced historical work");
                end;
                Stores.Close (Harness);
+               Remove (Data);
+            end;
+         when Workspace_Lifecycle_Fails_Closed =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Records renames Model_Runner.Framework.Records;
+               package Schemas renames Model_Runner.Framework.Schemas;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("workspace_fail_closed", Harness_Project => True);
+               Plan      : constant Improve.Model.Plan_Revision := Draft_For (Data);
+               Published : Improve.Workflow.Publication_Result;
+               Store     : Stores.Store;
+               Recovery  : Stores.Recovery_Report;
+               Status    : Errors.Error_Info;
+               Change    : Stores.Transaction;
+               Workspace : Records.Item;
+               Task_Id   : Unbounded_String;
+
+               procedure Move_Task (Next : String) is
+                  Move_Change : Stores.Transaction;
+               begin
+                  Tasks.Move
+                    (Store, Move_Change, To_String (Task_Id), Next, "test transition", Status => Status,
+                     Actor => "improve-test");
+                  Assert (Errors.Is_Ok (Status), "could not establish " & Next & " workspace fixture state");
+                  Stores.Commit (Store, Move_Change, Status);
+                  Assert (Errors.Is_Ok (Status), "could not commit " & Next & " workspace fixture state");
+               end Move_Task;
+            begin
+               Initialize_Harness (To_String (Data.Target));
+               Published := Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+               Task_Id := Published.Tasks.First_Element.Harness_Id;
+               Stores.Open (Store, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "could not open workspace fail-closed fixture");
+               Move_Task ("accepted");
+               Move_Task ("running");
+               Move_Task ("blocked");
+               Workspace := Records.Create (Schemas.Workspace_Schema, 1, "WORKSPACE-TEST", 1);
+               Records.Set (Workspace, "backend", "file_copy");
+               Records.Set (Workspace, "path", "/tmp/improve-unmanaged-workspace");
+               Records.Set (Workspace, "base", "baseline");
+               Records.Set (Workspace, "agent", "test-agent");
+               Records.Set (Workspace, "task", To_String (Task_Id));
+               Records.Set (Workspace, "status", "active");
+               Stores.Put (Change, Model_Runner.Framework.Workspaces_Area, "WORKSPACE-TEST", Workspace);
+               Stores.Commit (Store, Change, Status);
+               Assert (Errors.Is_Ok (Status), "could not commit active workspace fixture");
+               Tasks.Move
+                 (Store, Change, To_String (Task_Id), "cancelled", "replacement", Status => Status,
+                  Actor => "improve-test");
+               Assert
+                 (Errors.Is_Error (Status) and then Tasks.State_Of (Store, To_String (Task_Id)) = "blocked",
+                  "lightweight lifecycle abandoned or ignored an unmanaged active workspace");
+               Stores.Close (Store);
                Remove (Data);
             end;
          when Selective_Publication_Resolves_Dependency =>
@@ -3581,6 +3637,7 @@ package body Improve_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
+      Result.Add_Test (Improve_Source_Test_Suite.Suite);
       for Id in Test_Id loop
          declare
             Item : constant Case_Access := new Case_Test (Id);
@@ -3590,4 +3647,6 @@ package body Improve_Test_Suite is
       end loop;
       return Result;
    end Suite;
+begin
+   Model_Runner.Framework.Task_Eligibility.Register (Execution_Available'Access);
 end Improve_Test_Suite;
