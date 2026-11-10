@@ -14,6 +14,11 @@ Every phase must leave the crate compiling and its tests passing. A phase is com
 Later phases may extend stored schemas and command behavior but must not weaken the ownership boundaries established in
 the earlier phases.
 
+The AUnit implementation is divided by concern. CLI parsing/smoke tests, source identity tests, indexed persistence
+tests, and agent-refinement cases are separate suites or subunits; the integration suite retains only the shared fixture
+and cross-boundary scenarios. This keeps narrow failures independently buildable while preserving the real end-to-end
+gate.
+
 Phase 9 is the consolidated release gate. Its Ada entry point is `tools/bin/check_phase_9`, built from
 `tools/src/check_phase_9.adb` through `tools/improve_tools.gpr`. It retains every earlier test and adds a real
 Ada Quality assessment-to-plan-to-model_runner-to-remeasurement workflow, stable task identity across plan revisions,
