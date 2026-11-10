@@ -13,6 +13,7 @@ with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
+with Improve_CLI_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
@@ -39,8 +40,6 @@ with Project_Tools.Files;
 package body Improve_Test_Suite is
    use Ada.Strings.Unbounded;
    use AUnit.Assertions;
-   use type Improve.CLI.Command_Kind;
-   use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
    use type Improve.Config.Output_Format;
    use type Improve.Config.Severity_Level;
@@ -55,8 +54,7 @@ package body Improve_Test_Suite is
    use type Ada_Quality.Types.Indicator_Id;
 
    type Test_Id is
-     (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
-      JSON_Disables_Color, Help_Smoke, Version_Smoke, Config_Smoke, Invalid_Smoke, Catalog, Digest,
+     (Catalog, Digest,
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
@@ -607,45 +605,6 @@ package body Improve_Test_Suite is
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
       case Item.Id is
-         when Parse_Plan =>
-            declare Parsed : constant Improve.CLI.Invocation :=
-              Improve.CLI.Parse (Args ("--database|q.db|plan|--project|demo|--run=42|--dry-run"));
-            begin
-               Assert (Parsed.Command = Improve.CLI.Plan_Command and then
-                       Parsed.Plan_Action = Improve.CLI.Create_Plan and then Parsed.Run_Id = 42 and then
-                       Parsed.Dry_Run and then To_String (Parsed.Project) = "demo", "plan options were not parsed");
-            end;
-         when Reject_Duplicate => Must_Reject ("projects|--format|json|--format|terminal", "more than once");
-         when Reject_Conflict => Must_Reject ("projects|--verbose|--quiet", "mutually exclusive");
-         when Reject_Missing_Project => Must_Reject ("findings", "requires --project");
-         when Reject_Command_Option => Must_Reject ("projects|--run|1", "not accepted");
-         when JSON_Disables_Color =>
-            declare Parsed : constant Improve.CLI.Invocation :=
-              Improve.CLI.Parse (Args ("projects|--format|json|--color|always"));
-            begin Assert (Parsed.Color = Improve.Config.Color_Never, "JSON did not force color off"); end;
-         when Help_Smoke =>
-            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("help"));
-            begin
-               Assert
-                 (Result.Exit_Code = 0 and then
-                    Ada.Strings.Fixed.Index (To_String (Result.Output), "Usage:") > 0,
-                  "help did not succeed");
-            end;
-         when Version_Smoke =>
-            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("version|--format|json"));
-            begin
-               Assert
-                 (Result.Exit_Code = 0 and then
-                    Ada.Strings.Fixed.Index (To_String (Result.Output), """schema_version"":1") > 0,
-                  "JSON version output is not versioned");
-            end;
-         when Config_Smoke =>
-            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("config|validate"));
-            begin Assert (Result.Exit_Code = 0, "configuration validation failed: " & To_String (Result.Errors)); end;
-         when Invalid_Smoke =>
-            declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("unknown"));
-            begin Assert (Result.Exit_Code = 2 and then Length (Result.Output) = 0 and then Length (Result.Errors) > 0,
-                          "invalid command did not observe the output contract"); end;
          when Catalog =>
             Assert (Improve.Text.Catalog_Is_Valid, "message catalog is invalid");
             declare
@@ -3621,6 +3580,7 @@ package body Improve_Test_Suite is
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
+      Result.Add_Test (Improve_CLI_Test_Suite.Suite);
       for Id in Test_Id loop
          declare
             Item : constant Case_Access := new Case_Test (Id);
