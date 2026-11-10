@@ -11,9 +11,10 @@ Plan generation requires the current authoritative Ada Quality source fingerprin
 assessment. Publication applies a second, harness-state-aware fingerprint to detect authored changes after planning
 without treating model_runner's own operational state as a source edit.
 
-The model_runner crate currently exposes its framework packages from the same GPR project as its inference engine.
-The publication adapter is consequently isolated. A lightweight public framework library target remains the desired
-upstream integration improvement; no framework record or transaction behavior is copied here.
+The model_runner repository exposes its framework packages through the lightweight `model_runner_framework` crate.
+The publication adapter therefore imports a project with no executable or main-unit target. Execution-specific task
+eligibility, workspace, and full consistency checks are registered by the full harness when linked, leaving publication
+consumers with the typed task and transaction closure. No framework record or transaction behavior is copied here.
 
 Optional planning assistance sits behind `Improve.Refinement.Adapter`. The adapter receives bounded immutable context
 and returns typed proposals; it owns no plan, quality, project, or harness state. Improve validates and fingerprints the

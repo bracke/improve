@@ -125,7 +125,7 @@ begin
    Require_Release_Dependency ("terminal_styles", "^0.1.0");
    Require_Release_Dependency ("project_tools", "^0.1.0");
    Require_Release_Dependency ("hostkit", "^0.1.0");
-   Require_Release_Dependency ("model_runner", "^0.1.0");
+   Require_Release_Dependency ("model_runner_framework", "^0.1.0");
    Require_Release_Dependency ("cryptolib", "^0.1.0");
    if Project_Tools.Files.File_Contains (Root & "/alire.toml", "[[pins]]") then
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "database", "../database");
@@ -138,7 +138,7 @@ begin
         (Root & "/alire.toml", "project_tools", "../project_tools");
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "hostkit", "../hostkit");
       Project_Tools.Alire_Manifests.Require_Workspace_Pin
-        (Root & "/alire.toml", "model_runner", "../model_runner");
+        (Root & "/alire.toml", "model_runner_framework", "../model_runner/framework");
       Project_Tools.Alire_Manifests.Require_Workspace_Pin (Root & "/alire.toml", "cryptolib", "../cryptolib");
    else
       Project_Tools.Alire_Manifests.Require_No_Local_Pins (Root & "/alire.toml");

@@ -21,7 +21,7 @@ messages = { path = "../../messages" }
 terminal_styles = { path = "../../terminal_styles" }
 project_tools = { path = "../../project_tools" }
 hostkit = { path = "../../hostkit" }
-model_runner = { path = "../../model_runner" }
+model_runner_framework = { path = "../../model_runner/framework" }
 cryptolib = { path = "../../cryptolib" }
 i18n = { path = "../../i18n" }
 regexp = { path = "../../regexp" }

@@ -1,5 +1,5 @@
 with "ada_quality";
-with "model_runner";
+with "model_runner_framework";
 
 project Contract_Probe is
    for Languages use ("Ada");

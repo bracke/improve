@@ -6,7 +6,7 @@ with "messages";
 with "terminal_styles";
 with "project_tools";
 with "hostkit";
-with "model_runner";
+with "model_runner_framework";
 with "cryptolib";
 
 project Improve is
@@ -17,7 +17,7 @@ project Improve is
    Terminal_Styles_Root := external ("TERMINAL_STYLES_ALIRE_PREFIX", "../terminal_styles");
    Project_Tools_Root := external ("PROJECT_TOOLS_ALIRE_PREFIX", "../project_tools");
    Hostkit_Root := external ("HOSTKIT_ALIRE_PREFIX", "../hostkit");
-   Model_Runner_Root := external ("MODEL_RUNNER_ALIRE_PREFIX", "../model_runner");
+   Model_Runner_Root := external ("MODEL_RUNNER_FRAMEWORK_ALIRE_PREFIX", "../model_runner/framework");
    Cryptolib_Root := external ("CRYPTOLIB_ALIRE_PREFIX", "../cryptolib");
    I18n_Root := external ("I18N_ALIRE_PREFIX", "../i18n");
    Regexp_Root := external ("REGEXP_ALIRE_PREFIX", "../regexp");
@@ -74,7 +74,7 @@ project Improve is
          Project_Tools_Root & "/project_tools.gpr",
          Project_Tools_Root & "/config/project_tools_config.gpr",
          Hostkit_Root & "/hostkit.gpr", Hostkit_Root & "/config/hostkit_config.gpr",
-         Model_Runner_Root & "/model_runner.gpr", Model_Runner_Root & "/config/model_runner_config.gpr",
+         Model_Runner_Root & "/model_runner_framework.gpr",
          Cryptolib_Root & "/cryptolib.gpr", Cryptolib_Root & "/config/cryptolib_config.gpr",
          I18n_Root & "/i18n.gpr", I18n_Root & "/config/i18n_config.gpr",
          Regexp_Root & "/regexp.gpr", Regexp_Root & "/config/regexp_config.gpr",

@@ -12,7 +12,7 @@ workspace and their declared licenses are:
 | terminal_styles | 0.1.0-dev | `^0.1.0` | MIT |
 | project_tools | 0.1.0 | `^0.1.0` | MIT |
 | hostkit | 0.1.0-dev | `^0.1.0` | MIT |
-| model_runner | 0.1.0-dev | `^0.1.0` | MIT |
+| model_runner_framework | 0.1.0 | `^0.1.0` | MIT |
 | cryptolib | 0.1.0-dev | `^0.1.0` | MIT |
 
 `gnat_native =15.2.1` is the compiler toolchain dependency rather than an application library. Transitive dependency

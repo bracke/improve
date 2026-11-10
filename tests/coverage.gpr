@@ -6,7 +6,7 @@ with "messages";
 with "terminal_styles";
 with "project_tools";
 with "hostkit";
-with "model_runner";
+with "model_runner_framework";
 
 project Coverage is
    Coverage_Root := external ("IMPROVE_COVERAGE_ROOT", ".");
