@@ -35,6 +35,11 @@ procedure Improve_Coverage is
       return (if Aggregate = 0 then Text else Text (Text'First .. Aggregate - 1));
    end Per_File_Output;
 
+   function Is_Reviewed_Empty_Namespace
+     (Unit : Ada_Quality.Coverage.Production_Unit) return Boolean is
+     (To_String (Unit.Stem) = "improve-operations" and then
+      Length (Unit.Body_Path) = 0);
+
    procedure Fail (Message : String) is
    begin
       Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "coverage: " & Message);
@@ -107,10 +112,10 @@ begin
             if Run.Status /= 0 then Fail ("gcov failed for " & Object_Name); end if;
             Include (Unit.Body_Path);
             Include (Unit.Spec_Path);
-            --  GNAT emits a .gcno with "no functions found" for an empty
-            --  namespace specification. Bodies must always yield a source
-            --  record; a spec-only unit without one contributes 0/0 lines.
-            if not Has_Record and then Length (Unit.Body_Path) > 0 then
+            --  GNAT emits no source record for an empty namespace specification.
+            --  Keep this exception explicit so a new spec-only implementation
+            --  cannot silently disappear from the coverage denominator.
+            if not Has_Record and then not Is_Reviewed_Empty_Namespace (Unit) then
                Fail ("gcov output is incomplete for " & To_String (Unit.Stem));
             end if;
             Covered := Covered + Unit_Covered;

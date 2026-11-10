@@ -140,6 +140,25 @@ package body Improve.Tasks is
      (Plan  : Improve.Model.Plan_Revision;
       Views : View_Vectors.Vector) return Finding_Summary is
       Result : Finding_Summary;
+
+      function View_For (Task_Id : UString) return Task_View is
+         Match : Natural := 0;
+      begin
+         for Index in 1 .. Natural (Views.Length) loop
+            if Views (Index).Improve_Id = Task_Id then
+               if Match /= 0 then
+                  raise Improve.Data_Error with
+                    "duplicate task view " & To_String (Task_Id);
+               end if;
+               Match := Index;
+            end if;
+         end loop;
+         if Match = 0 then
+            raise Improve.Data_Error with
+              "missing task view " & To_String (Task_Id);
+         end if;
+         return Views (Match);
+      end View_For;
    begin
       for Finding of Plan.Findings loop
          declare
@@ -154,7 +173,7 @@ package body Improve.Tasks is
             for Index in 1 .. Natural (Plan.Tasks.Length) loop
                if Plan.Tasks (Index).Finding_Keys.Contains (Finding.Fingerprint) then
                   Linked := Linked + 1;
-                  declare View : constant Task_View := Views (Index); begin
+                  declare View : constant Task_View := View_For (Plan.Tasks (Index).Id); begin
                      Any_Current := Any_Current or else View.Verification_Current;
                      All_Verified := All_Verified and then
                        View.Verification_Current and then View.Quality = Improve.Model.Verified;

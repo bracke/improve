@@ -987,10 +987,22 @@ package body Improve.Storage is
      (Item     : in out Store;
       Task_Id  : String;
       Revision : Natural := 0) return Improve.Model.Plan_Revision is
-      Tx          : Database.Transactions.Transaction;
-      Revision_Id : Natural := 0;
+      Tx               : Database.Transactions.Transaction;
+      Revision_Id      : Natural := 0;
+      Revision_Numbers : String_Id_Maps.Map;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
+      if Revision /= 0 then
+         declare Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
+            while Entity_Tables.Has_Element (Revisions) loop
+               declare Row : constant Entity := Entity_Tables.Element (Revisions); begin
+                  Revision_Numbers.Insert
+                    (Number (Row.Id), Positive'Value (Field (S (Row.Payload), "revision")));
+               end;
+               Advance (Item, Tx, Revisions_Table, Revisions);
+            end loop;
+         end;
+      end if;
       declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
          while Entity_Tables.Has_Element (Tasks) loop
             declare
@@ -1000,20 +1012,10 @@ package body Improve.Storage is
                if Field_Or (Payload, "draft_id", "") = Task_Id then
                   if Revision = 0 then
                      Revision_Id := Natural'Max (Revision_Id, Task_Row.Parent_Id);
-                  else
-                     declare Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
-                        while Entity_Tables.Has_Element (Revisions) loop
-                           declare Row : constant Entity := Entity_Tables.Element (Revisions); begin
-                              if Row.Id = Task_Row.Parent_Id and then
-                                Positive'Value (Field (S (Row.Payload), "revision")) = Revision
-                              then
-                                 Revision_Id := Row.Id;
-                                 exit;
-                              end if;
-                           end;
-                           Advance (Item, Tx, Revisions_Table, Revisions);
-                        end loop;
-                     end;
+                  elsif Revision_Numbers.Contains (Number (Task_Row.Parent_Id)) and then
+                    Revision_Numbers.Element (Number (Task_Row.Parent_Id)) = Revision
+                  then
+                     Revision_Id := Task_Row.Parent_Id;
                   end if;
                end if;
             end;

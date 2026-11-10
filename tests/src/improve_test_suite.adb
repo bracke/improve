@@ -3306,6 +3306,37 @@ package body Improve_Test_Suite is
                   Assert (Views.First_Element.Status = Expected, "unexpected operational task status");
                end Check;
             begin
+               declare
+                  Joined     : Improve.Model.Plan_Revision := Plan;
+                  Unrelated  : Improve.Model.Task_Specification := Only;
+                  Evidence   : Improve.Storage.Verification_Vectors.Vector;
+                  Ordered    : Improve.Tasks.View_Vectors.Vector;
+                  Reordered  : Improve.Tasks.View_Vectors.Vector;
+                  Summary    : Improve.Tasks.Finding_Summary;
+               begin
+                  Unrelated.Id := To_Unbounded_String ("IMP-999999");
+                  Unrelated.Finding_Keys.Clear;
+                  Joined.Tasks.Clear;
+                  Joined.Tasks.Append (Only);
+                  Joined.Tasks.Append (Unrelated);
+                  Evidence.Append
+                    (Improve.Storage.Verification_Record'
+                       (Scope => Improve.Storage.Task_Evaluation, Task_Id => Only.Id,
+                        Plan_Revision => Joined.Revision,
+                        Contract_Fingerprint => To_Unbounded_String
+                          (Improve.Verification.Contract_Fingerprint (Only)),
+                        Assessment_Id => 2, Outcome => Improve.Model.Verified, Comparable => True,
+                        Explanation => To_Unbounded_String ("identity join")));
+                  Ordered := Improve.Tasks.Build
+                    (Joined, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence,
+                     Current_Assessment => 2);
+                  Reordered.Append (Ordered.Last_Element);
+                  Reordered.Append (Ordered.First_Element);
+                  Summary := Improve.Tasks.Findings (Joined, Reordered);
+                  Assert
+                    (Summary.Resolved = Natural (Only.Finding_Keys.Length),
+                     "finding aggregation used task/view position instead of task identity");
+               end;
                Plan.Tasks.Clear;
                Plan.Tasks.Append (Only);
                Check ("", Improve.Tasks.Proposed);
