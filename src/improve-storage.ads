@@ -272,4 +272,6 @@ private
    end record;
 
    overriding procedure Finalize (Item : in out Store);
+   --  Close an open database during scope finalization or exception unwinding.
+   --  @param Item Store whose owned database handle is released.
 end Improve.Storage;
