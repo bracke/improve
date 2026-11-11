@@ -66,7 +66,7 @@ package body Improve.Operations.Reconciliation is
                      Plan_Revision   => Plan.Revision));
             end loop;
             Improve.Storage.Open (State, State_Path, Writable => True);
-            Improve.Storage.Update_Publication_States (State, Updates);
+            Improve.Storage.Update_Publication_States (State, To_String (Plan.Plan_Id), Updates);
             Improve.Storage.Close (State);
          end;
       end if;

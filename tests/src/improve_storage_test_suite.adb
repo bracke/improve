@@ -27,6 +27,7 @@ package body Improve_Storage_Test_Suite is
       Path  : constant String := Root & "/state.db";
       Store : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;
+      Stored_Plan : Improve.Model.Plan_Revision;
 
       function Image (Value : Positive) return String is
         (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
@@ -80,6 +81,51 @@ package body Improve_Storage_Test_Suite is
            (Summaries.Length = 1 and then Summaries.First_Element.Revision = 4 and then
             Summaries.First_Element.Task_Count = 5,
             "indexed plan listing did not select the latest large revision");
+      end;
+      Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
+      declare
+         Mappings : Improve.Storage.Publication_Vectors.Vector;
+         Evidence : Improve.Storage.Verification_Vectors.Vector;
+         Limit_Rejected : Boolean := False;
+      begin
+         for Index in 1 .. 2 loop
+            Mappings.Append
+              (Improve.Storage.Publication_Record'
+                 (Improve_Task_Id => Stored_Plan.Tasks (Index).Id,
+                  Harness_Task_Id => To_Unbounded_String ("TASK-SCALE-" & Image (Index)),
+                  Origin          => To_Unbounded_String ("improve:scale:" & Image (Index)),
+                  Contract        => To_Unbounded_String ("contract-" & Image (Index)),
+                  State           => To_Unbounded_String ("candidate"),
+                  Plan_Revision   => Stored_Plan.Revision));
+            Evidence.Append
+              (Improve.Storage.Verification_Record'
+                 (Scope                => Improve.Storage.Task_Evaluation,
+                  Task_Id              => Stored_Plan.Tasks (Index).Id,
+                  Plan_Revision        => Stored_Plan.Revision,
+                  Contract_Fingerprint => To_Unbounded_String ("verification-" & Image (Index)),
+                  Assessment_Id        => 1,
+                  Outcome              => Improve.Model.Still_Failing,
+                  Comparable           => True,
+                  Explanation          => To_Unbounded_String ("indexed evidence")));
+         end loop;
+         Improve.Storage.Record_Publications (Store, To_String (Stored_Plan.Plan_Id), Mappings);
+         Improve.Storage.Record_Verification (Store, To_String (Stored_Plan.Plan_Id), Evidence);
+         Assert
+           (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
+            Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
+            "indexed publication or verification history was not plan-scoped");
+         begin
+            declare
+               Values : constant Improve.Storage.Publication_Vectors.Vector :=
+                 Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id), Maximum => 1);
+               pragma Unreferenced (Values);
+            begin
+               null;
+            end;
+         exception
+            when Improve.Data_Error => Limit_Rejected := True;
+         end;
+         Assert (Limit_Rejected, "indexed publication reads ignored their materialization limit");
       end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);

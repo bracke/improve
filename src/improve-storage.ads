@@ -10,7 +10,7 @@ with Improve.Model;
 package Improve.Storage is
    --  Improve-owned transactional persistence for immutable plans and append-only evidence.
 
-   Current_Schema_Version : constant Positive := 2;
+   Current_Schema_Version : constant Positive := 3;
    --  Supported Improve state schema version.
 
    type Store is limited private;
@@ -193,10 +193,12 @@ package Improve.Storage is
 
    procedure Update_Publication_States
      (Item   : in out Store;
+      Plan_Id : String;
       Values : Publication_Vectors.Vector);
    --  Update only the cached harness-owned runtime state after validating
    --  that task identity, harness identity, and origin still match.
    --  @param Item Writable store.
+   --  @param Plan_Id Owning plan identity.
    --  @param Values Reconciled mappings and states.
 
    procedure Record_Verification
@@ -274,6 +276,7 @@ private
       Next_Ids : Id_Array := [others => 0];
       Opened   : Boolean := False;
       Writable : Boolean := False;
+      Schema_Version : Natural := 0;
    end record;
 
    overriding procedure Finalize (Item : in out Store);

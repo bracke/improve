@@ -381,6 +381,48 @@ package body Improve.Storage is
       return First;
    end Reserve_Ids;
 
+   procedure Migrate_To_Version_3
+     (Item     : in out Store;
+      Metadata : in out Entity) is
+      package Entity_Vectors is new Ada.Containers.Vectors (Positive, Entity);
+      Tx      : Database.Transactions.Transaction;
+      Pending : Entity_Vectors.Vector;
+
+      procedure Backfill_Parents (Table : Positive) is
+         Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Table);
+      begin
+         Pending.Clear;
+         while Entity_Tables.Has_Element (Cursor) loop
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               if Row.Parent_Id = 0 then Pending.Append (Row); end if;
+            end;
+            Advance (Item, Tx, Table, Cursor);
+         end loop;
+         for Row of Pending loop
+            declare Updated : Entity := Row; begin
+               Updated.Parent_Id := Plan_Row_Id (Field (S (Row.Payload), "plan_id"));
+               Check
+                 (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Table), Updated),
+                  "backfill indexed plan relationship");
+            end;
+         end loop;
+      end Backfill_Parents;
+   begin
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      Backfill_Parents (Publications_Table);
+      Backfill_Parents (Verifications_Table);
+      Metadata.State := WW (Number (Current_Schema_Version));
+      Metadata.Payload := WW ("created_by=improve" & LF & "logical_tables=" & Logical_Table_List);
+      Check
+        (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
+         "migrate Improve schema metadata");
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Migrate_To_Version_3;
+
    procedure Open (Item : in out Store; Path : String; Writable : Boolean) is
       Exists : constant Boolean := Ada.Directories.Exists (Path);
    begin
@@ -397,6 +439,7 @@ package body Improve.Storage is
       end if;
       Item.Opened := True;
       Item.Writable := Writable;
+      Item.Schema_Version := 0;
       Item.Next_Ids := [others => 0];
       Item.Schemas (1) := New_Schema ("improve_records");
       if Writable then Check (Entity_Tables.Register (Item.DB, Item.Schemas (1)), "register Improve table"); end if;
@@ -421,20 +464,22 @@ package body Improve.Storage is
                    Schema_Metadata_Table)),
                "initialize schema metadata");
             Database.Transactions.Commit (Tx);
+            Item.Schema_Version := Current_Schema_Version;
          elsif not Database.Status.Is_Ok (Status) then
             raise Data_Error with "Improve schema metadata is missing or unreadable";
-         elsif S (Metadata.State) = "1" then
-            if Writable then
-               Metadata.State := WW (Number (Current_Schema_Version));
-               Metadata.Payload := WW ("created_by=improve" & LF & "logical_tables=" & Logical_Table_List);
-               Database.Transactions.Begin_Write (Item.DB, Tx);
-               Check
-                 (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
-                  "migrate Improve schema metadata");
-               Database.Transactions.Commit (Tx);
+         else
+            begin
+               Item.Schema_Version := Natural'Value (S (Metadata.State));
+            exception
+               when Constraint_Error =>
+                  raise Data_Error with "unsupported Improve schema version " & S (Metadata.State);
+            end;
+            if Item.Schema_Version not in 1 .. Current_Schema_Version then
+               raise Data_Error with "unsupported Improve schema version " & S (Metadata.State);
+            elsif Item.Schema_Version < Current_Schema_Version and then Writable then
+               Migrate_To_Version_3 (Item, Metadata);
+               Item.Schema_Version := Current_Schema_Version;
             end if;
-         elsif S (Metadata.State) /= Number (Current_Schema_Version) then
-            raise Data_Error with "unsupported Improve schema version " & S (Metadata.State);
          end if;
       end;
    exception
@@ -449,6 +494,7 @@ package body Improve.Storage is
       if Item.Opened then Database.Close (Item.DB); end if;
       Item.Opened := False;
       Item.Writable := False;
+      Item.Schema_Version := 0;
       Item.Next_Ids := [others => 0];
    end Close;
 
@@ -1194,7 +1240,7 @@ package body Improve.Storage is
          raise Data_Error with "Improve state is not open for publication recording";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare
                Row     : constant Entity := Entity_Tables.Element (Cursor);
@@ -1205,7 +1251,7 @@ package body Improve.Storage is
                   To_Unbounded_String
                     (Field (Payload, "harness_id") & Character'Val (0) & Field (Payload, "origin")));
             end;
-            Advance (Item, Tx, Publications_Table, Cursor);
+            Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
          end loop;
       end;
       for Value of Values loop
@@ -1283,20 +1329,21 @@ package body Improve.Storage is
                Advance_Children (Item, Tx, Publications_Table, Parent, Cursor);
             end loop;
          end;
-         --  Older rows have no physical parent. New writes use the indexed relationship.
-         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare
-                  Row : constant Entity := Entity_Tables.Element (Cursor);
-                  Payload : constant String := S (Row.Payload);
-               begin
-                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
-                     Append_Row (Row);
-                  end if;
-               end;
-               Advance (Item, Tx, Publications_Table, Cursor);
-            end loop;
-         end;
+         if Item.Schema_Version < 3 then
+            declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+               while Entity_Tables.Has_Element (Cursor) loop
+                  declare
+                     Row : constant Entity := Entity_Tables.Element (Cursor);
+                     Payload : constant String := S (Row.Payload);
+                  begin
+                     if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
+                        Append_Row (Row);
+                     end if;
+                  end;
+                  Advance (Item, Tx, Publications_Table, Cursor);
+               end loop;
+            end;
+         end if;
       end if;
       Database.Transactions.Rollback (Tx);
       return Result;
@@ -1308,9 +1355,11 @@ package body Improve.Storage is
 
    procedure Update_Publication_States
      (Item   : in out Store;
+      Plan_Id : String;
       Values : Publication_Vectors.Vector) is
       Tx : Database.Transactions.Transaction;
       Rows : String_Id_Maps.Map;
+      Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
 
       function Mapping_Key (Task_Id, Contract : String) return String is
         (Task_Id & Character'Val (0) & Contract);
@@ -1319,7 +1368,7 @@ package body Improve.Storage is
          raise Data_Error with "Improve state is not open for publication reconciliation";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Publications_Table); begin
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare
                Row     : constant Entity := Entity_Tables.Element (Cursor);
@@ -1328,7 +1377,7 @@ package body Improve.Storage is
                Rows.Include
                  (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")), Row.Id);
             end;
-            Advance (Item, Tx, Publications_Table, Cursor);
+            Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
          end loop;
       end;
       for Value of Values loop
@@ -1398,7 +1447,7 @@ package body Improve.Storage is
          raise Data_Error with "Improve state is not open for verification recording";
       end if;
       Database.Transactions.Begin_Write (Item.DB, Tx);
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Plan_Row); begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare
                Row     : constant Entity := Entity_Tables.Element (Cursor);
@@ -1413,7 +1462,7 @@ package body Improve.Storage is
                        (S (Row.State), Field_Or (Payload, "scope", "task"),
                         Field (Payload, "comparable"), Field (Payload, "explanation"))));
             end;
-            Advance (Item, Tx, Verifications_Table, Cursor);
+            Advance_Children (Item, Tx, Verifications_Table, Plan_Row, Cursor);
          end loop;
       end;
       for Value of Values loop
@@ -1529,19 +1578,21 @@ package body Improve.Storage is
                Advance_Children (Item, Tx, Verifications_Table, Parent, Cursor);
             end loop;
          end;
-         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare
-                  Row : constant Entity := Entity_Tables.Element (Cursor);
-                  Payload : constant String := S (Row.Payload);
-               begin
-                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
-                     Append_Row (Row);
-                  end if;
-               end;
-               Advance (Item, Tx, Verifications_Table, Cursor);
-            end loop;
-         end;
+         if Item.Schema_Version < 3 then
+            declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
+               while Entity_Tables.Has_Element (Cursor) loop
+                  declare
+                     Row : constant Entity := Entity_Tables.Element (Cursor);
+                     Payload : constant String := S (Row.Payload);
+                  begin
+                     if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
+                        Append_Row (Row);
+                     end if;
+                  end;
+                  Advance (Item, Tx, Verifications_Table, Cursor);
+               end loop;
+            end;
+         end if;
       end if;
       Database.Transactions.Rollback (Tx);
       return Result;

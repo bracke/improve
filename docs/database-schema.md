@@ -1,6 +1,6 @@
 # Improve state schema
 
-Improve owns schema version 2 of its state database. It uses the existing `database` crate and its typed rows,
+Improve owns schema version 3 of its state database. It uses the existing `database` crate and its typed rows,
 transactions, write-ahead recovery, process locking, and read-only open mode. Ada Quality and model runner state are
 never stored here.
 
@@ -25,7 +25,7 @@ The schema has thirteen append-oriented logical namespaces:
 | `task_details` | Normalized large execution-contract fields owned by remediation tasks |
 
 The current database library keeps its catalog on one page. Thirteen separately registered physical tables exceed that
-catalog capacity, so schema version 2 represents the namespaces in one typed `improve_records` table. Every
+catalog capacity, so the schema represents the namespaces in one typed `improve_records` table. Every
 row carries a `table_id`, logical identity, parent identity, kind, state, payload, and active flag. Its primary key is a
 checked composite of namespace and logical identity. The schema metadata row records all thirteen stable namespace names.
 This is a physical layout choice; the storage API enforces namespace isolation and logical foreign-key invariants.
@@ -57,8 +57,10 @@ project records retain the immutable plan fingerprint. Thus two revisions can be
 without conflicting, while an identical evaluation remains idempotent.
 
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
-perform recovery. Writable open initializes a missing version-2 database and upgrades version-1 metadata before writing;
-read-only access remains compatible with version 1. Missing or unknown schema metadata is rejected rather than guessed.
+perform recovery. Writable open initializes a missing version-3 database and upgrades version-1 or version-2 state
+before writing. The version-3 migration backfills indexed plan parents for publication and verification records so
+normal plan-scoped access does not scan their complete history. Read-only access remains compatible with older state
+without migrating it. Missing or unknown schema metadata is rejected rather than guessed.
 
 Verification evidence is append-only by evaluation scope and completed assessment. Task, complete-plan, and
 complete-project records use distinct identities. Repeating an evaluation at the same scope is idempotent; a
