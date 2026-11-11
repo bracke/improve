@@ -69,12 +69,14 @@ package Improve.Tasks is
      (Plan          : Improve.Model.Plan_Revision;
       Publications  : Improve.Storage.Publication_Vectors.Vector;
       Verifications : Improve.Storage.Verification_Vectors.Vector;
-      Current_Assessment : Natural := 0) return View_Vectors.Vector;
+      Current_Assessment : Natural := 0;
+      Maximum_Items : Positive := Positive'Last) return View_Vectors.Vector;
    --  Build one stable view per task in plan order.
    --  @param Plan Immutable plan revision.
    --  @param Publications Publication mappings for the plan.
    --  @param Verifications Historical verification evidence.
    --  @param Current_Assessment Latest applicable completed assessment, or zero when unknown.
+   --  @param Maximum_Items Maximum views to materialize.
    --  @return Joined task views.
 
    procedure Sort (Values : in out View_Vectors.Vector);

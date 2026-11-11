@@ -2,6 +2,7 @@ with Improve.Verification;
 
 package body Improve.Tasks is
    use Ada.Strings.Unbounded;
+   use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Storage.Verification_Scope;
 
@@ -57,11 +58,15 @@ package body Improve.Tasks is
      (Plan          : Improve.Model.Plan_Revision;
       Publications  : Improve.Storage.Publication_Vectors.Vector;
       Verifications : Improve.Storage.Verification_Vectors.Vector;
-      Current_Assessment : Natural := 0) return View_Vectors.Vector is
+      Current_Assessment : Natural := 0;
+      Maximum_Items : Positive := Positive'Last) return View_Vectors.Vector is
       Result : View_Vectors.Vector;
       Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
    begin
+      if Plan.Tasks.Length > Ada.Containers.Count_Type (Maximum_Items) then
+         raise Improve.Data_Error with "task view exceeds configured item limit";
+      end if;
       for Spec of Plan.Tasks loop
          declare
             View       : Task_View;

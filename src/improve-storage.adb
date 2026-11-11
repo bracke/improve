@@ -19,6 +19,7 @@ with Interfaces;
 package body Improve.Storage is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
+   use type Ada.Containers.Count_Type;
    use type Database.Status_Code;
    use type Database.Predicates.Predicate;
 
@@ -1242,13 +1243,18 @@ package body Improve.Storage is
    end Record_Publications;
 
    function Publications
-     (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector is
+     (Item       : in out Store;
+      Plan_Id    : String := "";
+      Maximum    : Positive := Positive'Last) return Publication_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Publication_Vectors.Vector;
 
       procedure Append_Row (Row : Entity) is
          Payload : constant String := S (Row.Payload);
       begin
+         if Result.Length >= Ada.Containers.Count_Type (Maximum) then
+            raise Data_Error with "publication query exceeds configured item limit";
+         end if;
          Result.Append
            (Publication_Record'
               (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
@@ -1475,7 +1481,8 @@ package body Improve.Storage is
    function Verifications
      (Item    : in out Store;
       Plan_Id : String := "";
-      Task_Id : String := "") return Verification_Vectors.Vector is
+      Task_Id : String := "";
+      Maximum : Positive := Positive'Last) return Verification_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Verification_Vectors.Vector;
 
@@ -1486,6 +1493,9 @@ package body Improve.Storage is
            (if Scope = Task_Evaluation then Field_Or (Payload, "task_id", S (Row.Kind)) else "");
       begin
          if Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id) then
+            if Result.Length >= Ada.Containers.Count_Type (Maximum) then
+               raise Data_Error with "verification query exceeds configured item limit";
+            end if;
             Result.Append
               (Verification_Record'
                  (Scope         => Scope,

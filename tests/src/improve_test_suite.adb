@@ -20,6 +20,7 @@ with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
+with Improve.Operations.Inspection;
 with Improve.Planner;
 with Improve.Presentation;
 with Improve.Refinement;

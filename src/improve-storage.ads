@@ -182,10 +182,13 @@ package Improve.Storage is
    --  @param Values Verified mappings.
 
    function Publications
-     (Item : in out Store; Plan_Id : String := "") return Publication_Vectors.Vector;
+     (Item       : in out Store;
+      Plan_Id    : String := "";
+      Maximum    : Positive := Positive'Last) return Publication_Vectors.Vector;
    --  Read publication mappings, optionally for one plan.
    --  @param Item Open store.
    --  @param Plan_Id Plan identity or empty for every plan.
+   --  @param Maximum Maximum mappings to materialize.
    --  @return Publication mappings.
 
    procedure Update_Publication_States
@@ -209,12 +212,14 @@ package Improve.Storage is
    function Verifications
      (Item    : in out Store;
       Plan_Id : String := "";
-      Task_Id : String := "") return Verification_Vectors.Vector;
+      Task_Id : String := "";
+      Maximum : Positive := Positive'Last) return Verification_Vectors.Vector;
    --  Read historical evidence in insertion order, optionally filtered by
    --  plan and Improve task identity.
    --  @param Item Open store.
    --  @param Plan_Id Plan identity or empty for every plan.
    --  @param Task_Id Task identity or empty for every task.
+   --  @param Maximum Maximum evidence records to materialize.
    --  @return Historical verification records.
 
    procedure Approve

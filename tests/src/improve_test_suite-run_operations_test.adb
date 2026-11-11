@@ -537,8 +537,37 @@ begin
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Result  : Improve.CLI.Outcome;
                Commands : Improve.Model.UString_Vectors.Vector;
+               Tasks_Limited  : Boolean := False;
+               Status_Limited : Boolean := False;
             begin
                Assert (Planned.Exit_Code = 0, "terminal-path fixture planning failed");
+               begin
+                  declare
+                     Views : constant Improve.Tasks.View_Vectors.Vector :=
+                       Improve.Operations.Inspection.Tasks
+                         (State, To_String (Data.Database), Id_Image (Data.Project), "", 0, "all", 1);
+                     pragma Unreferenced (Views);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Tasks_Limited := True;
+               end;
+               begin
+                  declare
+                     Values : constant Improve.Tasks.Status_Vectors.Vector :=
+                       Improve.Operations.Inspection.Status
+                         (State, To_String (Data.Database), Id_Image (Data.Project), False, 1);
+                     pragma Unreferenced (Values);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Status_Limited := True;
+               end;
+               Assert
+                 (Tasks_Limited and then Status_Limited,
+                  "inspection limits did not reject oversized task materialization");
                Initialize_Harness (To_String (Data.Target));
                Commands.Append
                  (To_Unbounded_String
