@@ -14,6 +14,7 @@ with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
 with Improve_CLI_Test_Suite;
+with Improve_Planning_Test_Suite;
 with Improve_Source_Test_Suite;
 with Improve_Storage_Test_Suite;
 with Improve_Tasks_Test_Suite;
@@ -22,6 +23,7 @@ with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
 with Improve.Operations.Inspection;
+with Improve.Operations.Planning;
 with Improve.Planner;
 with Improve.Presentation;
 with Improve.Refinement;
@@ -1182,6 +1184,36 @@ package body Improve_Test_Suite is
                        """dry_run"":true") > 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output),
                        "Investigate missing coverage evidence") > 0,
                        "plan JSON dry-run failed: " & To_String (Result.Errors));
+               for Level in Improve.Config.Severity_Level loop
+                  declare
+                     Settings : Improve.Config.Settings := Improve.Config.Defaults;
+                     Planned  : Improve.Operations.Planning.Generation_Result;
+                  begin
+                     Settings.Minimum_Severity := Level;
+                     Planned := Improve.Operations.Planning.Generate
+                       (To_String (Data.Directory) & "/unused.db", To_String (Data.Database),
+                        Id_Image (Data.Project), 0, Settings, Dry_Run => True);
+                     Assert (Planned.Plan.Baseline.Run_Id = Data.Run, "severity-specific planning changed the run");
+                  end;
+               end loop;
+               declare
+                  Rejected : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Planned : constant Improve.Operations.Planning.Generation_Result :=
+                          Improve.Operations.Planning.Generate
+                            (To_String (Data.Directory), To_String (Data.Database), Id_Image (Data.Project), 0,
+                             Improve.Config.Defaults, Dry_Run => False);
+                        pragma Unreferenced (Planned);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Dependency_Error | Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "planning accepted a directory as its state database");
+               end;
                Remove (Data);
             end;
          when Persistent_Plan_Roundtrip =>
@@ -1573,6 +1605,7 @@ package body Improve_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
+      Result.Add_Test (Improve_Planning_Test_Suite.Suite);
       Result.Add_Test (Improve_Source_Test_Suite.Suite);
       Result.Add_Test (Improve_Storage_Test_Suite.Suite);
       Result.Add_Test (Improve_Tasks_Test_Suite.Suite);

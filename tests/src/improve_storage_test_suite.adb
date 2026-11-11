@@ -1,10 +1,20 @@
 with Ada.Directories;
 with Ada.Containers;
 with Ada.Strings.Fixed;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
+with Ada.Strings.Wide_Wide_Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Database;
+with Database.Rows;
+with Database.Schema;
+with Database.Status;
+with Database.Tables;
+with Database.Transactions;
+with Database.Types;
+with Database.Values;
 with Improve;
 with Improve.Model;
 with Improve.Storage;
@@ -12,8 +22,107 @@ with Project_Tools.Files;
 
 package body Improve_Storage_Test_Suite is
    use Ada.Strings.Unbounded;
+   use Ada.Strings.Wide_Wide_Unbounded;
    use AUnit.Assertions;
    use type Ada.Containers.Count_Type;
+   use type Database.Status_Code;
+
+   type Raw_Entity is record
+      Id        : Positive;
+      Parent_Id : Natural := 0;
+      Kind      : Unbounded_Wide_Wide_String;
+      State     : Unbounded_Wide_Wide_String;
+      Payload   : Unbounded_Wide_Wide_String;
+      Active    : Boolean := True;
+      Table_Id  : Positive := 1;
+   end record;
+
+   function Physical_Key (Table, Id : Positive) return Positive is
+     ((Table - 1) * 100_000_000 + Id);
+
+   function To_Row (Value : Raw_Entity) return Database.Rows.Row is
+      Result : Database.Rows.Row;
+   begin
+      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Physical_Key (Value.Table_Id, Value.Id))));
+      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Table_Id)));
+      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Id)));
+      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Parent_Id)));
+      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Kind)));
+      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.State)));
+      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Payload)));
+      Database.Rows.Append (Result, Database.Values.From_Boolean (Value.Active));
+      return Result;
+   end To_Row;
+
+   function From_Row (Row : Database.Rows.Row) return Raw_Entity is
+     ((Id        => Positive (Database.Rows.Get (Row, 2).Int),
+       Parent_Id => Natural (Database.Rows.Get (Row, 3).Int),
+       Kind      => Database.Rows.Get (Row, 4).Text,
+       State     => Database.Rows.Get (Row, 5).Text,
+       Payload   => Database.Rows.Get (Row, 6).Text,
+       Active    => Database.Rows.Get (Row, 7).Bool,
+       Table_Id  => Positive (Database.Rows.Get (Row, 1).Int)));
+
+   function Key_Of (Value : Raw_Entity) return Positive is (Physical_Key (Value.Table_Id, Value.Id));
+   function Key_Value (Key : Positive) return Database.Values.Value is
+     (Database.Values.From_Integer (Integer (Key)));
+
+   package Raw_Tables is new Database.Tables.Typed
+     (Raw_Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
+
+   function Raw_Schema return Database.Schema.Table_Schema is
+      Result : Database.Schema.Table_Schema;
+   begin
+      Result.Name := To_Unbounded_Wide_Wide_String ("improve_records");
+      Database.Schema.Add_Column (Result, "physical_id", Database.Types.Integer_Value, False, True);
+      Database.Schema.Add_Column (Result, "table_id", Database.Types.Integer_Value, False);
+      Database.Schema.Add_Column (Result, "id", Database.Types.Integer_Value, False);
+      Database.Schema.Add_Column (Result, "parent_id", Database.Types.Integer_Value, False);
+      Database.Schema.Add_Column (Result, "kind", Database.Types.Text_Value, False);
+      Database.Schema.Add_Column (Result, "state", Database.Types.Text_Value, False);
+      Database.Schema.Add_Column (Result, "payload", Database.Types.Text_Value, False);
+      Database.Schema.Add_Column (Result, "active", Database.Types.Boolean_Value, False);
+      return Result;
+   end Raw_Schema;
+
+   procedure Downgrade_To_Version_2 (Path : String) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Raw_Entity;
+      Status : Database.Status.Result;
+
+      procedure Clear_Parent (Table, Id : Positive) is
+      begin
+         Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Id), Row);
+         Assert (Status.Code = Database.Status.Ok, "legacy row is missing");
+         Row.Parent_Id := 0;
+         Assert
+           (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+            "legacy parent could not be cleared");
+      end Clear_Parent;
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be reopened for migration fixture");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (1, 1), Row);
+      Assert (Status.Code = Database.Status.Ok, "schema metadata is missing");
+      Row.State := To_Unbounded_Wide_Wide_String ("2");
+      Assert
+        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "schema metadata could not be downgraded");
+      for Id in 1 .. 2 loop
+         Clear_Parent (10, Id);
+         Clear_Parent (11, Id);
+      end loop;
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Downgrade_To_Version_2;
 
    type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
@@ -127,6 +236,13 @@ package body Improve_Storage_Test_Suite is
          end;
          Assert (Limit_Rejected, "indexed publication reads ignored their materialization limit");
       end;
+      Improve.Storage.Close (Store);
+      Downgrade_To_Version_2 (Path);
+      Improve.Storage.Open (Store, Path, Writable => True);
+      Assert
+        (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
+         Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
+         "schema migration did not preserve indexed plan history");
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);
    exception
