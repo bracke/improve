@@ -16,6 +16,7 @@ with Improve.CLI;
 with Improve_CLI_Test_Suite;
 with Improve_Source_Test_Suite;
 with Improve_Storage_Test_Suite;
+with Improve_Tasks_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
@@ -30,7 +31,6 @@ with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
-with Improve.Verification;
 with Improve.Workflow;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Configuration_Records;
@@ -53,7 +53,6 @@ package body Improve_Test_Suite is
    use type Improve.Refinement.Refinement_Status;
    use type Improve.Refinement.Source_State;
    use type Improve.Storage.Verification_Scope;
-   use type Improve.Tasks.Operational_Status;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
 
@@ -88,7 +87,7 @@ package body Improve_Test_Suite is
       Recovery_Rejects_Stale_Uncommitted,
       Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision,
       Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
-      Operational_Terminal_Paths, Task_Status_Matrix, Real_End_To_End_Workflow);
+      Operational_Terminal_Paths, Real_End_To_End_Workflow);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -1564,7 +1563,7 @@ package body Improve_Test_Suite is
               Status_Verification_Freshness | Status_All_Mixed_Freshness | Interrupted_Publication_Recovery |
               Recovery_Rejects_Stale_Uncommitted | Published_Task_Reused_Across_Revisions |
               Recovery_Uses_Exact_Revision | Recovery_Limit_Enforced | Recover_Missing_State |
-              Configuration_Bounds | Operational_Terminal_Paths | Task_Status_Matrix |
+              Configuration_Bounds | Operational_Terminal_Paths |
               Real_End_To_End_Workflow =>
             Run_Operations_Test (Item);
       end case;
@@ -1576,6 +1575,7 @@ package body Improve_Test_Suite is
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
       Result.Add_Test (Improve_Source_Test_Suite.Suite);
       Result.Add_Test (Improve_Storage_Test_Suite.Suite);
+      Result.Add_Test (Improve_Tasks_Test_Suite.Suite);
       for Id in Test_Id loop
          declare
             Item : constant Case_Access := new Case_Test (Id);
