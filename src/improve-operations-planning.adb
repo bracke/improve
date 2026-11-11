@@ -79,7 +79,8 @@ package body Improve.Operations.Planning is
    function List
      (State_Path       : String;
       Quality_Path     : String;
-      Project_Selector : String) return Improve.Storage.Summary_Vectors.Vector is
+      Project_Selector : String;
+      Maximum_Items    : Positive := Positive'Last) return Improve.Storage.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
@@ -91,7 +92,8 @@ package body Improve.Operations.Planning is
          Improve.Source.Close (Quality);
          Improve.Storage.Open (State, State_Path, Writable => False);
          declare
-            Values : constant Improve.Storage.Summary_Vectors.Vector := Improve.Storage.List (State, Project);
+            Values : constant Improve.Storage.Summary_Vectors.Vector :=
+              Improve.Storage.List (State, Project, Maximum_Items);
          begin
             Improve.Storage.Close (State);
             return Values;

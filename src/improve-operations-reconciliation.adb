@@ -1,6 +1,5 @@
 with Ada.Strings.Unbounded;
 with Improve.Model;
-with Improve.Operations.Inspection;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Workflow;
@@ -28,7 +27,7 @@ package body Improve.Operations.Reconciliation is
             begin
                if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
                Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
-               Improve.Operations.Inspection.Require_Project_Identity (Plan.Project, Project);
+               Improve.Operations.Require_Project_Identity (Plan.Project, Project);
                Publications := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
             end;
             Improve.Storage.Close (State);

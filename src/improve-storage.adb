@@ -39,6 +39,7 @@ package body Improve.Storage is
    Verifications_Table       : constant Positive := 11;
    Operations_Table          : constant Positive := 12;
    Task_Details_Table        : constant Positive := 13;
+   Task_Identities_Table     : constant Positive := 14;
 
    Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
      [new Wide_Wide_String'("schema_metadata"), new Wide_Wide_String'("projects"),
@@ -47,7 +48,7 @@ package body Improve.Storage is
       new Wide_Wide_String'("remediation_tasks"), new Wide_Wide_String'("task_finding_links"),
       new Wide_Wide_String'("task_dependencies"), new Wide_Wide_String'("publications"),
       new Wide_Wide_String'("verification_records"), new Wide_Wide_String'("operations"),
-      new Wide_Wide_String'("task_details")];
+      new Wide_Wide_String'("task_details"), new Wide_Wide_String'("task_identities")];
 
    function Decode (Text : Wide_Wide_String) return String;
 
@@ -349,6 +350,72 @@ package body Improve.Storage is
          "advance child record scan");
    end Advance_Children;
 
+   function Kind_Predicate (Table : Positive; Kind : String) return Database.Predicates.Predicate is
+     (Database.Predicates.Column_Equals
+        (1, Database.Values.From_Integer (Integer (Table))) and
+      Database.Predicates.Column_Equals
+        (4, Database.Values.From_Text (Encode (Kind))));
+
+   function Scan_Kind
+     (Item  : in out Store;
+      Tx    : in out Database.Transactions.Transaction;
+      Table : Positive;
+      Kind  : String) return Entity_Tables.Cursor is
+      Cursor : Entity_Tables.Cursor;
+   begin
+      Check
+        (Entity_Tables.Scan
+           (Tx, Item.DB, Item.Schemas (Table), Kind_Predicate (Table, Kind), Cursor),
+         "scan records by kind");
+      return Cursor;
+   end Scan_Kind;
+
+   procedure Advance_Kind
+     (Item   : in out Store;
+      Tx     : in out Database.Transactions.Transaction;
+      Table  : Positive;
+      Kind   : String;
+      Cursor : in out Entity_Tables.Cursor) is
+   begin
+      Check
+        (Entity_Tables.Next
+           (Tx, Item.DB, Item.Schemas (Table), Kind_Predicate (Table, Kind), Cursor),
+         "advance kind record scan");
+   end Advance_Kind;
+
+   function State_Predicate (Table : Positive; State : String) return Database.Predicates.Predicate is
+     (Database.Predicates.Column_Equals
+        (1, Database.Values.From_Integer (Integer (Table))) and
+      Database.Predicates.Column_Equals
+        (5, Database.Values.From_Text (Encode (State))));
+
+   function Scan_State
+     (Item  : in out Store;
+      Tx    : in out Database.Transactions.Transaction;
+      Table : Positive;
+      State : String) return Entity_Tables.Cursor is
+      Cursor : Entity_Tables.Cursor;
+   begin
+      Check
+        (Entity_Tables.Scan
+           (Tx, Item.DB, Item.Schemas (Table), State_Predicate (Table, State), Cursor),
+         "scan records by state");
+      return Cursor;
+   end Scan_State;
+
+   procedure Advance_State
+     (Item   : in out Store;
+      Tx     : in out Database.Transactions.Transaction;
+      Table  : Positive;
+      State  : String;
+      Cursor : in out Entity_Tables.Cursor) is
+   begin
+      Check
+        (Entity_Tables.Next
+           (Tx, Item.DB, Item.Schemas (Table), State_Predicate (Table, State), Cursor),
+         "advance state record scan");
+   end Advance_State;
+
    function Next_Id
      (Item : in out Store; Tx : in out Database.Transactions.Transaction; Table : Positive) return Positive is
       Result : Positive;
@@ -411,7 +478,7 @@ package body Improve.Storage is
       Database.Transactions.Begin_Write (Item.DB, Tx);
       Backfill_Parents (Publications_Table);
       Backfill_Parents (Verifications_Table);
-      Metadata.State := WW (Number (Current_Schema_Version));
+      Metadata.State := WW ("3");
       Metadata.Payload := WW ("created_by=improve" & LF & "logical_tables=" & Logical_Table_List);
       Check
         (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
@@ -422,6 +489,44 @@ package body Improve.Storage is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
    end Migrate_To_Version_3;
+
+   procedure Migrate_To_Version_4
+     (Item     : in out Store;
+      Metadata : in out Entity) is
+      Tx : Database.Transactions.Transaction;
+   begin
+      Database.Transactions.Begin_Write (Item.DB, Tx);
+      declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
+         while Entity_Tables.Has_Element (Tasks) loop
+            declare
+               Row     : constant Entity := Entity_Tables.Element (Tasks);
+               Payload : constant String := S (Row.Payload);
+               Task_Id : constant String := Field_Or (Payload, "draft_id", "");
+            begin
+               if Task_Id /= "" then
+                  Check
+                    (Entity_Tables.Insert
+                       (Tx, Item.DB, Item.Schemas (Task_Identities_Table),
+                        (Next_Id (Item, Tx, Task_Identities_Table), Row.Parent_Id,
+                         WW (Task_Id), WW ("active"), WW (Pair ("task_row", Number (Row.Id))),
+                         True, Task_Identities_Table)),
+                     "backfill task identity");
+               end if;
+            end;
+            Advance (Item, Tx, Tasks_Table, Tasks);
+         end loop;
+      end;
+      Metadata.State := WW ("4");
+      Metadata.Payload := WW ("created_by=improve" & LF & "logical_tables=" & Logical_Table_List);
+      Check
+        (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
+         "migrate task identity index");
+      Database.Transactions.Commit (Tx);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise;
+   end Migrate_To_Version_4;
 
    procedure Open (Item : in out Store; Path : String; Writable : Boolean) is
       Exists : constant Boolean := Ada.Directories.Exists (Path);
@@ -476,9 +581,13 @@ package body Improve.Storage is
             end;
             if Item.Schema_Version not in 1 .. Current_Schema_Version then
                raise Data_Error with "unsupported Improve schema version " & S (Metadata.State);
-            elsif Item.Schema_Version < Current_Schema_Version and then Writable then
+            elsif Item.Schema_Version < 3 and then Writable then
                Migrate_To_Version_3 (Item, Metadata);
-               Item.Schema_Version := Current_Schema_Version;
+               Item.Schema_Version := 3;
+            end if;
+            if Item.Schema_Version < 4 and then Writable then
+               Migrate_To_Version_4 (Item, Metadata);
+               Item.Schema_Version := 4;
             end if;
          end if;
       end;
@@ -544,15 +653,9 @@ package body Improve.Storage is
 
    function Find_Revision
      (Item : in out Store; Tx : in out Database.Transactions.Transaction; Fingerprint : String) return Natural is
-      Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+      Cursor : constant Entity_Tables.Cursor := Scan_Kind (Item, Tx, Revisions_Table, Fingerprint);
    begin
-      while Entity_Tables.Has_Element (Cursor) loop
-         if S (Entity_Tables.Element (Cursor).Kind) = Fingerprint then
-            return Entity_Tables.Element (Cursor).Id;
-         end if;
-         Advance (Item, Tx, Revisions_Table, Cursor);
-      end loop;
-      return 0;
+      return (if Entity_Tables.Has_Element (Cursor) then Entity_Tables.Element (Cursor).Id else 0);
    end Find_Revision;
 
    function Project_Key (Value : Improve.Model.Project_Reference) return String is
@@ -601,17 +704,14 @@ package body Improve.Storage is
          Revision_Row : constant Positive := Next_Id (Item, Tx, Revisions_Table);
          Revision_No  : Positive := 1;
          Previous_Revision : Natural := 0;
-         Cursor       : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table);
+         Cursor       : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Plans_Table, Project_Key (Stored.Project));
       begin
-         while Entity_Tables.Has_Element (Cursor) and then
-           S (Entity_Tables.Element (Cursor).Kind) not in
-             Project_Key (Stored.Project) | Legacy_Project_Key (Stored.Project)
-         loop
-            Advance (Item, Tx, Plans_Table, Cursor);
-         end loop;
+         if not Entity_Tables.Has_Element (Cursor) then
+            Cursor := Scan_Kind (Item, Tx, Plans_Table, Legacy_Project_Key (Stored.Project));
+         end if;
          if Entity_Tables.Has_Element (Cursor) then
             Plan_Row := Entity_Tables.Element (Cursor).Id;
-            declare Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+            declare Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
             begin
                while Entity_Tables.Has_Element (Revisions) loop
                   if Entity_Tables.Element (Revisions).Parent_Id = Plan_Row then
@@ -622,7 +722,7 @@ package body Improve.Storage is
                         Positive'Value
                           (Field (S (Entity_Tables.Element (Revisions).Payload), "revision")) + 1);
                   end if;
-                  Advance (Item, Tx, Revisions_Table, Revisions);
+                  Advance_Children (Item, Tx, Revisions_Table, Plan_Row, Revisions);
                end loop;
             end;
          else
@@ -675,40 +775,39 @@ package body Improve.Storage is
                   Number (Acceptance'Length) & ":" & Acceptance & Number (Finding_Set'Length) & ":" & Finding_Set));
 
             procedure Index_Previous_Tasks is
-               Acceptance_By_Task : String_Value_Maps.Map;
-               Details : Entity_Tables.Cursor;
-               Tasks   : Entity_Tables.Cursor;
+               Tasks : Entity_Tables.Cursor;
             begin
                if Previous_Revision = 0 then
                   return;
                end if;
-               Details := Scan (Item, Tx, Task_Details_Table);
-               while Entity_Tables.Has_Element (Details) loop
-                  declare Row : constant Entity := Entity_Tables.Element (Details); begin
-                     if S (Row.Kind) = "acceptance" then
-                        Acceptance_By_Task.Include (Number (Row.Parent_Id), To_Unbounded_String (S (Row.Payload)));
-                     end if;
-                  end;
-                  Advance (Item, Tx, Task_Details_Table, Details);
-               end loop;
-               Tasks := Scan (Item, Tx, Tasks_Table);
+               Tasks := Scan_Children (Item, Tx, Tasks_Table, Positive (Previous_Revision));
                while Entity_Tables.Has_Element (Tasks) loop
                   declare
                      Row        : constant Entity := Entity_Tables.Element (Tasks);
                      Payload    : constant String := S (Row.Payload);
-                     Acceptance : constant String :=
-                       (if Field_Or (Payload, "acceptance", "") /= "" then Field (Payload, "acceptance")
-                        elsif Acceptance_By_Task.Contains (Number (Row.Id))
-                        then To_String (Acceptance_By_Task.Element (Number (Row.Id))) else "");
-                     Key : constant String :=
-                       Identity_Key
-                         (S (Row.Kind), Field (Payload, "title"), Acceptance, Stored_Finding_Set (Payload));
+                     Acceptance : Unbounded_String :=
+                       To_Unbounded_String (Field_Or (Payload, "acceptance", ""));
+                     Details    : Entity_Tables.Cursor :=
+                       Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
                   begin
-                     if Row.Parent_Id = Previous_Revision and then not Previous_Tasks.Contains (Key) then
-                        Previous_Tasks.Insert (Key, To_Unbounded_String (Field (Payload, "draft_id")));
-                     end if;
+                     while Length (Acceptance) = 0 and then Entity_Tables.Has_Element (Details) loop
+                        if S (Entity_Tables.Element (Details).Kind) = "acceptance" then
+                           Acceptance := To_Unbounded_String (S (Entity_Tables.Element (Details).Payload));
+                        end if;
+                        Advance_Children (Item, Tx, Task_Details_Table, Row.Id, Details);
+                     end loop;
+                     declare
+                        Key : constant String :=
+                          Identity_Key
+                            (S (Row.Kind), Field (Payload, "title"), To_String (Acceptance),
+                             Stored_Finding_Set (Payload));
+                     begin
+                        if not Previous_Tasks.Contains (Key) then
+                           Previous_Tasks.Insert (Key, To_Unbounded_String (Field (Payload, "draft_id")));
+                        end if;
+                     end;
                   end;
-                  Advance (Item, Tx, Tasks_Table, Tasks);
+                  Advance_Children (Item, Tx, Tasks_Table, Positive (Previous_Revision), Tasks);
                end loop;
             end Index_Previous_Tasks;
 
@@ -762,6 +861,13 @@ package body Improve.Storage is
                          (Task_Row, Revision_Row, WW (To_String (Persisted.Category)),
                           WW (Improve.Model.Image (Persisted.Kind)), WW (Task_Payload (Persisted)), True, Tasks_Table)),
                          "store task");
+                  Check
+                    (Entity_Tables.Insert
+                       (Tx, Item.DB, Item.Schemas (Task_Identities_Table),
+                        (Next_Id (Item, Tx, Task_Identities_Table), Revision_Row,
+                         WW (To_String (Persisted.Id)), WW ("active"),
+                         WW (Pair ("task_row", Number (Task_Row))), True, Task_Identities_Table)),
+                     "index task identity");
                   declare
                      procedure Add_Detail (Name, Value : String) is
                      begin
@@ -1017,13 +1123,13 @@ package body Improve.Storage is
       Plan_Row := Natural'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
       if Plan_Row = 0 then raise Constraint_Error; end if;
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
          while Entity_Tables.Has_Element (Cursor) loop
             if Entity_Tables.Element (Cursor).Parent_Id = Plan_Row then
                Revision_Id := Natural'Max (Revision_Id, Entity_Tables.Element (Cursor).Id);
             end if;
-            Advance (Item, Tx, Revisions_Table, Cursor);
+            Advance_Children (Item, Tx, Revisions_Table, Positive (Plan_Row), Cursor);
          end loop;
       end;
       Database.Transactions.Rollback (Tx);
@@ -1050,7 +1156,9 @@ package body Improve.Storage is
       Plan_Row := Natural'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
       if Plan_Row = 0 then raise Constraint_Error; end if;
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
+      declare Cursor : Entity_Tables.Cursor :=
+        Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
+      begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
                if Row.Parent_Id = Plan_Row and then
@@ -1060,7 +1168,7 @@ package body Improve.Storage is
                   exit;
                end if;
             end;
-            Advance (Item, Tx, Revisions_Table, Cursor);
+            Advance_Children (Item, Tx, Revisions_Table, Positive (Plan_Row), Cursor);
          end loop;
       end;
       Database.Transactions.Rollback (Tx);
@@ -1081,39 +1189,49 @@ package body Improve.Storage is
       Revision : Natural := 0) return Improve.Model.Plan_Revision is
       Tx               : Database.Transactions.Transaction;
       Revision_Id      : Natural := 0;
-      Revision_Numbers : String_Id_Maps.Map;
+
+      procedure Consider (Candidate : Positive) is
+         Row    : Entity;
+         Status : Database.Status.Result;
+      begin
+         if Revision = 0 then
+            Revision_Id := Natural'Max (Revision_Id, Candidate);
+            return;
+         end if;
+         Status := Entity_Tables.Find
+           (Tx, Item.DB, Item.Schemas (Revisions_Table),
+            Physical_Key (Revisions_Table, Candidate), Row);
+         Check (Status, "read task plan revision");
+         if Positive'Value (Field (S (Row.Payload), "revision")) = Revision then
+            Revision_Id := Candidate;
+         end if;
+      end Consider;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      if Revision /= 0 then
-         declare Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table); begin
-            while Entity_Tables.Has_Element (Revisions) loop
-               declare Row : constant Entity := Entity_Tables.Element (Revisions); begin
-                  Revision_Numbers.Insert
-                    (Number (Row.Id), Positive'Value (Field (S (Row.Payload), "revision")));
+      if Item.Schema_Version >= 4 then
+         declare Identities : Entity_Tables.Cursor :=
+           Scan_Kind (Item, Tx, Task_Identities_Table, Task_Id);
+         begin
+            while Entity_Tables.Has_Element (Identities) loop
+               Consider (Positive (Entity_Tables.Element (Identities).Parent_Id));
+               Advance_Kind (Item, Tx, Task_Identities_Table, Task_Id, Identities);
+            end loop;
+         end;
+      else
+         declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
+            while Entity_Tables.Has_Element (Tasks) loop
+               declare
+                  Task_Row : constant Entity := Entity_Tables.Element (Tasks);
+                  Payload  : constant String := S (Task_Row.Payload);
+               begin
+                  if Field_Or (Payload, "draft_id", "") = Task_Id then
+                     Consider (Positive (Task_Row.Parent_Id));
+                  end if;
                end;
-               Advance (Item, Tx, Revisions_Table, Revisions);
+               Advance (Item, Tx, Tasks_Table, Tasks);
             end loop;
          end;
       end if;
-      declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
-         while Entity_Tables.Has_Element (Tasks) loop
-            declare
-               Task_Row : constant Entity := Entity_Tables.Element (Tasks);
-               Payload  : constant String := S (Task_Row.Payload);
-            begin
-               if Field_Or (Payload, "draft_id", "") = Task_Id then
-                  if Revision = 0 then
-                     Revision_Id := Natural'Max (Revision_Id, Task_Row.Parent_Id);
-                  elsif Revision_Numbers.Contains (Number (Task_Row.Parent_Id)) and then
-                    Revision_Numbers.Element (Number (Task_Row.Parent_Id)) = Revision
-                  then
-                     Revision_Id := Task_Row.Parent_Id;
-                  end if;
-               end if;
-            end;
-            Advance (Item, Tx, Tasks_Table, Tasks);
-         end loop;
-      end;
       Database.Transactions.Rollback (Tx);
       if Revision_Id = 0 then
          raise Argument_Error with
@@ -1130,41 +1248,41 @@ package body Improve.Storage is
          raise;
    end Load_Task;
 
-   function Latest_Revisions
-     (Item : in out Store; Tx : in out Database.Transactions.Transaction) return String_Id_Maps.Map is
-      Result    : String_Id_Maps.Map;
-      Revisions : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+   function Latest_Revision_Id
+     (Item     : in out Store;
+      Tx       : in out Database.Transactions.Transaction;
+      Plan_Row : Positive) return Natural is
+      Result    : Natural := 0;
+      Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
    begin
       while Entity_Tables.Has_Element (Revisions) loop
-         declare
-            Row : constant Entity := Entity_Tables.Element (Revisions);
-            Key : constant String := Number (Row.Parent_Id);
-         begin
-            if not Result.Contains (Key) or else Result.Element (Key) < Row.Id then
-               Result.Include (Key, Row.Id);
-            end if;
-         end;
-         Advance (Item, Tx, Revisions_Table, Revisions);
+         Result := Natural'Max (Result, Entity_Tables.Element (Revisions).Id);
+         Advance_Children (Item, Tx, Revisions_Table, Plan_Row, Revisions);
       end loop;
       return Result;
-   end Latest_Revisions;
+   end Latest_Revision_Id;
 
-   function List
-     (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector is
+   function List_All
+     (Item    : in out Store;
+      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
-      Latest : String_Id_Maps.Map;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      Latest := Latest_Revisions (Item, Tx);
       Plans := Scan (Item, Tx, Plans_Table);
       while Entity_Tables.Has_Element (Plans) loop
-         declare Row : constant Entity := Entity_Tables.Element (Plans); begin
-            if (Project_Id = 0 or else Row.Parent_Id = Project_Id) and then Latest.Contains (Number (Row.Id)) then
+         declare
+            Row    : constant Entity := Entity_Tables.Element (Plans);
+            Latest : constant Natural := Latest_Revision_Id (Item, Tx, Row.Id);
+         begin
+            if Latest > 0 then
+               if Result.Length >= Ada.Containers.Count_Type (Maximum) then
+                  raise Data_Error with "plan query exceeds configured item limit";
+               end if;
                declare
                   Plan : constant Improve.Model.Plan_Revision :=
-                    Load_Revision (Item, Latest.Element (Number (Row.Id)));
+                    Load_Revision (Item, Positive (Latest));
                begin
                   Result.Append
                     (Plan_Summary'
@@ -1181,42 +1299,51 @@ package body Improve.Storage is
       when others =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
-   end List;
+   end List_All;
 
    function List
-     (Item : in out Store; Project : Improve.Model.Project_Reference) return Summary_Vectors.Vector is
+     (Item    : in out Store;
+      Project : Improve.Model.Project_Reference;
+      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
-      Latest : String_Id_Maps.Map;
       Current_Key : constant String := Project_Key (Project);
       Legacy_Key  : constant String := Legacy_Project_Key (Project);
+
+      procedure Read (Key : String) is
+      begin
+         Plans := Scan_Kind (Item, Tx, Plans_Table, Key);
+         while Entity_Tables.Has_Element (Plans) loop
+            declare
+               Row    : constant Entity := Entity_Tables.Element (Plans);
+               Latest : constant Natural := Latest_Revision_Id (Item, Tx, Row.Id);
+            begin
+               if Latest > 0 then
+                  if Result.Length >= Ada.Containers.Count_Type (Maximum) then
+                     raise Data_Error with "plan query exceeds configured item limit";
+                  end if;
+                  declare
+                     Plan : constant Improve.Model.Plan_Revision := Load_Revision (Item, Positive (Latest));
+                  begin
+                     if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
+                       Plan.Project.Database_Id = Project.Database_Id
+                     then
+                        Result.Append
+                          (Plan_Summary'
+                             (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
+                              Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
+                     end if;
+                  end;
+               end if;
+            end;
+            Advance_Kind (Item, Tx, Plans_Table, Key, Plans);
+         end loop;
+      end Read;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      Latest := Latest_Revisions (Item, Tx);
-      Plans := Scan (Item, Tx, Plans_Table);
-      while Entity_Tables.Has_Element (Plans) loop
-         declare Row : constant Entity := Entity_Tables.Element (Plans); begin
-            if (S (Row.Kind) = Current_Key or else S (Row.Kind) = Legacy_Key) and then
-              Latest.Contains (Number (Row.Id))
-            then
-               declare
-                  Plan : constant Improve.Model.Plan_Revision :=
-                    Load_Revision (Item, Latest.Element (Number (Row.Id)));
-               begin
-                  if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
-                    Plan.Project.Database_Id = Project.Database_Id
-                  then
-                     Result.Append
-                       (Plan_Summary'
-                          (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
-                           Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
-                  end if;
-               end;
-            end if;
-         end;
-         Advance (Item, Tx, Plans_Table, Plans);
-      end loop;
+      Read (Current_Key);
+      if Legacy_Key /= Current_Key then Read (Legacy_Key); end if;
       Database.Transactions.Rollback (Tx);
       return Result;
    exception
@@ -1784,26 +1911,31 @@ package body Improve.Storage is
          raise;
    end Complete_Publication;
 
-   function Pending_Publications (Item : in out Store) return Operation_Vectors.Vector is
+   function Pending_Publications
+     (Item    : in out Store;
+      Maximum : Positive := Positive'Last) return Operation_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Operation_Vectors.Vector;
-      Completed : String_Id_Maps.Map;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
-      declare Ends : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
-         while Entity_Tables.Has_Element (Ends) loop
-            declare Row : constant Entity := Entity_Tables.Element (Ends); begin
-               if Row.Parent_Id > 0 and then S (Row.State) = "completed" then
-                  Completed.Include (Number (Row.Parent_Id), Row.Id);
-               end if;
-            end;
-            Advance (Item, Tx, Operations_Table, Ends);
-         end loop;
-      end;
-      declare Starts : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+      declare Starts : Entity_Tables.Cursor := Scan_State (Item, Tx, Operations_Table, "started"); begin
          while Entity_Tables.Has_Element (Starts) loop
-            declare Row : constant Entity := Entity_Tables.Element (Starts); begin
-               if S (Row.State) = "started" and then not Completed.Contains (Number (Row.Id)) then
+            declare
+               Row       : constant Entity := Entity_Tables.Element (Starts);
+               Completed : Boolean := False;
+               Ends      : Entity_Tables.Cursor := Scan_Children (Item, Tx, Operations_Table, Row.Id);
+            begin
+               while Entity_Tables.Has_Element (Ends) loop
+                  if S (Entity_Tables.Element (Ends).State) = "completed" then
+                     Completed := True;
+                     exit;
+                  end if;
+                  Advance_Children (Item, Tx, Operations_Table, Row.Id, Ends);
+               end loop;
+               if not Completed then
+                  if Result.Length >= Ada.Containers.Count_Type (Maximum) then
+                     raise Data_Error with "pending publication query exceeds configured item limit";
+                  end if;
                   declare Payload : constant String := S (Row.Payload); begin
                      Result.Append
                        (Operation_Record'
@@ -1816,7 +1948,7 @@ package body Improve.Storage is
                   end;
                end if;
             end;
-            Advance (Item, Tx, Operations_Table, Starts);
+            Advance_State (Item, Tx, Operations_Table, "started", Starts);
          end loop;
       end;
       Database.Transactions.Rollback (Tx);

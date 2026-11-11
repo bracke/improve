@@ -16,6 +16,17 @@ package body Improve.Presentation is
    end Configure;
 
    function Header (Text : String) return String is
-     (Terminal_Styles.Decorate (Text, Terminal_Styles.Role_Header));
+     (Terminal_Styles.Decorate (Safe_Text (Text), Terminal_Styles.Role_Header));
+
+   function Safe_Text (Text : String) return String is
+      Result : String := Text;
+   begin
+      for Value of Result loop
+         if Character'Pos (Value) < 32 or else Character'Pos (Value) = 127 then
+            Value := ' ';
+         end if;
+      end loop;
+      return Result;
+   end Safe_Text;
 end Improve.Presentation;
 

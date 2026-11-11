@@ -5,16 +5,15 @@ with Ada.Containers.Vectors;
 with Ada.Streams;
 with Ada_Quality.Types;
 with CryptoLib.Hashes;
-with Hostkit.Directory_Listing;
 with Hostkit.Fs;
 with Project_Tools.Files;
 
 package body Improve.Source is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
+   use type Ada.Directories.File_Kind;
    use type Ada_Quality.Types.Assessment_Status;
    use type Ada_Quality.Types.Indicator_Id;
-   use type Hostkit.Directory_Listing.Entry_Kind;
 
    function Working_Fingerprint
      (Root       : String;
@@ -39,6 +38,9 @@ package body Improve.Source is
       Values : Paths.Vector;
       Context : CryptoLib.Hashes.SHA256_Context;
       Total  : Natural := 0;
+      Entries_Seen : Natural := 0;
+      Maximum_Depth : constant := 128;
+      Maximum_Entries : constant := 100_000;
 
       function Skipped_Generated_Directory (Relative : String) return Boolean is
       begin
@@ -60,40 +62,65 @@ package body Improve.Source is
              Path = Configured & "-wal" or else Path = Configured & "-shm"));
       end Operational_File;
 
-      procedure Walk (Directory, Relative_Directory : String) is
-         Entries : Hostkit.Directory_Listing.Entry_Vectors.Vector;
+      procedure Walk
+        (Directory          : String;
+         Relative_Directory : String;
+         Depth              : Positive) is
+         Search : Ada.Directories.Search_Type;
       begin
-         if not Hostkit.Directory_Listing.List (Directory, Entries) then
-            raise Data_Error with "project source directory cannot be listed: " & Directory;
+         if Depth > Maximum_Depth then
+            raise Data_Error with "project source exceeds fingerprint directory depth limit";
          end if;
-         for Item of Entries loop
-            declare
-               Name     : constant String := Item.Name;
-               Path     : constant String := Project_Tools.Files.Join (Directory, Name);
-               Relative : constant String :=
-                 (if Relative_Directory = "" then Name
-                  else Relative_Directory & "/" & Name);
-            begin
-               if Item.Kind = Hostkit.Directory_Listing.Directory and then
-                 Skipped_Generated_Directory (Relative)
-               then
-                  null;
-               elsif Item.Kind = Hostkit.Directory_Listing.Symbolic_Link or else Hostkit.Fs.Is_Link (Path) then
-                  raise Data_Error with "project source contains a symbolic link: " & Relative;
-               elsif Item.Kind = Hostkit.Directory_Listing.Directory then
-                  Walk (Path, Relative);
-               elsif Item.Kind = Hostkit.Directory_Listing.Regular_File and then
-                 not Operational_File (Path, Relative)
-               then
-                  if Values.Length >= 100_000 then
-                     raise Data_Error with "project source exceeds fingerprint file limit";
-                  end if;
-                  Values.Append (To_Unbounded_String (Relative));
-               elsif Item.Kind = Hostkit.Directory_Listing.Unknown then
-                  raise Data_Error with "project source entry kind cannot be established: " & Relative;
-               end if;
-            end;
-         end loop;
+         Ada.Directories.Start_Search
+           (Search, Directory, "*", [Ada.Directories.Ordinary_File => True,
+                                     Ada.Directories.Directory => True,
+                                     Ada.Directories.Special_File => True]);
+         begin
+            while Ada.Directories.More_Entries (Search) loop
+               declare
+                  Item : Ada.Directories.Directory_Entry_Type;
+               begin
+                  Ada.Directories.Get_Next_Entry (Search, Item);
+                  declare
+                     Name : constant String := Ada.Directories.Simple_Name (Item);
+                  begin
+                     if Name not in "." | ".." then
+                        if Entries_Seen >= Maximum_Entries then
+                           raise Data_Error with "project source exceeds fingerprint entry limit";
+                        end if;
+                        Entries_Seen := Entries_Seen + 1;
+                        declare
+                           Path     : constant String := Project_Tools.Files.Join (Directory, Name);
+                           Relative : constant String :=
+                             (if Relative_Directory = "" then Name else Relative_Directory & "/" & Name);
+                           Kind     : constant Ada.Directories.File_Kind := Ada.Directories.Kind (Item);
+                        begin
+                           if Hostkit.Fs.Is_Link (Path) then
+                              raise Data_Error with "project source contains a symbolic link: " & Relative;
+                           elsif Kind = Ada.Directories.Directory and then
+                             Skipped_Generated_Directory (Relative)
+                           then
+                              null;
+                           elsif Kind = Ada.Directories.Directory then
+                              Walk (Path, Relative, Depth + 1);
+                           elsif Kind = Ada.Directories.Ordinary_File and then
+                             not Operational_File (Path, Relative)
+                           then
+                              Values.Append (To_Unbounded_String (Relative));
+                           elsif Kind = Ada.Directories.Special_File then
+                              raise Data_Error with "project source contains a special file: " & Relative;
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end;
+            end loop;
+            Ada.Directories.End_Search (Search);
+         exception
+            when others =>
+               Ada.Directories.End_Search (Search);
+               raise;
+         end;
       end Walk;
 
       procedure Add (Text : String) is
@@ -154,7 +181,7 @@ package body Improve.Source is
          Total := Total + Length (Text);
       end Add_File;
    begin
-      Walk (Canonical_Root, "");
+      Walk (Canonical_Root, "", 1);
       Sorting.Sort (Values);
       CryptoLib.Hashes.Initialize_SHA256 (Context);
       Add ("improve-working-source-v4" & Character'Val (0));

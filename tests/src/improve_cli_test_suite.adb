@@ -6,6 +6,7 @@ with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve.CLI;
 with Improve.Config;
+with Improve.Presentation;
 
 package body Improve_CLI_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -16,7 +17,8 @@ package body Improve_CLI_Test_Suite is
 
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
-      JSON_Disables_Color, Help_Smoke, Version_Smoke, Quiet_Smoke, Verbose_Smoke, Config_Smoke, Invalid_Smoke);
+      JSON_Disables_Color, Terminal_Text_Sanitized, Help_Smoke, Version_Smoke, Quiet_Smoke,
+      Verbose_Smoke, Config_Smoke, Invalid_Smoke);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -88,6 +90,16 @@ package body Improve_CLI_Test_Suite is
                  Improve.CLI.Parse (Args ("projects|--format|json|--color|always"));
             begin
                Assert (Parsed.Color = Improve.Config.Color_Never, "JSON did not force color off");
+            end;
+         when Terminal_Text_Sanitized =>
+            declare
+               Unsafe : constant String := "before" & Character'Val (27) & "[2J" & ASCII.LF & "after";
+               Safe   : constant String := Improve.Presentation.Safe_Text (Unsafe);
+            begin
+               Assert
+                 (Ada.Strings.Fixed.Index (Safe, Character'Val (27) & "[2J") = 0 and then
+                  Ada.Strings.Fixed.Index (Safe, ASCII.LF & "after") = 0,
+                  "terminal sanitizer retained control characters");
             end;
          when Help_Smoke =>
             declare

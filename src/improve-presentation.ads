@@ -13,5 +13,10 @@ package Improve.Presentation is
    --  Decorate a terminal heading according to the current policy.
    --  @param Text Heading text.
    --  @return Styled or plain heading.
+
+   function Safe_Text (Text : String) return String;
+   --  Replace terminal control characters in untrusted text with spaces.
+   --  @param Text Untrusted diagnostic, path, title, or evidence text.
+   --  @return Single-line terminal-safe text.
 end Improve.Presentation;
 

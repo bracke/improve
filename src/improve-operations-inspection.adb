@@ -13,16 +13,6 @@ package body Improve.Operations.Inspection is
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
-   procedure Require_Project_Identity
-     (Stored, Current : Improve.Model.Project_Reference) is
-   begin
-      if Stored.Database_Id /= Current.Database_Id then
-         raise Data_Error with "selected Ada Quality database does not own the stored plan";
-      elsif Stored.Id /= Current.Id or else Stored.Path /= Current.Path then
-         raise Data_Error with "selected Ada Quality project identity does not match the stored plan";
-      end if;
-   end Require_Project_Identity;
-
    function Views_For
      (State              : in out Improve.Storage.Store;
       Plan               : Improve.Model.Plan_Revision;
@@ -85,7 +75,7 @@ package body Improve.Operations.Inspection is
          begin
             if Has_Project then
                begin
-                  Require_Project_Identity (Plan.Project, Selected_Project);
+                  Improve.Operations.Require_Project_Identity (Plan.Project, Selected_Project);
                exception
                   when Data_Error => raise Argument_Error with "task does not belong to selected project";
                end;
@@ -104,7 +94,8 @@ package body Improve.Operations.Inspection is
          end;
       else
          declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           (if Has_Project then Improve.Storage.List (State, Selected_Project) else Improve.Storage.List (State));
+           (if Has_Project then Improve.Storage.List (State, Selected_Project, Maximum_Items)
+            else Improve.Storage.List_All (State, Maximum_Items));
          begin
             if Summaries.Length > Ada.Containers.Count_Type (Maximum_Items) then
                raise Data_Error with "task query exceeds output.maximum_output_items";
@@ -149,7 +140,8 @@ package body Improve.Operations.Inspection is
       Total_Items : Natural := 0;
 
       procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
-         Summaries : constant Improve.Storage.Summary_Vectors.Vector := Improve.Storage.List (State, Project);
+         Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+           Improve.Storage.List (State, Project, Maximum_Items);
          Value     : Improve.Tasks.Project_Status;
          Last_Plan : Improve.Model.Plan_Revision;
          Last_Views : Improve.Tasks.View_Vectors.Vector;

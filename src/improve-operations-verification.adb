@@ -11,16 +11,6 @@ package body Improve.Operations.Verification is
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
-   procedure Require_Project_Identity
-     (Expected, Actual : Improve.Model.Project_Reference) is
-   begin
-      if Expected.Database_Id /= Actual.Database_Id then
-         raise Data_Error with "selected Ada Quality database does not own the stored plan";
-      elsif Expected.Id /= Actual.Id or else Expected.Path /= Actual.Path then
-         raise Data_Error with "selected Ada Quality project identity does not match the stored plan";
-      end if;
-   end Require_Project_Identity;
-
    function Run
      (State_Path       : String;
       Quality_Path     : String;
@@ -69,7 +59,7 @@ package body Improve.Operations.Verification is
             Current : constant Improve.Source.Selection :=
               Improve.Source.Select_Assessment (Quality, Project, Run_Id);
          begin
-            Require_Project_Identity (Plan.Project, Project);
+            Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path, Writable => False);
             for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop

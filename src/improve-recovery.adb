@@ -1,4 +1,3 @@
-with Ada.Containers;
 with Ada.Strings.Unbounded;
 with Improve.Model;
 with Improve.Source;
@@ -8,7 +7,6 @@ with Project_Tools.Files;
 
 package body Improve.Recovery is
    use Ada.Strings.Unbounded;
-   use type Ada.Containers.Count_Type;
 
    function Recover
      (State_Path      : String;
@@ -22,11 +20,8 @@ package body Improve.Recovery is
          raise Dependency_Error with "Improve state database is unavailable: " & State_Path;
       end if;
       Improve.Storage.Open (State, State_Path, Writable => True);
-      Pending := Improve.Storage.Pending_Publications (State);
+      Pending := Improve.Storage.Pending_Publications (State, Maximum);
       Improve.Storage.Close (State);
-      if Pending.Length > Ada.Containers.Count_Type (Maximum) then
-         raise Data_Error with "pending publication count exceeds operations.maximum_recovery_operations";
-      end if;
       for Operation of Pending loop
          Improve.Storage.Open (State, State_Path, Writable => False);
          declare

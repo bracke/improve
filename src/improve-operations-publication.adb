@@ -9,16 +9,6 @@ package body Improve.Operations.Publication is
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
-   procedure Require_Project_Identity
-     (Expected, Actual : Improve.Model.Project_Reference) is
-   begin
-      if Expected.Database_Id /= Actual.Database_Id then
-         raise Data_Error with "selected Ada Quality database does not own the stored plan";
-      elsif Expected.Id /= Actual.Id or else Expected.Path /= Actual.Path then
-         raise Data_Error with "selected Ada Quality project identity does not match the stored plan";
-      end if;
-   end Require_Project_Identity;
-
    function Run
      (State_Path       : String;
       Quality_Path     : String;
@@ -67,7 +57,7 @@ package body Improve.Operations.Publication is
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
             Latest : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
          begin
-            Require_Project_Identity (Plan.Project, Project);
+            Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             if Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
               Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
             then

@@ -1,6 +1,7 @@
 with Ada.Directories;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
+with Ada.Strings.Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
@@ -9,12 +10,13 @@ with Improve.Source;
 with Project_Tools.Files;
 
 package body Improve_Source_Test_Suite is
+   use Ada.Strings.Unbounded;
    use AUnit.Assertions;
    use type Hostkit.Fs.Delete_Tree_Outcome;
 
    type Test_Id is
      (Fingerprint_Deterministic, Fingerprint_Boundary_Safe, Authored_Paths_Tracked,
-      Generated_State_Ignored, Symlink_Rejected, Oversized_File_Rejected);
+      Generated_State_Ignored, Symlink_Rejected, Deep_Tree_Rejected, Oversized_File_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -119,6 +121,24 @@ package body Improve_Source_Test_Suite is
                   Assert (Rejected, "symbolic link was followed while fingerprinting");
                end if;
                Project_Tools.Files.Delete_File_If_Present (Target);
+            end;
+         when Deep_Tree_Rejected =>
+            declare
+               Current  : Unbounded_String := To_Unbounded_String (Root);
+               Rejected : Boolean := False;
+            begin
+               for Depth in 1 .. 129 loop
+                  Append (Current, "/d");
+                  Ada.Directories.Create_Directory (To_String (Current));
+               end loop;
+               begin
+                  declare Value : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                     Assert (Value = "", "over-deep source tree unexpectedly produced a fingerprint");
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "over-deep source tree was not rejected");
             end;
          when Oversized_File_Rejected =>
             declare

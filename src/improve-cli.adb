@@ -123,7 +123,7 @@ package body Improve.CLI is
                   Append
                     (Result,
                      Number (Value.Id) & "   " & (if Value.Enabled then "yes" else "no ") & "      " &
-                     To_String (Value.Path) & LF);
+                     Improve.Presentation.Safe_Text (To_String (Value.Path)) & LF);
                end loop;
             end if;
          end if;
@@ -173,8 +173,9 @@ package body Improve.CLI is
                      Append
                        (Result,
                         Ada_Quality.Types.Image (Value.Indicator) & "  " &
-                        Ada_Quality.Types.Severity'Image (Value.Level) & "  " & Location & "  " &
-                        To_String (Value.Message) & LF);
+                        Ada_Quality.Types.Severity'Image (Value.Level) & "  " &
+                        Improve.Presentation.Safe_Text (Location) & "  " &
+                        Improve.Presentation.Safe_Text (To_String (Value.Message)) & LF);
                   end;
                end loop;
             end if;
@@ -202,7 +203,8 @@ package body Improve.CLI is
             Append
               (Result,
                To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
-               To_String (Spec.Title) & LF & "  " & To_String (Spec.Acceptance) & LF);
+               Improve.Presentation.Safe_Text (To_String (Spec.Title)) & LF & "  " &
+               Improve.Presentation.Safe_Text (To_String (Spec.Acceptance)) & LF);
          end loop;
          return To_String (Result);
       end Stored_Plan_Terminal;
@@ -232,7 +234,8 @@ package body Improve.CLI is
          declare
             Values : constant Improve.Storage.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List
-                (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project));
+                (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
+                 Settings.Maximum_Output_Items);
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
             declare Result : Unbounded_String; begin
@@ -286,7 +289,8 @@ package body Improve.CLI is
                   Append
                     (Result,
                      To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
-                     To_String (Spec.Title) & LF & "  " & To_String (Spec.Acceptance) & LF);
+                     Improve.Presentation.Safe_Text (To_String (Spec.Title)) & LF & "  " &
+                     Improve.Presentation.Safe_Text (To_String (Spec.Acceptance)) & LF);
                end loop;
             end if;
          end if;
@@ -325,15 +329,6 @@ package body Improve.CLI is
       end;
    end Apply_Output;
 
-   function One_Line (Text : String) return String is
-      Result : String := Text;
-   begin
-      for Value of Result loop
-         if Value in ASCII.HT | ASCII.LF | ASCII.CR then Value := ' '; end if;
-      end loop;
-      return Result;
-   end One_Line;
-
    function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
       Filtered   : constant Improve.Tasks.View_Vectors.Vector :=
@@ -360,7 +355,8 @@ package body Improve.CLI is
                  (Result,
                   To_String (View.Improve_Id) & "  " &
                   (if Length (View.Harness_Id) = 0 then "-" else To_String (View.Harness_Id)) & "  " &
-                  Improve.Tasks.Image (View.Status) & "  " & One_Line (To_String (View.Title)) & LF);
+                  Improve.Tasks.Image (View.Status) & "  " &
+                  Improve.Presentation.Safe_Text (To_String (View.Title)) & LF);
             end loop;
          end if;
          return To_String (Result);
@@ -383,7 +379,9 @@ package body Improve.CLI is
             Append
               (Result,
                Improve.Presentation.Header
-                 (Message ("status.title", [Arg ("project", To_String (Value.Project))])) & LF &
+                 (Message
+                    ("status.title",
+                     [Arg ("project", Improve.Presentation.Safe_Text (To_String (Value.Project)))])) & LF &
                Message ("status.baseline", [Arg ("run", Number (Value.Baseline_Run))]) & LF &
                Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
                Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
@@ -561,7 +559,7 @@ package body Improve.CLI is
    end Dispatch;
 
    function Diagnostic (Text : String) return String is
-     (Message ("error.prefix", [Arg ("message", Text)]) & LF);
+     (Message ("error.prefix", [Arg ("message", Improve.Presentation.Safe_Text (Text))]) & LF);
 
    function Execute (Arguments : String_Vectors.Vector) return Outcome is
       Item : Invocation;
@@ -584,8 +582,8 @@ package body Improve.CLI is
                   Message
                     ("verbose.context",
                      [Arg ("command", Name (Item.Command)),
-                      Arg ("database", Quality_Path (Item, Settings)),
-                      Arg ("state", State_Path (Item))]) & LF);
+                      Arg ("database", Improve.Presentation.Safe_Text (Quality_Path (Item, Settings))),
+                      Arg ("state", Improve.Presentation.Safe_Text (State_Path (Item)))]) & LF);
             end if;
             return
               ((if Negative then Negative_Exit else Success_Exit),

@@ -294,76 +294,84 @@ package body Improve.Workflow is
          end loop;
          return Null_Unbounded_String;
       end Published_Dependency;
-   begin
-      for Task_Id of Selected_Task_Ids loop
-         if not Is_Known (Task_Id) then
-            raise Data_Error with "publication selection references unknown task " & To_String (Task_Id);
+
+      procedure Prepare_Publication is
+      begin
+         for Task_Id of Selected_Task_Ids loop
+            if not Is_Known (Task_Id) then
+               raise Data_Error with "publication selection references unknown task " & To_String (Task_Id);
+            end if;
+         end loop;
+         for Spec of Plan.Tasks loop
+            if Is_Selected (Spec.Id) then
+               Selected.Append (Spec);
+            end if;
+         end loop;
+         if Selected.Is_Empty then
+            raise Argument_Error with "publication selection has no tasks";
+         elsif not Stores.Is_Initialized (Project_Directory) then
+            raise Dependency_Error with "model_runner project state is not initialized: " & Project_Directory;
          end if;
-      end loop;
-      for Spec of Plan.Tasks loop
-         if Is_Selected (Spec.Id) then Selected.Append (Spec); end if;
-      end loop;
-      if Selected.Is_Empty then raise Argument_Error with "publication selection has no tasks"; end if;
-      if not Stores.Is_Initialized (Project_Directory) then
-         raise Dependency_Error with "model_runner project state is not initialized: " & Project_Directory;
-      end if;
-      if Dry_Run then
-         Stores.Open_To_Read (Store, Project_Directory, Status);
-      else
-         Stores.Open (Store, Project_Directory, Report, Status);
-      end if;
-      Require_Ok (Status, "open model_runner project state");
-      Index_Native_Tasks;
-      declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
-         Result.Task_Kind := To_Unbounded_String (Kind);
-         declare Replaced : Improve.Model.UString_Vectors.Vector; begin
-            for Spec of Selected loop
-               if not Has_Current_Mapping (Spec) and then not Predecessors_Of (Spec).Is_Empty then
-                  Replaced.Append (Spec.Id);
-               end if;
-            end loop;
-            if not Replaced.Is_Empty then
-               for Spec of Plan.Tasks loop
-                  if not Is_Selected (Spec.Id) and then not Has_Current_Mapping (Spec) and then
-                    Depends_On_Any (Spec, Replaced)
-                  then
-                     for Mapping of Existing loop
-                        if Is_Predecessor (Mapping, Spec) then
-                           declare
-                              Definition : Records.Item;
-                              Native_State : constant String :=
-                                Tasks.State_Of (Store, To_String (Mapping.Harness_Task_Id));
-                              Core_State : constant String := Tasks.Counts_As (Store, Native_State);
-                           begin
-                              Tasks.Definition
-                                (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
-                              Require_Ok
-                                (Status, "read downstream native task " & To_String (Mapping.Harness_Task_Id));
-                              if Records.Get (Definition, "created_by") /= "improve" or else
-                                Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
-                              then
-                                 raise Data_Error with "downstream native task has invalid Improve provenance";
-                              end if;
-                              if Core_State not in "complete" | "cancelled" | "rejected" then
-                                 raise Data_Error with
-                                   "selective replacement would strand published dependent " & To_String (Spec.Id) &
-                                   " (" & To_String (Mapping.Harness_Task_Id) & " is " & Native_State &
-                                   "); publish the complete plan so its dependency can be replaced atomically";
-                              end if;
-                           end;
+         if Dry_Run then
+            Stores.Open_To_Read (Store, Project_Directory, Status);
+         else
+            Stores.Open (Store, Project_Directory, Report, Status);
+         end if;
+         Require_Ok (Status, "open model_runner project state");
+         Index_Native_Tasks;
+      end Prepare_Publication;
+
+      procedure Validate_Replacement_Closure is
+         Replaced : Improve.Model.UString_Vectors.Vector;
+      begin
+         for Spec of Selected loop
+            if not Has_Current_Mapping (Spec) and then not Predecessors_Of (Spec).Is_Empty then
+               Replaced.Append (Spec.Id);
+            end if;
+         end loop;
+         if Replaced.Is_Empty then
+            return;
+         end if;
+         for Spec of Plan.Tasks loop
+            if not Is_Selected (Spec.Id) and then not Has_Current_Mapping (Spec) and then
+              Depends_On_Any (Spec, Replaced)
+            then
+               for Mapping of Existing loop
+                  if Is_Predecessor (Mapping, Spec) then
+                     declare
+                        Definition   : Records.Item;
+                        Native_State : constant String := Tasks.State_Of
+                          (Store, To_String (Mapping.Harness_Task_Id));
+                        Core_State   : constant String := Tasks.Counts_As (Store, Native_State);
+                     begin
+                        Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+                        Require_Ok (Status, "read downstream native task " & To_String (Mapping.Harness_Task_Id));
+                        if Records.Get (Definition, "created_by") /= "improve" or else
+                          Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+                        then
+                           raise Data_Error with "downstream native task has invalid Improve provenance";
+                        elsif Core_State not in "complete" | "cancelled" | "rejected" then
+                           raise Data_Error with
+                             "selective replacement would strand published dependent " & To_String (Spec.Id) &
+                             " (" & To_String (Mapping.Harness_Task_Id) & " is " & Native_State &
+                             "); publish the complete plan so its dependency can be replaced atomically";
                         end if;
-                     end loop;
+                     end;
                   end if;
                end loop;
             end if;
-         end;
+         end loop;
+      end Validate_Replacement_Closure;
+
+      procedure Resolve_Existing_Publications (Kind : String) is
+      begin
          for Spec of Selected loop
             declare
-               Contract    : constant Unbounded_String :=
+               Contract     : constant Unbounded_String :=
                  To_Unbounded_String (Improve.Model.Effective_Task_Contract (Contracts, Spec.Id));
-               Origin      : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec, To_String (Contract)));
-               Harness_Id  : Unbounded_String;
-               Was_Mapped  : Boolean := False;
+               Origin       : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec, To_String (Contract)));
+               Harness_Id   : Unbounded_String;
+               Was_Mapped   : Boolean := False;
                Predecessors : constant Improve.Model.UString_Vectors.Vector := Predecessors_Of (Spec);
             begin
                for Mapping of Existing loop
@@ -378,7 +386,9 @@ package body Improve.Workflow is
                end loop;
                for Mapping of Existing loop
                   if Mapping.Improve_Task_Id = Spec.Id and then Mapping.Contract = Contract then
-                     declare Definition : Records.Item; begin
+                     declare
+                        Definition : Records.Item;
+                     begin
                         Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
                         Require_Ok (Status, "read previously published harness task " & To_String (Spec.Id));
                         if Mapping.Origin /= Origin then
@@ -395,8 +405,7 @@ package body Improve.Workflow is
                end loop;
                if not Was_Mapped then
                   Harness_Id := To_Unbounded_String
-                    (Existing_By_Origin
-                       (To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
+                    (Existing_By_Origin (To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
                end if;
                Result.Tasks.Append
                  (Published_Task'
@@ -410,6 +419,10 @@ package body Improve.Workflow is
                      Recovered  => Length (Harness_Id) > 0));
             end;
          end loop;
+      end Resolve_Existing_Publications;
+
+      procedure Validate_Existing_Dependencies is
+      begin
          for Index in 1 .. Natural (Result.Tasks.Length) loop
             if Length (Result.Tasks (Index).Harness_Id) > 0 then
                declare
@@ -418,7 +431,9 @@ package body Improve.Workflow is
                   Dependencies : Improve.Model.UString_Vectors.Vector;
                begin
                   for Dependency of Spec.Dependencies loop
-                     declare Found : Boolean := False; begin
+                     declare
+                        Found : Boolean := False;
+                     begin
                         for Other of Result.Tasks loop
                            if Other.Improve_Id = Dependency then
                               Found := True;
@@ -432,7 +447,9 @@ package body Improve.Workflow is
                            end if;
                         end loop;
                         if not Found then
-                           declare Published : constant Unbounded_String := Published_Dependency (Dependency); begin
+                           declare
+                              Published : constant Unbounded_String := Published_Dependency (Dependency);
+                           begin
                               if Length (Published) = 0 then
                                  raise Data_Error with
                                    "existing native task has unpublished prerequisite " & To_String (Dependency);
@@ -442,8 +459,7 @@ package body Improve.Workflow is
                         end if;
                      end;
                   end loop;
-                  Tasks.Definition
-                    (Store, To_String (Result.Tasks (Index).Harness_Id), Definition, Status);
+                  Tasks.Definition (Store, To_String (Result.Tasks (Index).Harness_Id), Definition, Status);
                   Require_Ok (Status, "read complete native task definition " & To_String (Spec.Id));
                   if Records.Get (Definition, "depends_on") /= Join (Dependencies) then
                      raise Data_Error with
@@ -452,115 +468,135 @@ package body Improve.Workflow is
                end;
             end if;
          end loop;
-         if Existing_Only then
-            Stores.Close (Store);
-            return Result;
-         end if;
-         declare
-            Change    : Stores.Transaction;
-            Remaining : Natural := Natural (Selected.Length);
-            Progress  : Boolean;
-         begin
-            if not Dry_Run then
-               for Spec of Selected loop
-                  for Mapping of Existing loop
-                     if Is_Predecessor (Mapping, Spec) then
-                        declare Target : constant String := Retirement_Target (Mapping); begin
-                           if Target /= "" then
-                              Tasks.Move
-                                (Store, Change, To_String (Mapping.Harness_Task_Id), Target,
-                                 "superseded by " & To_String (Spec.Id) & " contract " &
-                                   Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
-                                 Status => Status, Actor => Transitions.User);
-                              Require_Ok (Status, "retire superseded native task");
-                           end if;
-                        end;
-                     end if;
-                  end loop;
-               end loop;
-            end if;
-            for Item of Result.Tasks loop
-               if Length (Item.Harness_Id) > 0 then Remaining := Remaining - 1; end if;
-            end loop;
-            while Remaining > 0 loop
-               Progress := False;
-               for Index in 1 .. Natural (Selected.Length) loop
-                  if Length (Result.Tasks (Index).Harness_Id) = 0 then
+      end Validate_Existing_Dependencies;
+
+      procedure Apply_Publication_Changes (Kind : String) is
+         Change    : Stores.Transaction;
+         Remaining : Natural := Natural (Selected.Length);
+         Progress  : Boolean;
+      begin
+         if not Dry_Run then
+            for Spec of Selected loop
+               for Mapping of Existing loop
+                  if Is_Predecessor (Mapping, Spec) then
                      declare
-                        Spec       : constant Improve.Model.Task_Specification := Selected (Index);
-                        Ready      : Boolean := True;
-                        Harness_Dependencies : Improve.Model.UString_Vectors.Vector;
+                        Target : constant String := Retirement_Target (Mapping);
                      begin
-                        for Dependency of Spec.Dependencies loop
-                           declare Found : Boolean := False; begin
-                              for Other in 1 .. Natural (Result.Tasks.Length) loop
-                                 if Result.Tasks (Other).Improve_Id = Dependency then
-                                    Found := True;
-                                    if Length (Result.Tasks (Other).Harness_Id) = 0 then Ready := False;
-                                    else Harness_Dependencies.Append (Result.Tasks (Other).Harness_Id);
-                                    end if;
-                                    exit;
-                                 end if;
-                              end loop;
-                              if not Found then
-                                 if not Is_Known (Dependency) then
-                                    raise Data_Error with "unknown persisted task dependency " & To_String (Dependency);
-                                 end if;
-                                 declare Published : constant Unbounded_String := Published_Dependency (Dependency);
-                                 begin
-                                    if Length (Published) = 0 then
-                                       raise Data_Error with
-                                         "task " & To_String (Spec.Id) & " requires unpublished prerequisite " &
-                                         To_String (Dependency) & "; publish prerequisite first";
-                                    end if;
-                                    Harness_Dependencies.Append (Published);
-                                 end;
-                              end if;
-                           end;
-                        end loop;
-                        if Ready then
-                           declare
-                              Fields : Tasks.Field_Map;
-                              Id     : Unbounded_String;
-                              Notes  : constant String := Native_Notes
-                                (Spec, Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
-                                 Predecessors_Of (Spec));
-                           begin
-                              Fields.Include ("title", To_String (Spec.Title));
-                              Fields.Include ("kind", Kind);
-                              Fields.Include ("priority", Harness_Priority (Spec.Task_Priority));
-                              Fields.Include ("acceptance", To_String (Spec.Acceptance));
-                              Fields.Include ("notes", Notes);
-                              if not Harness_Dependencies.Is_Empty then
-                                 Fields.Include ("depends_on", Join (Harness_Dependencies));
-                              end if;
-                              Tasks.Create
-                                (Store, Change, Fields, "improve", To_String (Result.Tasks (Index).Origin), Id, Status);
-                              Require_Ok (Status, "create native harness task " & To_String (Spec.Id));
-                              Result.Tasks (Index).Harness_Id := Id;
-                              Result.Tasks (Index).State := To_Unbounded_String ("candidate");
-                              Remaining := Remaining - 1;
-                              Progress := True;
-                           end;
+                        if Target /= "" then
+                           Tasks.Move
+                             (Store, Change, To_String (Mapping.Harness_Task_Id), Target,
+                              "superseded by " & To_String (Spec.Id) & " contract " &
+                                Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
+                              Status => Status, Actor => Transitions.User);
+                           Require_Ok (Status, "retire superseded native task");
                         end if;
                      end;
                   end if;
                end loop;
-               if not Progress and then Remaining > 0 then
-                  raise Data_Error with "task dependency order cannot be resolved for publication";
+            end loop;
+         end if;
+         for Item of Result.Tasks loop
+            if Length (Item.Harness_Id) > 0 then
+               Remaining := Remaining - 1;
+            end if;
+         end loop;
+         while Remaining > 0 loop
+            Progress := False;
+            for Index in 1 .. Natural (Selected.Length) loop
+               if Length (Result.Tasks (Index).Harness_Id) = 0 then
+                  declare
+                     Spec                 : constant Improve.Model.Task_Specification := Selected (Index);
+                     Ready                : Boolean := True;
+                     Harness_Dependencies : Improve.Model.UString_Vectors.Vector;
+                  begin
+                     for Dependency of Spec.Dependencies loop
+                        declare
+                           Found : Boolean := False;
+                        begin
+                           for Other in 1 .. Natural (Result.Tasks.Length) loop
+                              if Result.Tasks (Other).Improve_Id = Dependency then
+                                 Found := True;
+                                 if Length (Result.Tasks (Other).Harness_Id) = 0 then
+                                    Ready := False;
+                                 else
+                                    Harness_Dependencies.Append (Result.Tasks (Other).Harness_Id);
+                                 end if;
+                                 exit;
+                              end if;
+                           end loop;
+                           if not Found then
+                              if not Is_Known (Dependency) then
+                                 raise Data_Error with
+                                   "unknown persisted task dependency " & To_String (Dependency);
+                              end if;
+                              declare
+                                 Published : constant Unbounded_String := Published_Dependency (Dependency);
+                              begin
+                                 if Length (Published) = 0 then
+                                    raise Data_Error with
+                                      "task " & To_String (Spec.Id) & " requires unpublished prerequisite " &
+                                      To_String (Dependency) & "; publish prerequisite first";
+                                 end if;
+                                 Harness_Dependencies.Append (Published);
+                              end;
+                           end if;
+                        end;
+                     end loop;
+                     if Ready then
+                        declare
+                           Fields : Tasks.Field_Map;
+                           Id     : Unbounded_String;
+                           Notes  : constant String := Native_Notes
+                             (Spec, Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
+                              Predecessors_Of (Spec));
+                        begin
+                           Fields.Include ("title", To_String (Spec.Title));
+                           Fields.Include ("kind", Kind);
+                           Fields.Include ("priority", Harness_Priority (Spec.Task_Priority));
+                           Fields.Include ("acceptance", To_String (Spec.Acceptance));
+                           Fields.Include ("notes", Notes);
+                           if not Harness_Dependencies.Is_Empty then
+                              Fields.Include ("depends_on", Join (Harness_Dependencies));
+                           end if;
+                           Tasks.Create
+                             (Store, Change, Fields, "improve", To_String (Result.Tasks (Index).Origin), Id, Status);
+                           Require_Ok (Status, "create native harness task " & To_String (Spec.Id));
+                           Result.Tasks (Index).Harness_Id := Id;
+                           Result.Tasks (Index).State := To_Unbounded_String ("candidate");
+                           Remaining := Remaining - 1;
+                           Progress := True;
+                        end;
+                     end if;
+                  end;
                end if;
             end loop;
-            if Stores.Change_Count (Change) > 0 and then not Dry_Run then
-               Stores.Commit (Store, Change, Status);
-               Require_Ok (Status, "commit native harness tasks");
+            if not Progress and then Remaining > 0 then
+               raise Data_Error with "task dependency order cannot be resolved for publication";
             end if;
-            if not Dry_Run then
-               for Index in 1 .. Natural (Result.Tasks.Length) loop
-                  Result.Tasks (Index).State :=
-                    To_Unbounded_String (Tasks.State_Of (Store, To_String (Result.Tasks (Index).Harness_Id)));
-               end loop;
-            end if;
-         end;
+         end loop;
+         if Stores.Change_Count (Change) > 0 and then not Dry_Run then
+            Stores.Commit (Store, Change, Status);
+            Require_Ok (Status, "commit native harness tasks");
+         end if;
+         if not Dry_Run then
+            for Index in 1 .. Natural (Result.Tasks.Length) loop
+               Result.Tasks (Index).State :=
+                 To_Unbounded_String (Tasks.State_Of (Store, To_String (Result.Tasks (Index).Harness_Id)));
+            end loop;
+         end if;
+      end Apply_Publication_Changes;
+   begin
+      Prepare_Publication;
+      declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
+         Result.Task_Kind := To_Unbounded_String (Kind);
+         Validate_Replacement_Closure;
+         Resolve_Existing_Publications (Kind);
+         Validate_Existing_Dependencies;
+         if Existing_Only then
+            Stores.Close (Store);
+            return Result;
+         end if;
+         Apply_Publication_Changes (Kind);
       end;
       Stores.Close (Store);
       return Result;

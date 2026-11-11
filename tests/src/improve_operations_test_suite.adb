@@ -825,7 +825,8 @@ begin
                   Improve.Storage.Open (Improve_State, State, Writable => False);
                   New_Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   Assert
-                    (Improve.Storage.List (Improve_State, Project).Length = 1 and then New_Plan.Revision = 2,
+                    (Improve.Storage.List (Improve_State, New_Plan.Project).Length = 1 and then
+                     New_Plan.Revision = 2,
                      "remeasured planning did not retain one stable plan with immutable revisions");
                   Improve.Storage.Close (Improve_State);
                end;

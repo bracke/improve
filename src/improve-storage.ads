@@ -10,7 +10,7 @@ with Improve.Model;
 package Improve.Storage is
    --  Improve-owned transactional persistence for immutable plans and append-only evidence.
 
-   Current_Schema_Version : constant Positive := 3;
+   Current_Schema_Version : constant Positive := 4;
    --  Supported Improve state schema version.
 
    type Store is limited private;
@@ -157,18 +157,22 @@ package Improve.Storage is
    --  @param Revision Exact revision ordinal, or zero for the newest containing revision.
    --  @return Immutable plan revision containing the requested task.
 
-   function List
-     (Item : in out Store; Project_Id : Natural := 0) return Summary_Vectors.Vector;
-   --  List latest plan revisions, optionally filtered by project.
+   function List_All
+     (Item    : in out Store;
+      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector;
+   --  List latest plan revisions across all database-qualified projects.
    --  @param Item Open store.
-   --  @param Project_Id Project identity or zero for every project.
+   --  @param Maximum Maximum summaries to materialize.
    --  @return Stable plan summaries.
 
    function List
-     (Item : in out Store; Project : Improve.Model.Project_Reference) return Summary_Vectors.Vector;
+     (Item    : in out Store;
+      Project : Improve.Model.Project_Reference;
+      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector;
    --  List latest plans for one database-qualified Ada Quality project.
    --  @param Item Open store.
    --  @param Project Full project identity including database and canonical path.
+   --  @param Maximum Maximum summaries to materialize.
    --  @return Stable plan summaries isolated from equal numeric IDs in other databases.
 
    procedure Record_Publications
@@ -260,13 +264,16 @@ package Improve.Storage is
    --  @param Item Writable store.
    --  @param Operation_Id Completed publication operation.
 
-   function Pending_Publications (Item : in out Store) return Operation_Vectors.Vector;
+   function Pending_Publications
+     (Item    : in out Store;
+      Maximum : Positive := Positive'Last) return Operation_Vectors.Vector;
    --  Return authorized publication starts with no completion event.
    --  @param Item Open store.
+   --  @param Maximum Maximum pending operations to materialize.
    --  @return Pending publication operations.
 
 private
-   Logical_Table_Count : constant := 13;
+   Logical_Table_Count : constant := 14;
    type Schema_Array is array (Positive range 1 .. Logical_Table_Count) of Database.Schema.Table_Schema;
    type Id_Array is array (Positive range 1 .. Logical_Table_Count) of Natural;
 

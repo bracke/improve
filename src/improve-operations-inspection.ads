@@ -1,4 +1,3 @@
-with Improve.Model;
 with Improve.Tasks;
 
 --  Read-only task and project status use cases.
@@ -37,9 +36,4 @@ package Improve.Operations.Inspection is
    --  @param Maximum_Items Hard project and task result-size limit.
    --  @return Stable project status models with freshness-qualified evidence.
 
-   procedure Require_Project_Identity
-     (Stored, Current : Improve.Model.Project_Reference);
-   --  Reject equal numeric project identifiers from different quality databases or roots.
-   --  @param Stored Project identity preserved with the Improve plan.
-   --  @param Current Project identity resolved from the selected quality database.
 end Improve.Operations.Inspection;

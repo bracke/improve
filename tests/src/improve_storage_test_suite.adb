@@ -243,6 +243,14 @@ package body Improve_Storage_Test_Suite is
         (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
          Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
          "schema migration did not preserve indexed plan history");
+      declare
+         Migrated : constant Improve.Model.Plan_Revision :=
+           Improve.Storage.Load_Task (Store, To_String (Stored_Plan.Tasks.First_Element.Id));
+      begin
+         Assert
+           (Migrated.Revision = Stored_Plan.Revision,
+            "schema migration did not build the historical task identity index");
+      end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);
    exception

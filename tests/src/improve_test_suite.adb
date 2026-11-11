@@ -23,6 +23,7 @@ with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
+with Improve.Operations;
 with Improve.Operations.Planning;
 with Improve.Planner;
 with Improve.Presentation;
@@ -863,7 +864,9 @@ package body Improve_Test_Suite is
             begin
                Assert (First.Exit_Code = 0 and then Second.Exit_Code = 0, "repeated planning failed");
                Improve.Storage.Open (Store, State, Writable => False);
-               declare Values : constant Improve.Storage.Summary_Vectors.Vector := Improve.Storage.List (Store); begin
+               declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+                 Improve.Storage.List_All (Store);
+               begin
                   Assert (Values.Length = 1 and then Values.First_Element.Revision = 1,
                           "repeated planning duplicated the plan revision");
                end;
@@ -1046,6 +1049,9 @@ package body Improve_Test_Suite is
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State);
                Applied : Improve.CLI.Outcome;
                Verified : Improve.CLI.Outcome;
+               Expected : constant Improve.Model.Project_Reference := Draft_For (First).Project;
+               Actual   : Improve.Model.Project_Reference := Expected;
+               Root_Rejected : Boolean := False;
             begin
                Assert (Planned.Exit_Code = 0, "database-identity fixture plan failed");
                Initialize_Harness (To_String (First.Target));
@@ -1064,6 +1070,13 @@ package body Improve_Test_Suite is
                  (Verified.Exit_Code = Improve.CLI.Failure_Exit and then Ada.Strings.Fixed.Index
                     (To_String (Verified.Errors), "database does not own the stored plan") > 0,
                   "verification accepted a same-numbered project from another quality database");
+               Actual.Path := Second.Target;
+               begin
+                  Improve.Operations.Require_Project_Identity (Expected, Actual);
+               exception
+                  when Improve.Data_Error => Root_Rejected := True;
+               end;
+               Assert (Root_Rejected, "project identity accepted a different canonical project root");
                Remove (First);
                Remove (Second);
             end;
@@ -1084,7 +1097,7 @@ package body Improve_Test_Suite is
                   "same-numbered database history fixture did not plan");
                Improve.Storage.Open (Store, State_Path, Writable => False);
                Assert
-                 (Improve.Storage.List (Store).Length = 2 and then
+                 (Improve.Storage.List_All (Store).Length = 2 and then
                   Improve.Storage.List
                     (Store, Draft_For (First).Project).Length = 1 and then
                   Improve.Storage.List
