@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Containers;
 with Ada.Exceptions;
 with Ada.IO_Exceptions;
 with Ada.Text_IO;
@@ -27,9 +28,20 @@ package body Improve.CLI is
    use Ada.Strings.Unbounded;
    use Improve.Config;
    use Improve.Text;
+   use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
 
    LF : constant Character := Character'Val (10);
+
+   procedure Require_Output_Items
+     (Count : Ada.Containers.Count_Type;
+      Limit : Positive;
+      Name  : String) is
+   begin
+      if Count > Ada.Containers.Count_Type (Limit) then
+         raise Data_Error with Name & " exceeds output.maximum_output_items";
+      end if;
+   end Require_Output_Items;
 
    function Name (Command : Command_Kind) return String is
      (case Command is
@@ -105,6 +117,7 @@ package body Improve.CLI is
            (if Item.Format = JSON_Format then Improve.JSON.Projects (Values, Snapshot)
             else Improve.Presentation.Projects (Values));
       begin
+         Require_Output_Items (Values.Length, Settings.Maximum_Output_Items, "project query");
          Improve.Source.Close (Store);
          return Result;
       end;
@@ -121,7 +134,9 @@ package body Improve.CLI is
          Values   : constant Improve.Model.Finding_Vectors.Vector :=
            Improve.Findings.Normalize
              (Selected, Improve.Config.Quality_Severity (Settings.Minimum_Severity),
-              Settings.Allow_Investigation_Tasks);
+              Settings.Allow_Investigation_Tasks,
+              Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
+              Settings.Maximum_Assessment_Bytes);
          Result   : constant String :=
            (if Item.Format = JSON_Format then Improve.JSON.Findings (Selected, Values)
             else Improve.Presentation.Findings (Selected, Values));
@@ -151,6 +166,7 @@ package body Improve.CLI is
                  (if Item.Has_Revision then Item.Revision else 0),
                  Improve.Operations.Storage_Read_Limits (Settings));
          begin
+            Require_Output_Items (Plan.Tasks.Length, Settings.Maximum_Output_Items, "plan task output");
             if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
             return Improve.Presentation.Plan (Plan);
          end;
@@ -189,6 +205,8 @@ package body Improve.CLI is
            Dry_Run          => Item.Dry_Run,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
+      Require_Output_Items
+        (Executed.Published.Tasks.Length, Settings.Maximum_Output_Items, "publication output");
       if Item.Format = JSON_Format then
          return Improve.JSON.Publication
            (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
@@ -255,6 +273,8 @@ package body Improve.CLI is
            Settings         => Settings);
    begin
       Negative := Executed.Report.Outcome /= Improve.Model.Verified;
+      Require_Output_Items
+        (Executed.Report.Tasks.Length, Settings.Maximum_Output_Items, "verification output");
       if Item.Format = JSON_Format then
          return Improve.JSON.Verification (Executed.Report, Command);
       end if;

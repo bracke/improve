@@ -65,7 +65,7 @@ package body Improve.Operations.Verification is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path, Writable => False);
             for Record_Value of Improve.Storage.Verifications
-              (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History)
+              (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
             loop
                for Spec of Plan.Tasks loop
                   if Record_Value.Scope = Improve.Storage.Task_Evaluation and then

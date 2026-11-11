@@ -30,7 +30,7 @@ package body Improve.Recovery is
               Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision, Limits);
             Existing : constant Improve.Storage.Publication_Vectors.Vector :=
               Improve.Storage.Publications
-                (State, To_String (Operation.Plan_Id), Limits.Maximum_History);
+                (State, To_String (Operation.Plan_Id), Limits.Maximum_History, Limits);
             Approved : constant Boolean :=
               Improve.Storage.Is_Approved
                 (State, To_String (Operation.Plan_Id), Operation.Revision, Limits);

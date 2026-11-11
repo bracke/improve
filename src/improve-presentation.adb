@@ -1,4 +1,6 @@
 with Ada.Strings.Fixed;
+with Ada.Strings.UTF_Encoding;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Types;
 with Improve.Text;
@@ -33,14 +35,32 @@ package body Improve.Presentation is
      (Terminal_Styles.Decorate (Safe_Text (Text), Terminal_Styles.Role_Header));
 
    function Safe_Text (Text : String) return String is
-      Result : String := Text;
+      function Unsafe (Value : Wide_Wide_Character) return Boolean is
+         Position : constant Natural := Wide_Wide_Character'Pos (Value);
+      begin
+         return Position < 32 or else Position in 127 .. 159 or else
+           Position in 16#061C# | 16#200E# | 16#200F# | 16#202A# .. 16#202E# |
+             16#2066# .. 16#2069# | 16#FEFF#;
+      end Unsafe;
    begin
-      for Value of Result loop
-         if Character'Pos (Value) < 32 or else Character'Pos (Value) = 127 then
-            Value := ' ';
-         end if;
-      end loop;
-      return Result;
+      declare
+         Result : Wide_Wide_String := Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Text);
+      begin
+         for Value of Result loop
+            if Unsafe (Value) then Value := ' '; end if;
+         end loop;
+         return Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode (Result);
+      end;
+   exception
+      when Ada.Strings.UTF_Encoding.Encoding_Error =>
+         declare Result : String := Text; begin
+            for Value of Result loop
+               if Character'Pos (Value) < 32 or else Character'Pos (Value) in 127 .. 159 then
+                  Value := ' ';
+               end if;
+            end loop;
+            return Result;
+         end;
    end Safe_Text;
 
    procedure Append_Plan_Tasks

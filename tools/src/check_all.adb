@@ -14,7 +14,7 @@ procedure Check_All is
    Check : constant Project_Tools.Release_Checks.Checker := Project_Tools.Release_Checks.Create (Root);
    Failed : Boolean := False;
 
-   procedure Check_File (Path : String) is
+   procedure Check_File (Path : String; Maximum_Lines : Natural := 0) is
    begin
       if not Project_Tools.Files.File_Exists (Path) then
          Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "missing required file: " & Path);
@@ -24,10 +24,12 @@ procedure Check_All is
       declare
          Text   : constant String := Project_Tools.Files.Read_Raw_File (Path);
          Column : Natural := 0;
+         Lines  : Natural := (if Text = "" then 0 else 1);
       begin
          for C of Text loop
             if C = Character'Val (10) then
                Column := 0;
+               Lines := Lines + 1;
             else
                Column := Column + 1;
                if Column = 121 then
@@ -40,6 +42,12 @@ procedure Check_All is
                Failed := True;
             end if;
          end loop;
+         if Maximum_Lines > 0 and then Lines > Maximum_Lines then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "source exceeds structural line limit:" & Natural'Image (Lines) & " " & Path);
+            Failed := True;
+         end if;
       end;
    end Check_File;
 
@@ -82,9 +90,15 @@ begin
    if Root = "" then
       Project_Tools.Release_Checks.Fail ("cannot locate Improve project root");
    end if;
-   for Path of Project_Tools.Files.List_Tree ("src", "*.ad?") loop Check_File (To_String (Path)); end loop;
-   for Path of Project_Tools.Files.List_Tree ("tests/src", "*.ad?") loop Check_File (To_String (Path)); end loop;
-   for Path of Project_Tools.Files.List_Tree ("tools/src", "*.ad?") loop Check_File (To_String (Path)); end loop;
+   for Path of Project_Tools.Files.List_Tree ("src", "*.ad?") loop
+      Check_File (To_String (Path), Maximum_Lines => 900);
+   end loop;
+   for Path of Project_Tools.Files.List_Tree ("tests/src", "*.ad?") loop
+      Check_File (To_String (Path), Maximum_Lines => 650);
+   end loop;
+   for Path of Project_Tools.Files.List_Tree ("tools/src", "*.ad?") loop
+      Check_File (To_String (Path), Maximum_Lines => 300);
+   end loop;
    Check_File ("alire.toml");
    Check_File ("alire.release.toml");
    Check_File ("tests/alire.release.toml");

@@ -193,6 +193,27 @@ package body Improve_Storage_Test_Suite is
       end;
       Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
       declare
+         Task_Ids : Improve.Model.UString_Vectors.Vector;
+         Limits   : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+         Rejected : Boolean := False;
+      begin
+         Task_Ids.Append (Stored_Plan.Tasks (1).Id);
+         Task_Ids.Append (Stored_Plan.Tasks (2).Id);
+         Limits.Maximum_Tasks := 1;
+         begin
+            declare
+               Operation : constant Positive :=
+                 Improve.Storage.Begin_Publication (Store, Stored_Plan, Task_Ids, Limits);
+               pragma Unreferenced (Operation);
+            begin
+               null;
+            end;
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "publication journal packed tasks before enforcing its configured limit");
+      end;
+      declare
          Mappings : Improve.Storage.Publication_Vectors.Vector;
          Evidence : Improve.Storage.Verification_Vectors.Vector;
          Limit_Rejected : Boolean := False;
@@ -243,6 +264,40 @@ package body Improve_Storage_Test_Suite is
            (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
             Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
             "indexed publication or verification history was not plan-scoped");
+         declare
+            Limits : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+            Publication_Rejected : Boolean := False;
+            Verification_Rejected : Boolean := False;
+         begin
+            Limits.Maximum_Text_Bytes := 16;
+            begin
+               declare
+                  Values : constant Improve.Storage.Publication_Vectors.Vector :=
+                    Improve.Storage.Publications
+                      (Store, To_String (Stored_Plan.Plan_Id), Limits => Limits);
+                  pragma Unreferenced (Values);
+               begin
+                  null;
+               end;
+            exception
+               when Improve.Data_Error => Publication_Rejected := True;
+            end;
+            begin
+               declare
+                  Values : constant Improve.Storage.Verification_Vectors.Vector :=
+                    Improve.Storage.Verifications
+                      (Store, To_String (Stored_Plan.Plan_Id), Limits => Limits);
+                  pragma Unreferenced (Values);
+               begin
+                  null;
+               end;
+            exception
+               when Improve.Data_Error => Verification_Rejected := True;
+            end;
+            Assert
+              (Publication_Rejected and then Verification_Rejected,
+               "history payload reads ignored configured byte limits");
+         end;
          begin
             declare
                Values : constant Improve.Storage.Publication_Vectors.Vector :=

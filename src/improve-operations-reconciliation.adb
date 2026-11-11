@@ -29,7 +29,7 @@ package body Improve.Operations.Reconciliation is
                Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id), Limits);
                Improve.Operations.Require_Project_Identity (Plan.Project, Project);
                Publications := Improve.Storage.Publications
-                 (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
+                 (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
             end;
             Improve.Storage.Close (State);
          end;

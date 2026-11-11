@@ -26,6 +26,8 @@ package body Improve.Planner is
    function Configuration_Fingerprint (Settings : Improve.Config.Settings) return String is
      (Stable_Digest
         (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
+         Positive'Image (Settings.Maximum_Assessment_Findings) & "|" &
+         Positive'Image (Settings.Maximum_Assessment_Bytes) & "|" &
          Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
          Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &

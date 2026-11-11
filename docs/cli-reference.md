@@ -71,9 +71,10 @@ is retained for audit, but the derived task status does not treat it as verified
 current or when the current assessment is unknown. This freshness rule applies to verified, regressed, superseded,
 partially resolved, still failing, and inconclusive measurement outcomes.
 
-Both queries are bounded by `output.maximum_output_items`; historical evidence reads use the independent
-`operations.maximum_history_items` limit. They open Improve state read-only and never initialize,
-migrate, or repair it.
+Every collection output is bounded by `output.maximum_output_items`, including projects, findings, plans,
+publication results, tasks, status, and verification results. Historical evidence reads use the independent
+`operations.maximum_history_items` limit, and assessment normalization has separate finding and byte limits.
+Read-only queries never initialize, migrate, or repair Improve state.
 
 ## Recovery
 

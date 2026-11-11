@@ -5,7 +5,7 @@ repository checker and coverage driver are Ada 2022 programs:
 
 - `tools/src/check_phase_9.adb` orchestrates the complete gate;
 - `tools/src/check_release_candidate.adb` validates a clean, pin-free staged release with Ada Quality;
-- `tools/src/check_all.adb` enforces repository and Ada-only tooling policy;
+- `tools/src/check_all.adb` enforces repository, Ada-only tooling, formatting, and structural unit-size policy;
 - `tools/src/improve_coverage.adb` builds instrumented binaries, runs them, parses gcov evidence, and applies the
   production threshold.
 

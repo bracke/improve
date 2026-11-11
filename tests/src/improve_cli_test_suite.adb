@@ -101,6 +101,12 @@ package body Improve_CLI_Test_Suite is
             declare
                Unsafe : constant String := "before" & Character'Val (27) & "[2J" & ASCII.LF & "after";
                Safe   : constant String := Improve.Presentation.Safe_Text (Unsafe);
+               Unicode_Unsafe : constant String :=
+                 "left" & Character'Val (16#C2#) & Character'Val (16#9B#) &
+                 Character'Val (16#E2#) & Character'Val (16#80#) & Character'Val (16#AE#) & "right";
+               Unicode_Safe : constant String := Improve.Presentation.Safe_Text (Unicode_Unsafe);
+               Invalid_UTF8_Safe : constant String :=
+                 Improve.Presentation.Safe_Text ("raw" & Character'Val (16#9B#) & "control");
                Publications : constant Improve.Workflow.Publication_Result := (others => <>);
                Recovery     : constant Improve.Recovery.Recovery_Report :=
                  (Operations_Recovered => 1, Tasks_Recovered => 2);
@@ -114,6 +120,14 @@ package body Improve_CLI_Test_Suite is
                  (Ada.Strings.Fixed.Index (Safe, Character'Val (27) & "[2J") = 0 and then
                   Ada.Strings.Fixed.Index (Safe, ASCII.LF & "after") = 0,
                   "terminal sanitizer retained control characters");
+               Assert
+                 (Ada.Strings.Fixed.Index (Unicode_Safe, String'(1 => Character'Val (16#9B#))) = 0 and then
+                  Ada.Strings.Fixed.Index (Unicode_Safe, String'(1 => Character'Val (16#AE#))) = 0,
+                  "terminal sanitizer retained Unicode control characters");
+               Assert
+                 (Ada.Strings.Fixed.Index
+                    (Invalid_UTF8_Safe, String'(1 => Character'Val (16#9B#))) = 0,
+                  "terminal sanitizer retained an invalid encoded control byte");
                Assert
                  (Improve.Presentation.Projects (Ada_Quality.Reporting.Project_Vectors.Empty_Vector)'Length > 0
                   and then

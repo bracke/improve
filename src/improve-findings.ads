@@ -9,11 +9,15 @@ package Improve.Findings is
    function Normalize
      (Selected         : Improve.Source.Selection;
       Minimum_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.Low;
-      Allow_Investigation : Boolean := True) return Improve.Model.Finding_Vectors.Vector;
+      Allow_Investigation : Boolean := True;
+      Maximum_Findings : Positive := 10_000;
+      Maximum_Bytes    : Positive := 16_777_216) return Improve.Model.Finding_Vectors.Vector;
    --  Return deterministic candidates from violations and unavailable evidence.
    --  @param Selected Completed assessment and baseline provenance.
    --  @param Minimum_Severity Lowest source finding severity to retain.
    --  @param Allow_Investigation Whether unavailable evidence may create investigation candidates.
+   --  @param Maximum_Findings Maximum normalized findings to materialize.
+   --  @param Maximum_Bytes Maximum aggregate normalized evidence bytes.
    --  @return Deterministically ordered normalized findings.
 
    function Safe_Relative_Path (Path : String) return Boolean;

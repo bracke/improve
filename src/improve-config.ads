@@ -34,6 +34,8 @@ package Improve.Config is
    type Settings is record
       Quality_Database          : UString;
       Selection                 : Selection_Mode := Latest_Completed;
+      Maximum_Assessment_Findings : Positive := 10_000;
+      Maximum_Assessment_Bytes  : Positive := 16_777_216;
       Minimum_Severity          : Severity_Level := Low;
       Maximum_Tasks_Per_Plan    : Positive := 100;
       Maximum_Findings_Per_Task : Positive := 50;
@@ -60,6 +62,8 @@ package Improve.Config is
    --  Validated configuration values.
    --  @field Quality_Database Default Ada Quality database path.
    --  @field Selection Assessment selection policy.
+   --  @field Maximum_Assessment_Findings Maximum findings normalized from one assessment.
+   --  @field Maximum_Assessment_Bytes Maximum aggregate normalized assessment evidence bytes.
    --  @field Minimum_Severity Minimum planned severity.
    --  @field Maximum_Tasks_Per_Plan Maximum generated tasks.
    --  @field Maximum_Findings_Per_Task Maximum findings grouped into one task.

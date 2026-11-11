@@ -25,10 +25,10 @@ package body Improve.Operations.Inspection is
       declare
          Publications : constant Improve.Storage.Publication_Vectors.Vector :=
            Improve.Storage.Publications
-             (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
+             (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
          Verifications : constant Improve.Storage.Verification_Vectors.Vector :=
            Improve.Storage.Verifications
-             (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History);
+             (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits);
       begin
          return Improve.Tasks.Build
            (Plan, Publications, Verifications, Current_Assessment, Maximum_Items);
@@ -171,7 +171,7 @@ package body Improve.Operations.Inspection is
                Latest_Plan_Run : Natural := 0;
             begin
                for Evidence of Improve.Storage.Verifications
-                 (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History)
+                 (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
                loop
                   if Evidence.Plan_Revision = Plan.Revision and then
                     Evidence.Contract_Fingerprint = Plan.Fingerprint and then

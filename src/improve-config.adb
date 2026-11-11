@@ -13,6 +13,8 @@ package body Improve.Config is
    function Defaults return Settings is
      ((Quality_Database          => To_Unbounded_String (".ada-quality.db"),
        Selection                 => Latest_Completed,
+       Maximum_Assessment_Findings => 10_000,
+       Maximum_Assessment_Bytes  => 16_777_216,
        Minimum_Severity          => Low,
        Maximum_Tasks_Per_Plan    => 100,
        Maximum_Findings_Per_Task => 50,
@@ -115,6 +117,13 @@ package body Improve.Config is
          if Length (Result.Quality_Database) = 0 then
             raise Argument_Error with "quality.database must not be empty";
          end if;
+         Result.Maximum_Assessment_Findings := Natural_Value ("maximum_assessment_findings", 10_000);
+         Result.Maximum_Assessment_Bytes := Natural_Value ("maximum_assessment_bytes", 16_777_216);
+         if Result.Maximum_Assessment_Findings > 1_000_000 then
+            raise Argument_Error with "quality.maximum_assessment_findings exceeds 1000000";
+         elsif Result.Maximum_Assessment_Bytes > 268_435_456 then
+            raise Argument_Error with "quality.maximum_assessment_bytes exceeds 268435456";
+         end if;
          if Severity = "info" then Result.Minimum_Severity := Info;
          elsif Severity = "low" then Result.Minimum_Severity := Low;
          elsif Severity = "medium" then Result.Minimum_Severity := Medium;
@@ -188,6 +197,8 @@ package body Improve.Config is
         "schema_version = 1" & LF &
         "quality.database = """ & To_String (Item.Quality_Database) & """" & LF &
         "quality.selection = ""latest_completed""" & LF &
+        "quality.maximum_assessment_findings =" & Positive'Image (Item.Maximum_Assessment_Findings) & LF &
+        "quality.maximum_assessment_bytes =" & Positive'Image (Item.Maximum_Assessment_Bytes) & LF &
         "planning.minimum_severity = """ & Lower (Severity_Level'Image (Item.Minimum_Severity)) & """" & LF &
         "planning.maximum_tasks_per_plan =" & Positive'Image (Item.Maximum_Tasks_Per_Plan) & LF &
         "planning.maximum_findings_per_task =" & Positive'Image (Item.Maximum_Findings_Per_Task) & LF &

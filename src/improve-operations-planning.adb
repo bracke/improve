@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Ada.Strings.Unbounded;
 with Improve.Findings;
 with Improve.Planner;
@@ -5,6 +6,7 @@ with Improve.Source;
 
 package body Improve.Operations.Planning is
    use Ada.Strings.Unbounded;
+   use type Ada.Containers.Count_Type;
 
    function Generate
      (State_Path       : String;
@@ -25,12 +27,17 @@ package body Improve.Operations.Planning is
            Improve.Findings.Normalize
              (Selected,
               Improve.Config.Quality_Severity (Settings.Minimum_Severity),
-              Settings.Allow_Investigation_Tasks);
+              Settings.Allow_Investigation_Tasks,
+              Settings.Maximum_Assessment_Findings,
+              Settings.Maximum_Assessment_Bytes);
          Draft : constant Improve.Model.Plan_Revision :=
            Improve.Planner.Generate
              (Selected, Findings, Settings,
               Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path), State_Path));
       begin
+         if Draft.Tasks.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+            raise Data_Error with "generated plan exceeds output.maximum_output_items";
+         end if;
          Improve.Source.Close (Quality);
          if Dry_Run then
             return (Plan => Draft, Existing => False);

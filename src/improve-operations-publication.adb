@@ -27,7 +27,7 @@ package body Improve.Operations.Publication is
       Improve.Storage.Open (State, State_Path, Writable => False);
       Plan := Improve.Storage.Load (State, Plan_Id, Limits);
       Existing := Improve.Storage.Publications
-        (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
+        (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
       Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision, Limits);
       Improve.Storage.Close (State);
       if Selected_Task_Id /= "" then

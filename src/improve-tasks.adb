@@ -1,3 +1,5 @@
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Strings.Hash;
 with Improve.Verification;
 
 package body Improve.Tasks is
@@ -5,6 +7,14 @@ package body Improve.Tasks is
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Storage.Verification_Scope;
+
+   package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type => String, Element_Type => Positive,
+      Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+
+   package Value_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type => String, Element_Type => UString,
+      Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
 
    function Image (Value : Operational_Status) return String is
      (case Value is
@@ -63,46 +73,93 @@ package body Improve.Tasks is
       Result : View_Vectors.Vector;
       Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
+      Effective : Value_Maps.Map;
+      Task_Contracts : Value_Maps.Map;
+      Specifications : Index_Maps.Map;
+      Published_By_Contract : Index_Maps.Map;
+      Latest_Verification : Index_Maps.Map;
    begin
       if Plan.Tasks.Length > Ada.Containers.Count_Type (Maximum_Items) then
          raise Improve.Data_Error with "task view exceeds configured item limit";
       end if;
+      for Binding of Contracts loop
+         Effective.Insert (To_String (Binding.Task_Id), Binding.Fingerprint);
+      end loop;
+      for Index in 1 .. Natural (Plan.Tasks.Length) loop
+         declare Identity : constant String := To_String (Plan.Tasks (Index).Id); begin
+            if Specifications.Contains (Identity) then
+               raise Improve.Data_Error with "duplicate task specification " & Identity;
+            end if;
+            Specifications.Insert (Identity, Index);
+            Task_Contracts.Insert
+              (Identity,
+               To_Unbounded_String (Improve.Verification.Contract_Fingerprint (Plan.Tasks (Index))));
+         end;
+      end loop;
+      for Index in 1 .. Natural (Publications.Length) loop
+         declare
+            Key : constant String :=
+              To_String (Publications (Index).Improve_Task_Id) & Character'Val (0) &
+              To_String (Publications (Index).Contract);
+         begin
+            if not Published_By_Contract.Contains (Key) then
+               Published_By_Contract.Insert (Key, Index);
+            end if;
+         end;
+      end loop;
+      for Index in 1 .. Natural (Verifications.Length) loop
+         declare
+            Verification : Improve.Storage.Verification_Record renames Verifications (Index);
+            Identity     : constant String := To_String (Verification.Task_Id);
+         begin
+            if Verification.Scope = Improve.Storage.Task_Evaluation and then
+              Specifications.Contains (Identity) and then
+              Verification.Plan_Revision = Plan.Revision and then
+              Verification.Contract_Fingerprint = Task_Contracts.Element (Identity)
+            then
+               if not Latest_Verification.Contains (Identity) or else
+                 Verifications (Latest_Verification.Element (Identity)).Assessment_Id <=
+                   Verification.Assessment_Id
+               then
+                  Latest_Verification.Include (Identity, Index);
+               end if;
+            end if;
+         end;
+      end loop;
       for Spec of Plan.Tasks loop
          declare
             View       : Task_View;
-            Latest_Run : Natural := 0;
+            Identity   : constant String := To_String (Spec.Id);
+            Contract   : constant String := To_String (Effective.Element (Identity));
+            Mapping_Key : constant String := Identity & Character'Val (0) & Contract;
          begin
             View.Project_Id := Plan.Project.Id;
             View.Project := Plan.Project.Name;
             View.Plan_Id := Plan.Plan_Id;
             View.Improve_Id := Spec.Id;
             View.Title := Spec.Title;
-            for Published of Publications loop
-               if Published.Improve_Task_Id = Spec.Id and then
-                 To_String (Published.Contract) =
-                   Improve.Model.Effective_Task_Contract (Contracts, Spec.Id)
-               then
+            if Published_By_Contract.Contains (Mapping_Key) then
+               declare
+                  Published : Improve.Storage.Publication_Record renames
+                    Publications (Published_By_Contract.Element (Mapping_Key));
+               begin
                   View.Harness_Id := Published.Harness_Task_Id;
                   View.Harness_State := Published.State;
-                  exit;
-               end if;
-            end loop;
-            for Verification of Verifications loop
-               if Verification.Scope = Improve.Storage.Task_Evaluation and then
-                 Verification.Task_Id = Spec.Id and then
-                 Verification.Plan_Revision = Plan.Revision and then
-                 To_String (Verification.Contract_Fingerprint) =
-                   Improve.Verification.Contract_Fingerprint (Spec) and then
-                 Verification.Assessment_Id >= Latest_Run
-               then
-                  Latest_Run := Verification.Assessment_Id;
+               end;
+            end if;
+            if Latest_Verification.Contains (Identity) then
+               declare
+                  Verification : Improve.Storage.Verification_Record renames
+                    Verifications (Latest_Verification.Element (Identity));
+               begin
                   View.Quality := Verification.Outcome;
                   View.Has_Verification := True;
                   View.Verification_Run := Verification.Assessment_Id;
-               end if;
-            end loop;
+               end;
+            end if;
             View.Verification_Current :=
-              View.Has_Verification and then Current_Assessment > 0 and then Latest_Run = Current_Assessment;
+              View.Has_Verification and then Current_Assessment > 0 and then
+              View.Verification_Run = Current_Assessment;
             View.Status := Status_Of
               (To_String (View.Harness_State), View.Quality, View.Verification_Current);
             Result.Append (View);
@@ -145,63 +202,82 @@ package body Improve.Tasks is
      (Plan  : Improve.Model.Plan_Revision;
       Views : View_Vectors.Vector) return Finding_Summary is
       Result : Finding_Summary;
+      type Finding_State is record
+         Linked                  : Natural := 0;
+         All_Verified            : Boolean := True;
+         Any_Unknown             : Boolean := False;
+         Any_Regressed           : Boolean := False;
+         All_Superseded          : Boolean := True;
+         Any_Current             : Boolean := False;
+         All_Previously_Verified : Boolean := True;
+      end record;
 
-      function View_For (Task_Id : UString) return Task_View is
-         Match : Natural := 0;
-      begin
-         for Index in 1 .. Natural (Views.Length) loop
-            if Views (Index).Improve_Id = Task_Id then
-               if Match /= 0 then
-                  raise Improve.Data_Error with
-                    "duplicate task view " & To_String (Task_Id);
-               end if;
-               Match := Index;
-            end if;
-         end loop;
-         if Match = 0 then
-            raise Improve.Data_Error with
-              "missing task view " & To_String (Task_Id);
-         end if;
-         return Views (Match);
-      end View_For;
+      package Finding_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+        (Key_Type => String, Element_Type => Finding_State,
+         Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+
+      View_Indexes : Index_Maps.Map;
+      States       : Finding_Maps.Map;
    begin
+      for Index in 1 .. Natural (Views.Length) loop
+         declare Identity : constant String := To_String (Views (Index).Improve_Id); begin
+            if View_Indexes.Contains (Identity) then
+               raise Improve.Data_Error with "duplicate task view " & Identity;
+            end if;
+            View_Indexes.Insert (Identity, Index);
+         end;
+      end loop;
+      for Finding of Plan.Findings loop
+         declare Key : constant String := To_String (Finding.Fingerprint); begin
+            if States.Contains (Key) then
+               raise Improve.Data_Error with "duplicate plan finding " & Key;
+            end if;
+            States.Insert (Key, Finding_State'(others => <>));
+         end;
+      end loop;
+      for Spec of Plan.Tasks loop
+         declare Identity : constant String := To_String (Spec.Id); begin
+            if not View_Indexes.Contains (Identity) then
+               raise Improve.Data_Error with "missing task view " & Identity;
+            end if;
+            declare View : Task_View renames Views (View_Indexes.Element (Identity)); begin
+               for Finding_Key of Spec.Finding_Keys loop
+                  declare Key : constant String := To_String (Finding_Key); begin
+                     if States.Contains (Key) then
+                        declare State : Finding_State := States.Element (Key); begin
+                           State.Linked := State.Linked + 1;
+                           State.Any_Current := State.Any_Current or else View.Verification_Current;
+                           State.All_Verified := State.All_Verified and then
+                             View.Verification_Current and then View.Quality = Improve.Model.Verified;
+                           State.All_Superseded := State.All_Superseded and then
+                             View.Verification_Current and then View.Quality = Improve.Model.Superseded;
+                           State.Any_Unknown := State.Any_Unknown or else
+                             (View.Verification_Current and then View.Quality = Improve.Model.Inconclusive);
+                           State.Any_Regressed := State.Any_Regressed or else
+                             (View.Verification_Current and then View.Quality = Improve.Model.Regressed);
+                           State.All_Previously_Verified := State.All_Previously_Verified and then
+                             View.Has_Verification and then not View.Verification_Current and then
+                             View.Quality = Improve.Model.Verified;
+                           States.Replace (Key, State);
+                        end;
+                     end if;
+                  end;
+               end loop;
+            end;
+         end;
+      end loop;
       for Finding of Plan.Findings loop
          declare
-            Linked       : Natural := 0;
-            All_Verified : Boolean := True;
-            Any_Unknown  : Boolean := False;
-            Any_Regressed : Boolean := False;
-            All_Superseded : Boolean := True;
-            Any_Current : Boolean := False;
-            All_Previously_Verified : Boolean := True;
+            State : constant Finding_State := States.Element (To_String (Finding.Fingerprint));
          begin
-            for Index in 1 .. Natural (Plan.Tasks.Length) loop
-               if Plan.Tasks (Index).Finding_Keys.Contains (Finding.Fingerprint) then
-                  Linked := Linked + 1;
-                  declare View : constant Task_View := View_For (Plan.Tasks (Index).Id); begin
-                     Any_Current := Any_Current or else View.Verification_Current;
-                     All_Verified := All_Verified and then
-                       View.Verification_Current and then View.Quality = Improve.Model.Verified;
-                     All_Superseded := All_Superseded and then
-                       View.Verification_Current and then View.Quality = Improve.Model.Superseded;
-                     Any_Unknown := Any_Unknown or else
-                       (View.Verification_Current and then View.Quality = Improve.Model.Inconclusive);
-                     Any_Regressed := Any_Regressed or else
-                       (View.Verification_Current and then View.Quality = Improve.Model.Regressed);
-                     All_Previously_Verified := All_Previously_Verified and then
-                       View.Has_Verification and then not View.Verification_Current and then
-                       View.Quality = Improve.Model.Verified;
-                  end;
-               end if;
-            end loop;
-            if Linked = 0 then Result.Outstanding := Result.Outstanding + 1;
-            elsif Any_Regressed then Result.Regressed := Result.Regressed + 1;
-            elsif All_Verified then Result.Resolved := Result.Resolved + 1;
-            elsif All_Superseded then Result.Superseded := Result.Superseded + 1;
-            elsif Any_Unknown then Result.Not_Measurable := Result.Not_Measurable + 1;
-            elsif not Any_Current and then All_Previously_Verified then
+            if State.Linked = 0 then Result.Outstanding := Result.Outstanding + 1;
+            elsif State.Any_Regressed then Result.Regressed := Result.Regressed + 1;
+            elsif State.All_Verified then Result.Resolved := Result.Resolved + 1;
+            elsif State.All_Superseded then Result.Superseded := Result.Superseded + 1;
+            elsif State.Any_Unknown then Result.Not_Measurable := Result.Not_Measurable + 1;
+            elsif not State.Any_Current and then State.All_Previously_Verified then
                Result.Previously_Resolved := Result.Previously_Resolved + 1;
-            elsif not Any_Current then Result.Unverified := Result.Unverified + 1;
+            elsif not State.Any_Current then Result.Unverified := Result.Unverified + 1;
             else Result.Outstanding := Result.Outstanding + 1;
             end if;
          end;

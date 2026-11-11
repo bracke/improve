@@ -30,9 +30,12 @@ package body Improve.Findings is
    function Normalize
      (Selected         : Improve.Source.Selection;
       Minimum_Severity : Severity := Low;
-      Allow_Investigation : Boolean := True) return Improve.Model.Finding_Vectors.Vector is
+      Allow_Investigation : Boolean := True;
+      Maximum_Findings : Positive := 10_000;
+      Maximum_Bytes    : Positive := 16_777_216) return Improve.Model.Finding_Vectors.Vector is
       Result : Improve.Model.Finding_Vectors.Vector;
       Seen   : Seen_Maps.Map;
+      Bytes  : Natural := 0;
 
       procedure Add (Item : Improve.Model.Finding_Reference) is
          Key : constant String :=
@@ -40,6 +43,30 @@ package body Improve.Findings is
            To_String (Item.Fingerprint) & "|" & To_String (Item.Semantic_Subject);
       begin
          if not Seen.Contains (Key) then
+            declare
+               Size : Natural := 0;
+
+               procedure Include (Value : Ada.Strings.Unbounded.Unbounded_String) is
+               begin
+                  if Length (Value) > Maximum_Bytes - Size then
+                     raise Data_Error with "assessment exceeds configured evidence byte limit";
+                  end if;
+                  Size := Size + Length (Value);
+               end Include;
+            begin
+               Include (Item.Rule);
+               Include (Item.Relative_Path);
+               Include (Item.Fingerprint);
+               Include (Item.Semantic_Subject);
+               Include (Item.Message);
+               Include (Item.Evidence);
+               if Natural (Result.Length) >= Maximum_Findings then
+                  raise Data_Error with "assessment exceeds configured finding limit";
+               elsif Size > Maximum_Bytes - Bytes then
+                  raise Data_Error with "assessment exceeds configured evidence byte limit";
+               end if;
+               Bytes := Bytes + Size;
+            end;
             Seen.Insert (Key, True);
             Result.Append (Item);
          end if;

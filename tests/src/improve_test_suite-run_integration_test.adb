@@ -27,6 +27,26 @@ begin
                   end;
                end loop;
                declare
+                  Settings : Improve.Config.Settings := Improve.Config.Defaults;
+                  Rejected : Boolean := False;
+               begin
+                  Settings.Maximum_Output_Items := 1;
+                  begin
+                     declare
+                        Planned : constant Improve.Operations.Planning.Generation_Result :=
+                          Improve.Operations.Planning.Generate
+                            (To_String (Data.Directory) & "/bounded.db", To_String (Data.Database),
+                             Id_Image (Data.Project), 0, Settings, Dry_Run => True);
+                        pragma Unreferenced (Planned);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "planning ignored output.maximum_output_items");
+               end;
+               declare
                   Rejected : Boolean := False;
                begin
                   begin

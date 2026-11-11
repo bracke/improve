@@ -121,7 +121,9 @@ package body Improve.Verification is
       Result : Report;
       Current_Findings : constant Improve.Model.Finding_Vectors.Vector :=
         Improve.Findings.Normalize
-          (Current, Minimum_Severity => Ada_Quality.Types.Info, Allow_Investigation => True);
+          (Current, Minimum_Severity => Ada_Quality.Types.Info, Allow_Investigation => True,
+           Maximum_Findings => Settings.Maximum_Assessment_Findings,
+           Maximum_Bytes => Settings.Maximum_Assessment_Bytes);
 
       function Complete_Project_Outcome return Improve.Model.Quality_Outcome is
          Inconclusive : Boolean := False;

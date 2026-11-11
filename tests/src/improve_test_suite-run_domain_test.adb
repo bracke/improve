@@ -211,6 +211,36 @@ begin
                   Assert (Values.Length = 3, "findings were not deduplicated/classified into three candidates");
                   Assert (To_String (Values.First_Element.Fingerprint) = "fixture-manifest",
                           "Ada Quality finding fingerprint was not preserved");
+                  declare
+                     Finding_Limit_Rejected : Boolean := False;
+                     Byte_Limit_Rejected    : Boolean := False;
+                  begin
+                     begin
+                        declare
+                           Ignored : constant Improve.Model.Finding_Vectors.Vector :=
+                             Improve.Findings.Normalize (Chosen, Maximum_Findings => 2);
+                           pragma Unreferenced (Ignored);
+                        begin
+                           null;
+                        end;
+                     exception
+                        when Improve.Data_Error => Finding_Limit_Rejected := True;
+                     end;
+                     begin
+                        declare
+                           Ignored : constant Improve.Model.Finding_Vectors.Vector :=
+                             Improve.Findings.Normalize (Chosen, Maximum_Bytes => 8);
+                           pragma Unreferenced (Ignored);
+                        begin
+                           null;
+                        end;
+                     exception
+                        when Improve.Data_Error => Byte_Limit_Rejected := True;
+                     end;
+                     Assert
+                       (Finding_Limit_Rejected and then Byte_Limit_Rejected,
+                        "assessment normalization limits were not enforced during ingestion");
+                  end;
                end;
                Improve.Source.Close (Store);
                Remove (Data);
