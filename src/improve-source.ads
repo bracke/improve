@@ -64,8 +64,10 @@ package Improve.Source is
    --  @return Validated assessment selection.
 
    function Working_Fingerprint (Root : String) return String;
-   --  Fingerprint the current project source while excluding generated build
-   --  directories, runtime databases, and model_runner-owned operational state.
+   --  Fingerprint the current project source without following links. Only
+   --  explicit generated build directories and Improve's default state
+   --  file are excluded; authored nested directories and database fixtures
+   --  remain part of the identity.
    --  @param Root Canonical project root.
    --  @return Stable source fingerprint used for publication staleness checks.
 

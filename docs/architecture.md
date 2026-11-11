@@ -13,7 +13,7 @@ is a separate boundary. A model_runner commit and an Improve mapping commit are 
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.
 
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
-assessment. Publication applies a second, harness-state-aware `working-sha256-v2` fingerprint to detect authored
+assessment. Publication applies a second, harness-state-aware `working-sha256-v3` fingerprint to detect authored
 changes after planning without treating model_runner's own operational state as a source edit. The working identity is
 a length-delimited SHA-256 stream over sorted relative paths and bounded file contents, so path/content boundaries
 cannot produce the same byte stream accidentally.

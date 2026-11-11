@@ -4,13 +4,17 @@ with Ada.Streams.Stream_IO;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Hostkit.Fs;
 with Improve.Source;
 with Project_Tools.Files;
 
 package body Improve_Source_Test_Suite is
    use AUnit.Assertions;
+   use type Hostkit.Fs.Delete_Tree_Outcome;
 
-   type Test_Id is (Fingerprint_Deterministic, Fingerprint_Boundary_Safe, Oversized_File_Rejected);
+   type Test_Id is
+     (Fingerprint_Deterministic, Fingerprint_Boundary_Safe, Authored_Paths_Tracked,
+      Generated_State_Ignored, Symlink_Rejected, Oversized_File_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -22,8 +26,16 @@ package body Improve_Source_Test_Suite is
 
    overriding procedure Run_Test (Item : in out Case_Test) is
       Root : constant String := "/tmp/improve_source_" & Test_Id'Image (Item.Id);
+
+      procedure Clear_Root is
+         Outcome : constant Hostkit.Fs.Delete_Tree_Outcome := Hostkit.Fs.Delete_Tree_No_Follow (Root);
+      begin
+         if Ada.Directories.Exists (Root) and then Outcome = Hostkit.Fs.Tree_Delete_Failed then
+            raise Program_Error with "test source fixture could not be removed";
+         end if;
+      end Clear_Root;
    begin
-      Project_Tools.Files.Delete_Tree (Root);
+      Clear_Root;
       Ada.Directories.Create_Directory (Root);
       case Item.Id is
          when Fingerprint_Deterministic =>
@@ -34,7 +46,7 @@ package body Improve_Source_Test_Suite is
             begin
                Assert (First = Second, "unchanged source inventory produced different fingerprints");
                Assert
-                 (First'Length = 82 and then First (First'First .. First'First + 17) = "working-sha256-v2:",
+                 (First'Length = 82 and then First (First'First .. First'First + 17) = "working-sha256-v3:",
                   "working-source fingerprint is not the versioned SHA-256 format");
             end;
          when Fingerprint_Boundary_Safe =>
@@ -43,12 +55,56 @@ package body Improve_Source_Test_Suite is
             declare
                Two_Files : constant String := Improve.Source.Working_Fingerprint (Root);
             begin
-               Project_Tools.Files.Delete_Tree (Root);
+               Clear_Root;
                Ada.Directories.Create_Directory (Root);
                Project_Tools.Files.Write_Raw_File (Root & "/a", "xb" & Character'Val (0) & "y");
                Assert
                  (Two_Files /= Improve.Source.Working_Fingerprint (Root),
                   "different source inventories collided at a path/content boundary");
+            end;
+         when Authored_Paths_Tracked =>
+            Ada.Directories.Create_Directory (Root & "/lib");
+            Project_Tools.Files.Write_Raw_File (Root & "/lib/unit.adb", "first");
+            Project_Tools.Files.Write_Raw_File (Root & "/fixture.db", "first");
+            declare Initial : constant String := Improve.Source.Working_Fingerprint (Root); begin
+               Project_Tools.Files.Write_Raw_File (Root & "/lib/unit.adb", "second");
+               Assert
+                 (Initial /= Improve.Source.Working_Fingerprint (Root),
+                  "authored source below lib was excluded from the fingerprint");
+               declare After_Library : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                  Project_Tools.Files.Write_Raw_File (Root & "/fixture.db", "second");
+                  Assert
+                    (After_Library /= Improve.Source.Working_Fingerprint (Root),
+                     "authored database fixture was excluded from the fingerprint");
+               end;
+            end;
+         when Generated_State_Ignored =>
+            Project_Tools.Files.Write_Raw_File (Root & "/source.adb", "source");
+            declare Initial : constant String := Improve.Source.Working_Fingerprint (Root); begin
+               Ada.Directories.Create_Directory (Root & "/obj");
+               Project_Tools.Files.Write_Raw_File (Root & "/obj/generated.o", "generated");
+               Project_Tools.Files.Write_Raw_File (Root & "/.improve.db", "state");
+               Assert
+                 (Initial = Improve.Source.Working_Fingerprint (Root),
+                  "known generated state changed the source fingerprint");
+            end;
+         when Symlink_Rejected =>
+            declare
+               Target   : constant String := Root & "_outside";
+               Rejected : Boolean := False;
+            begin
+               Project_Tools.Files.Write_Raw_File (Target, "outside");
+               if Hostkit.Fs.Create_Link (Target, Root & "/linked") then
+                  begin
+                     declare Value : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                        Assert (Value = "", "unsafe linked source unexpectedly produced a fingerprint");
+                     end;
+                  exception
+                     when Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "symbolic link was followed while fingerprinting");
+               end if;
+               Project_Tools.Files.Delete_File_If_Present (Target);
             end;
          when Oversized_File_Rejected =>
             declare
@@ -71,10 +127,10 @@ package body Improve_Source_Test_Suite is
                Assert (Rejected, "oversized source file was read instead of rejected before allocation");
             end;
       end case;
-      Project_Tools.Files.Delete_Tree (Root);
+      Clear_Root;
    exception
       when others =>
-         Project_Tools.Files.Delete_Tree (Root);
+         Clear_Root;
          raise;
    end Run_Test;
 

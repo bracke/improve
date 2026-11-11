@@ -158,24 +158,22 @@ package body Improve_Test_Suite is
       Run       : Positive;
       Later     : Positive;
       Value     : Assessment;
-      Target    : constant String :=
-        (if Harness_Project then Directory & "/project" else Ada.Directories.Full_Name (".."));
+      Target    : constant String := Directory & "/project";
+      pragma Unreferenced (Harness_Project);
    begin
       Project_Tools.Files.Delete_Tree (Directory);
       Ada.Directories.Create_Directory (Directory);
-      if Harness_Project then
-         Ada.Directories.Create_Directory (Target);
-         Project_Tools.Files.Write_Text_File
-           (Target & "/alire.toml",
-            "name = ""improve_fixture""" & Character'Val (10) &
-            "description = ""Improve integration fixture""" & Character'Val (10) &
-            "version = ""0.1.0-dev""" & Character'Val (10) &
-            "authors = [""Improve tests""]" & Character'Val (10) &
-            "maintainers = [""Improve tests <tests@example.invalid>""]" & Character'Val (10) &
-            "maintainers-logins = [""improve-tests""]" & Character'Val (10) &
-            "licenses = ""MIT""" & Character'Val (10) &
-            "tags = [""test""]" & Character'Val (10));
-      end if;
+      Ada.Directories.Create_Directory (Target);
+      Project_Tools.Files.Write_Text_File
+        (Target & "/alire.toml",
+         "name = ""improve_fixture""" & Character'Val (10) &
+         "description = ""Improve integration fixture""" & Character'Val (10) &
+         "version = ""0.1.0-dev""" & Character'Val (10) &
+         "authors = [""Improve tests""]" & Character'Val (10) &
+         "maintainers = [""Improve tests <tests@example.invalid>""]" & Character'Val (10) &
+         "maintainers-logins = [""improve-tests""]" & Character'Val (10) &
+         "licenses = ""MIT""" & Character'Val (10) &
+         "tags = [""test""]" & Character'Val (10));
       Ada_Quality.Storage.Open (Store, DB_Path);
       Project := Ada_Quality.Storage.Add_Project (Store, Target);
       declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
@@ -684,7 +682,7 @@ package body Improve_Test_Suite is
                  (Improve.Source.Resolve_Project (Store, To_String (Data.Target)).Id = Data.Project,
                   "canonical project path did not resolve");
                Assert
-                 (Improve.Source.Resolve_Project (Store, "improve").Id = Data.Project,
+                 (Improve.Source.Resolve_Project (Store, "project").Id = Data.Project,
                   "unique project name did not resolve");
                begin
                   declare

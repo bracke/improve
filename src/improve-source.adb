@@ -3,86 +3,101 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Containers.Vectors;
 with Ada.Streams;
-with Ada.Streams.Stream_IO;
 with Ada_Quality.Types;
 with CryptoLib.Hashes;
+with Hostkit.Directory_Listing;
+with Hostkit.Fs;
 with Project_Tools.Files;
 
 package body Improve.Source is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
-   use type Ada.Directories.File_Kind;
    use type Ada_Quality.Types.Assessment_Status;
    use type Ada_Quality.Types.Indicator_Id;
+   use type Hostkit.Directory_Listing.Entry_Kind;
 
    function Working_Fingerprint (Root : String) return String is
       package Paths is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => Ada.Strings.Unbounded.Unbounded_String,
          "=" => Ada.Strings.Unbounded."=");
       package Sorting is new Paths.Generic_Sorting ("<" => Ada.Strings.Unbounded."<");
-      Skip : constant Project_Tools.Files.Name_List :=
+      Generated_Directories : constant Project_Tools.Files.Name_List :=
         [To_Unbounded_String (".git"), To_Unbounded_String (".alire"),
          To_Unbounded_String (".model_runner"), To_Unbounded_String ("obj"),
          To_Unbounded_String ("bin"), To_Unbounded_String ("cov-obj"),
          To_Unbounded_String ("cov-bin"), To_Unbounded_String ("coverage"),
-         To_Unbounded_String ("lib"), To_Unbounded_String ("gnatprove")];
+         To_Unbounded_String ("gnatprove")];
       Canonical_Root : constant String := Ada.Directories.Full_Name (Root);
       Values : Paths.Vector;
       Context : CryptoLib.Hashes.SHA256_Context;
       Total  : Natural := 0;
 
-      function Skipped (Name : String) return Boolean is
+      function Skipped_Generated_Directory (Name : String) return Boolean is
       begin
-         for Value of Skip loop
+         for Value of Generated_Directories loop
             if To_String (Value) = Name then
                return True;
             end if;
          end loop;
          return False;
-      end Skipped;
+      end Skipped_Generated_Directory;
 
-      procedure Walk (Directory : String) is
-         Search : Ada.Directories.Search_Type;
-         Opened : Boolean := False;
-         Item   : Ada.Directories.Directory_Entry_Type;
+      function Operational_File (Relative : String) return Boolean is
+        (Relative = ".improve.db" or else Relative = ".improve.db.fts" or else
+         Relative = ".improve.db-wal" or else Relative = ".improve.db-shm");
+
+      procedure Walk (Directory, Relative_Directory : String) is
+         Entries : Hostkit.Directory_Listing.Entry_Vectors.Vector;
       begin
-         Ada.Directories.Start_Search (Search, Directory, "");
-         Opened := True;
-         while Ada.Directories.More_Entries (Search) loop
-            Ada.Directories.Get_Next_Entry (Search, Item);
+         if not Hostkit.Directory_Listing.List (Directory, Entries) then
+            raise Data_Error with "project source directory cannot be listed: " & Directory;
+         end if;
+         for Item of Entries loop
             declare
-               Name : constant String := Ada.Directories.Simple_Name (Item);
-               Path : constant String := Ada.Directories.Full_Name (Item);
-               Kind : constant Ada.Directories.File_Kind := Ada.Directories.Kind (Item);
+               Name     : constant String := Item.Name;
+               Path     : constant String := Project_Tools.Files.Join (Directory, Name);
+               Relative : constant String :=
+                 (if Relative_Directory = "" then Name
+                  else Relative_Directory & "/" & Name);
             begin
-               if Name in "." | ".." or else Skipped (Name) then
+               if Item.Kind = Hostkit.Directory_Listing.Directory and then
+                 Skipped_Generated_Directory (Name)
+               then
                   null;
-               elsif Kind = Ada.Directories.Directory then
-                  Walk (Path);
-               elsif Kind = Ada.Directories.Ordinary_File then
+               elsif Item.Kind = Hostkit.Directory_Listing.Symbolic_Link or else Hostkit.Fs.Is_Link (Path) then
+                  raise Data_Error with "project source contains a symbolic link: " & Relative;
+               elsif Item.Kind = Hostkit.Directory_Listing.Directory then
+                  Walk (Path, Relative);
+               elsif Item.Kind = Hostkit.Directory_Listing.Regular_File and then not Operational_File (Relative) then
                   if Values.Length >= 100_000 then
                      raise Data_Error with "project source exceeds fingerprint file limit";
                   end if;
-                  Values.Append (To_Unbounded_String (Path));
+                  Values.Append (To_Unbounded_String (Relative));
+               elsif Item.Kind = Hostkit.Directory_Listing.Unknown then
+                  raise Data_Error with "project source entry kind cannot be established: " & Relative;
                end if;
             end;
          end loop;
-         Ada.Directories.End_Search (Search);
-      exception
-         when others =>
-            if Opened then Ada.Directories.End_Search (Search); end if;
-            raise;
       end Walk;
 
       procedure Add (Text : String) is
          use Ada.Streams;
-         Data : Stream_Element_Array (1 .. Text'Length) := [others => 0];
+         Buffer : Stream_Element_Array (1 .. 65_536);
+         First  : Natural := Text'First;
       begin
-         for Index in Text'Range loop
-            Data (Stream_Element_Offset (Index - Text'First + 1)) :=
-              Stream_Element (Character'Pos (Text (Index)));
+         while First <= Text'Last loop
+            declare
+               Count : constant Natural := Natural'Min (Buffer'Length, Text'Last - First + 1);
+            begin
+               for Offset in 0 .. Count - 1 loop
+                  Buffer (Buffer'First + Stream_Element_Offset (Offset)) :=
+                    Stream_Element (Character'Pos (Text (First + Offset)));
+               end loop;
+               CryptoLib.Hashes.Update
+                 (Context, Buffer (Buffer'First .. Buffer'First + Stream_Element_Offset (Count) - 1));
+               First := First + Count;
+            end;
          end loop;
-         CryptoLib.Hashes.Update (Context, Data);
       end Add;
 
       procedure Add_Length (Value : Natural) is
@@ -101,80 +116,43 @@ package body Improve.Source is
          return Result;
       end Hex;
 
-      function Runtime_Database (Path : String) return Boolean is
-        ((Path'Length >= 3 and then Path (Path'Last - 2 .. Path'Last) = ".db") or else
-         (Path'Length >= 7 and then Path (Path'Last - 6 .. Path'Last) = ".db.fts") or else
-         (Path'Length >= 7 and then Path (Path'Last - 6 .. Path'Last) = ".sqlite") or else
-         (Path'Length >= 8 and then Path (Path'Last - 7 .. Path'Last) = ".sqlite3"));
-
-      procedure Add_File (Path : String) is
-         use Ada.Streams;
-         package IO renames Ada.Streams.Stream_IO;
-         use type IO.Count;
-         File     : IO.File_Type;
-         Buffer   : Stream_Element_Array (1 .. 65_536);
-         Last     : Stream_Element_Offset;
-         Expected : Natural;
-         Read     : Natural := 0;
+      procedure Add_File (Relative : String) is
+         Text    : Unbounded_String;
+         Outcome : Hostkit.Fs.Read_Beneath_Outcome;
       begin
-         IO.Open (File, IO.In_File, Path, Form => "shared=no");
-         declare Size : constant IO.Count := IO.Size (File); begin
-            if Size > IO.Count (16_777_216) or else Size > IO.Count (Natural'Last) then
+         Hostkit.Fs.Read_Beneath (Canonical_Root, Relative, 16_777_216, Text, Outcome);
+         case Outcome is
+            when Hostkit.Fs.Read_Done => null;
+            when Hostkit.Fs.Read_Too_Large =>
                raise Data_Error with "project source exceeds fingerprint byte limit";
-            end if;
-            Expected := Natural (Size);
-         end;
-         if Total > 268_435_456 - Expected then
+            when Hostkit.Fs.Read_Outside =>
+               raise Data_Error with "project source contains an unsafe link: " & Relative;
+            when others =>
+               raise Data_Error with "project source changed or cannot be read: " & Relative;
+         end case;
+         if Total > 268_435_456 - Length (Text) then
             raise Data_Error with "project source exceeds fingerprint byte limit";
          end if;
-         Add_Length (Expected);
-         while not IO.End_Of_File (File) loop
-            IO.Read (File, Buffer, Last);
-            if Last >= Buffer'First then
-               declare Count : constant Natural := Natural (Last - Buffer'First + 1); begin
-                  if Count > Expected or else Read > Expected - Count then
-                     raise Data_Error with "project source changed while fingerprinting";
-                  end if;
-                  CryptoLib.Hashes.Update (Context, Buffer (Buffer'First .. Last));
-                  Read := Read + Count;
-               end;
-            end if;
-         end loop;
-         IO.Close (File);
-         if Read /= Expected then
-            raise Data_Error with "project source changed while fingerprinting";
-         end if;
-         Total := Total + Expected;
-      exception
-         when others =>
-            if IO.Is_Open (File) then IO.Close (File); end if;
-            raise;
+         Add_Length (Length (Text));
+         Add (To_String (Text));
+         Total := Total + Length (Text);
       end Add_File;
    begin
-      Walk (Canonical_Root);
+      Walk (Canonical_Root, "");
       Sorting.Sort (Values);
       CryptoLib.Hashes.Initialize_SHA256 (Context);
-      Add ("improve-working-source-v2" & Character'Val (0));
+      Add ("improve-working-source-v3" & Character'Val (0));
       Add_Length (Natural (Values.Length));
-      for Path of Values loop
+      for Relative of Values loop
          declare
-            Full : constant String := To_String (Path);
-            Name : constant String :=
-              (if Full'Length > Canonical_Root'Length and then
-                   Full (Full'First .. Full'First + Canonical_Root'Length - 1) = Canonical_Root
-               then Full (Full'First + Canonical_Root'Length + 1 .. Full'Last)
-               else Full);
+            Name : constant String := To_String (Relative);
          begin
-            if Runtime_Database (Full) then
-               null;
-            else
-               Add_Length (Name'Length);
-               Add (Name);
-               Add_File (Full);
-            end if;
+            Add_Length (Name'Length);
+            Add (Name);
+            Add_File (Name);
          end;
       end loop;
-      return "working-sha256-v2:" & Hex (CryptoLib.Hashes.Finalize (Context));
+      return "working-sha256-v3:" & Hex (CryptoLib.Hashes.Finalize (Context));
    end Working_Fingerprint;
 
    procedure Open
