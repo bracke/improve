@@ -46,7 +46,7 @@ package body Improve_Source_Test_Suite is
             begin
                Assert (First = Second, "unchanged source inventory produced different fingerprints");
                Assert
-                 (First'Length = 82 and then First (First'First .. First'First + 17) = "working-sha256-v3:",
+                 (First'Length = 82 and then First (First'First .. First'First + 17) = "working-sha256-v4:",
                   "working-source fingerprint is not the versioned SHA-256 format");
             end;
          when Fingerprint_Boundary_Safe =>
@@ -64,7 +64,9 @@ package body Improve_Source_Test_Suite is
             end;
          when Authored_Paths_Tracked =>
             Ada.Directories.Create_Directory (Root & "/lib");
+            Ada.Directories.Create_Directory (Root & "/lib/bin");
             Project_Tools.Files.Write_Raw_File (Root & "/lib/unit.adb", "first");
+            Project_Tools.Files.Write_Raw_File (Root & "/lib/bin/driver.adb", "first");
             Project_Tools.Files.Write_Raw_File (Root & "/fixture.db", "first");
             declare Initial : constant String := Improve.Source.Working_Fingerprint (Root); begin
                Project_Tools.Files.Write_Raw_File (Root & "/lib/unit.adb", "second");
@@ -72,21 +74,33 @@ package body Improve_Source_Test_Suite is
                  (Initial /= Improve.Source.Working_Fingerprint (Root),
                   "authored source below lib was excluded from the fingerprint");
                declare After_Library : constant String := Improve.Source.Working_Fingerprint (Root); begin
-                  Project_Tools.Files.Write_Raw_File (Root & "/fixture.db", "second");
+                  Project_Tools.Files.Write_Raw_File (Root & "/lib/bin/driver.adb", "second");
                   Assert
                     (After_Library /= Improve.Source.Working_Fingerprint (Root),
+                     "authored nested directory sharing a generated basename was excluded");
+               end;
+               declare After_Nested : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                  Project_Tools.Files.Write_Raw_File (Root & "/fixture.db", "second");
+                  Assert
+                    (After_Nested /= Improve.Source.Working_Fingerprint (Root),
                      "authored database fixture was excluded from the fingerprint");
                end;
             end;
          when Generated_State_Ignored =>
             Project_Tools.Files.Write_Raw_File (Root & "/source.adb", "source");
-            declare Initial : constant String := Improve.Source.Working_Fingerprint (Root); begin
+            Ada.Directories.Create_Directory (Root & "/state");
+            declare
+               State   : constant String := Root & "/state/custom.db";
+               Initial : constant String := Improve.Source.Working_Fingerprint (Root, State);
+            begin
                Ada.Directories.Create_Directory (Root & "/obj");
                Project_Tools.Files.Write_Raw_File (Root & "/obj/generated.o", "generated");
                Project_Tools.Files.Write_Raw_File (Root & "/.improve.db", "state");
+               Project_Tools.Files.Write_Raw_File (State, "custom state");
+               Project_Tools.Files.Write_Raw_File (State & "-wal", "custom journal");
                Assert
-                 (Initial = Improve.Source.Working_Fingerprint (Root),
-                  "known generated state changed the source fingerprint");
+                 (Initial = Improve.Source.Working_Fingerprint (Root, State),
+                  "configured generated state changed the source fingerprint");
             end;
          when Symlink_Rejected =>
             declare

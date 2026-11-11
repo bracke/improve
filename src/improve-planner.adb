@@ -126,7 +126,8 @@ package body Improve.Planner is
    function Generate
      (Selected : Improve.Source.Selection;
       Findings : Improve.Model.Finding_Vectors.Vector;
-      Settings : Improve.Config.Settings) return Improve.Model.Plan_Revision is
+      Settings : Improve.Config.Settings;
+      Working_Source_Id : String := "") return Improve.Model.Plan_Revision is
       Groups : Group_Vectors.Vector;
       Result : Improve.Model.Plan_Revision;
       Config_Id : constant String := Configuration_Fingerprint (Settings);
@@ -166,7 +167,9 @@ package body Improve.Planner is
       Result.Project := Selected.Project;
       Result.Baseline := Selected.Baseline;
       Result.Working_Source_Id := To_Unbounded_String
-        (Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path)));
+        (if Working_Source_Id = "" then
+           Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path))
+         else Working_Source_Id);
       Result.Planner_Id := To_Unbounded_String (Planner_Version & ":" & Config_Id);
       Result.Created_At := Ada.Calendar.Time_Of (1970, 1, 1);
       Result.Findings := Findings;

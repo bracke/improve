@@ -73,12 +73,15 @@ package Improve.Source is
    --  @param Project Resolved project.
    --  @return Greatest completed run identity or zero.
 
-   function Working_Fingerprint (Root : String) return String;
+   function Working_Fingerprint
+     (Root       : String;
+      State_Path : String := "") return String;
    --  Fingerprint the current project source without following links. Only
-   --  explicit generated build directories and Improve's default state
-   --  file are excluded; authored nested directories and database fixtures
-   --  remain part of the identity.
+   --  exact generated build paths and the configured Improve state file are
+   --  excluded; authored directories with similar basenames and database
+   --  fixtures remain part of the identity.
    --  @param Root Canonical project root.
+   --  @param State_Path Configured Improve state database, or empty.
    --  @return Stable source fingerprint used for publication staleness checks.
 
 private

@@ -94,14 +94,6 @@ package body Improve.CLI is
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
-   function Quality_Severity (Value : Improve.Config.Severity_Level) return Ada_Quality.Types.Severity is
-     (case Value is
-         when Improve.Config.Info => Ada_Quality.Types.Info,
-         when Improve.Config.Low => Ada_Quality.Types.Low,
-         when Improve.Config.Medium => Ada_Quality.Types.Medium,
-         when Improve.Config.High => Ada_Quality.Types.High,
-         when Improve.Config.Critical => Ada_Quality.Types.Critical);
-
    function Quality_Path (Item : Invocation; Settings : Improve.Config.Settings) return String is
      (if Item.Has_Database then To_String (Item.Database) else To_String (Settings.Quality_Database));
 
@@ -150,7 +142,8 @@ package body Improve.CLI is
          Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project, Item.Run_Id);
          Values   : constant Improve.Model.Finding_Vectors.Vector :=
            Improve.Findings.Normalize
-             (Selected, Quality_Severity (Settings.Minimum_Severity), Settings.Allow_Investigation_Tasks);
+             (Selected, Improve.Config.Quality_Severity (Settings.Minimum_Severity),
+              Settings.Allow_Investigation_Tasks);
          Result   : Unbounded_String;
       begin
          if Item.Format = JSON_Format then

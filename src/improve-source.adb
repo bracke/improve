@@ -16,7 +16,9 @@ package body Improve.Source is
    use type Ada_Quality.Types.Indicator_Id;
    use type Hostkit.Directory_Listing.Entry_Kind;
 
-   function Working_Fingerprint (Root : String) return String is
+   function Working_Fingerprint
+     (Root       : String;
+      State_Path : String := "") return String is
       package Paths is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => Ada.Strings.Unbounded.Unbounded_String,
          "=" => Ada.Strings.Unbounded."=");
@@ -26,25 +28,37 @@ package body Improve.Source is
          To_Unbounded_String (".model_runner"), To_Unbounded_String ("obj"),
          To_Unbounded_String ("bin"), To_Unbounded_String ("cov-obj"),
          To_Unbounded_String ("cov-bin"), To_Unbounded_String ("coverage"),
-         To_Unbounded_String ("gnatprove")];
+         To_Unbounded_String ("gnatprove"), To_Unbounded_String ("tests/obj"),
+         To_Unbounded_String ("tests/bin"), To_Unbounded_String ("tests/cov-obj"),
+         To_Unbounded_String ("tests/cov-bin"), To_Unbounded_String ("tests/coverage"),
+         To_Unbounded_String ("tests/gnatprove")];
       Canonical_Root : constant String := Ada.Directories.Full_Name (Root);
+      Canonical_State : constant Unbounded_String :=
+        (if State_Path = "" then Null_Unbounded_String
+         else To_Unbounded_String (Ada.Directories.Full_Name (State_Path)));
       Values : Paths.Vector;
       Context : CryptoLib.Hashes.SHA256_Context;
       Total  : Natural := 0;
 
-      function Skipped_Generated_Directory (Name : String) return Boolean is
+      function Skipped_Generated_Directory (Relative : String) return Boolean is
       begin
          for Value of Generated_Directories loop
-            if To_String (Value) = Name then
+            if To_String (Value) = Relative then
                return True;
             end if;
          end loop;
          return False;
       end Skipped_Generated_Directory;
 
-      function Operational_File (Relative : String) return Boolean is
-        (Relative = ".improve.db" or else Relative = ".improve.db.fts" or else
-         Relative = ".improve.db-wal" or else Relative = ".improve.db-shm");
+      function Operational_File (Path, Relative : String) return Boolean is
+         Configured : constant String := To_String (Canonical_State);
+      begin
+         return Relative = ".improve.db" or else Relative = ".improve.db.fts" or else
+           Relative = ".improve.db-wal" or else Relative = ".improve.db-shm" or else
+           (Configured /= "" and then
+            (Path = Configured or else Path = Configured & ".fts" or else
+             Path = Configured & "-wal" or else Path = Configured & "-shm"));
+      end Operational_File;
 
       procedure Walk (Directory, Relative_Directory : String) is
          Entries : Hostkit.Directory_Listing.Entry_Vectors.Vector;
@@ -61,14 +75,16 @@ package body Improve.Source is
                   else Relative_Directory & "/" & Name);
             begin
                if Item.Kind = Hostkit.Directory_Listing.Directory and then
-                 Skipped_Generated_Directory (Name)
+                 Skipped_Generated_Directory (Relative)
                then
                   null;
                elsif Item.Kind = Hostkit.Directory_Listing.Symbolic_Link or else Hostkit.Fs.Is_Link (Path) then
                   raise Data_Error with "project source contains a symbolic link: " & Relative;
                elsif Item.Kind = Hostkit.Directory_Listing.Directory then
                   Walk (Path, Relative);
-               elsif Item.Kind = Hostkit.Directory_Listing.Regular_File and then not Operational_File (Relative) then
+               elsif Item.Kind = Hostkit.Directory_Listing.Regular_File and then
+                 not Operational_File (Path, Relative)
+               then
                   if Values.Length >= 100_000 then
                      raise Data_Error with "project source exceeds fingerprint file limit";
                   end if;
@@ -141,7 +157,7 @@ package body Improve.Source is
       Walk (Canonical_Root, "");
       Sorting.Sort (Values);
       CryptoLib.Hashes.Initialize_SHA256 (Context);
-      Add ("improve-working-source-v3" & Character'Val (0));
+      Add ("improve-working-source-v4" & Character'Val (0));
       Add_Length (Natural (Values.Length));
       for Relative of Values loop
          declare
@@ -152,7 +168,7 @@ package body Improve.Source is
             Add_File (Name);
          end;
       end loop;
-      return "working-sha256-v3:" & Hex (CryptoLib.Hashes.Finalize (Context));
+      return "working-sha256-v4:" & Hex (CryptoLib.Hashes.Finalize (Context));
    end Working_Fingerprint;
 
    procedure Open

@@ -2,9 +2,6 @@ with Ada.Directories;
 with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
-with Ada.Exceptions;
-with Ada_Quality.Checks;
-with Ada_Quality.Policy;
 with Ada_Quality.Reporting;
 with Ada_Quality.Storage;
 with Ada_Quality.Types;
@@ -15,29 +12,26 @@ with Improve;
 with Improve.CLI;
 with Improve_CLI_Test_Suite;
 with Improve_Planning_Test_Suite;
+with Improve_Operations_Test_Suite;
+with Improve_Publication_Test_Suite;
 with Improve_Source_Test_Suite;
 with Improve_Storage_Test_Suite;
 with Improve_Tasks_Test_Suite;
+with Improve_Test_Support;
+with Improve_Verification_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
 with Improve.Model;
-with Improve.Operations.Inspection;
 with Improve.Operations.Planning;
 with Improve.Planner;
 with Improve.Presentation;
 with Improve.Refinement;
-with Improve.Recovery;
 with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
-with Improve.Tasks;
 with Improve.Text;
-with Improve.Workflow;
 with Model_Runner.Errors;
-with Model_Runner.Framework.Configuration_Records;
-with Model_Runner.Framework.Records;
-with Model_Runner.Framework.Schemas;
 with Model_Runner.Framework.Stores;
 with Model_Runner.Framework.Task_Eligibility;
 with Model_Runner.Framework.Tasks;
@@ -46,15 +40,14 @@ with Project_Tools.Files;
 package body Improve_Test_Suite is
    use Ada.Strings.Unbounded;
    use AUnit.Assertions;
+   use Improve_Test_Support;
    use type Improve.Config.Color_Mode;
    use type Improve.Config.Output_Format;
    use type Improve.Config.Severity_Level;
    use type Improve.Model.Candidate_Kind;
-   use type Improve.Model.Quality_Outcome;
    use type Improve.Model.Task_Vectors.Vector;
    use type Improve.Refinement.Refinement_Status;
    use type Improve.Refinement.Source_State;
-   use type Improve.Storage.Verification_Scope;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
 
@@ -70,26 +63,10 @@ package body Improve_Test_Suite is
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
-      Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
-      Replacement_Running_And_Completed, Workspace_Lifecycle_Fails_Closed,
-      Selective_Publication_Resolves_Dependency, Prerequisite_Replacement_Migrates_Dependents,
-      Refresh_Reconciles_State,
-      Verification_Resolved, Verification_Still_Failing,
-      Verification_Task_Scope_Not_Project, Verification_Severity_Drop_Outstanding,
-      Verification_Partially_Resolved, Verification_Missing_Evidence, Verification_Regressed,
-      Unrelated_Critical_Project_Regression, Out_Of_Order_Verification_Not_Regression,
-      Changed_Contract_Not_Regression, Verification_Policy_Changed, Verification_Incomplete_Rejected,
-      Verification_Revisions_Coexist,
       Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
-      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
-      Tasks_CLI_Golden, Tasks_JSON_Filter, Status_Project_And_All, Status_Verification_Freshness,
-      Status_All_Mixed_Freshness, Interrupted_Publication_Recovery,
-      Recovery_Rejects_Stale_Uncommitted,
-      Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision,
-      Recovery_Limit_Enforced, Recover_Missing_State, Configuration_Bounds,
-      Operational_Terminal_Paths, Real_End_To_End_Workflow);
+      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -124,373 +101,6 @@ package body Improve_Test_Suite is
    function Id_Image (Value : Positive) return String is
      (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
 
-   procedure Must_Reject (Text, Expected : String) is
-      Rejected : Boolean := False;
-   begin
-      begin
-         declare Item : constant Improve.CLI.Invocation := Improve.CLI.Parse (Args (Text));
-            pragma Unreferenced (Item);
-         begin null; end;
-      exception
-         when Error : Improve.Argument_Error =>
-            Rejected := Ada.Strings.Fixed.Index (Ada.Exceptions.Exception_Message (Error), Expected) > 0;
-      end;
-      Assert (Rejected, "expected rejection containing '" & Expected & "'");
-   end Must_Reject;
-
-   type Fixture is record
-      Directory : Unbounded_String;
-      Database  : Unbounded_String;
-      Project   : Positive;
-      Run       : Positive;
-      Interrupted : Positive;
-      Target      : Unbounded_String;
-   end record;
-
-   function Build_Fixture
-     (Label              : String;
-      Harness_Project    : Boolean := False;
-      Multiple_Structure : Boolean := False;
-      Second_Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High) return Fixture is
-      use Ada_Quality.Types;
-      Directory : constant String := "/tmp/improve_phase2_" & Label;
-      DB_Path   : constant String := Directory & "/quality.db";
-      Store     : Ada_Quality.Storage.Store;
-      Project   : Positive;
-      Run       : Positive;
-      Later     : Positive;
-      Value     : Assessment;
-      Target    : constant String := Directory & "/project";
-      pragma Unreferenced (Harness_Project);
-   begin
-      Project_Tools.Files.Delete_Tree (Directory);
-      Ada.Directories.Create_Directory (Directory);
-      Ada.Directories.Create_Directory (Target);
-      Project_Tools.Files.Write_Text_File
-        (Target & "/alire.toml",
-         "name = ""improve_fixture""" & Character'Val (10) &
-         "description = ""Improve integration fixture""" & Character'Val (10) &
-         "version = ""0.1.0-dev""" & Character'Val (10) &
-         "authors = [""Improve tests""]" & Character'Val (10) &
-         "maintainers = [""Improve tests <tests@example.invalid>""]" & Character'Val (10) &
-         "maintainers-logins = [""improve-tests""]" & Character'Val (10) &
-         "licenses = ""MIT""" & Character'Val (10) &
-         "tags = [""test""]" & Character'Val (10));
-      Ada_Quality.Storage.Open (Store, DB_Path);
-      Project := Ada_Quality.Storage.Add_Project (Store, Target);
-      declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
-         Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
-         Value.Source_Fingerprint := To_Unbounded_String (Source);
-      end;
-      Value.Id := Run;
-      Value.Project_Id := Project;
-      Value.Project_Path := To_Unbounded_String (Target);
-      Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
-      Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  => Succeeded,
-               Compliance => (if Indicator in STR_01 | TST_03 then Violation else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String (if Indicator in STR_01 | TST_03 then "violation" else "pass"),
-               Evidence    => To_Unbounded_String ("fixture evidence for " & Image (Indicator)),
-               Measurement =>
-                 (if Indicator = TST_03 then (Kind => Decimal_Value, Basis_Points => 8_200)
-                  else (Kind => Boolean_Value, Boolean_Data => Indicator not in STR_01 | TST_03)),
-               Findings    => <>));
-      end loop;
-      declare
-         Structure : Indicator_Result := Value.Results (Value.Results.First_Index);
-         Toolchain : Indicator_Result := Value.Results (Value.Results.First_Index + 8);
-         Finding   : constant Ada_Quality.Types.Finding :=
-           (Indicator    => STR_01,
-            Rule         => To_Unbounded_String ("manifest.invalid"),
-            Level        => High,
-            Message      => To_Unbounded_String ("manifest is invalid"),
-            Relative_Path => To_Unbounded_String ("alire.toml"),
-            Line         => 1,
-            Fingerprint  => To_Unbounded_String ("fixture-manifest"));
-      begin
-         Structure.Findings.Append (Finding);
-         Structure.Findings.Append (Finding);
-         if Multiple_Structure then
-            Structure.Findings.Append
-              (Ada_Quality.Types.Finding'
-                 (Indicator     => STR_01,
-                  Rule          => To_Unbounded_String ("manifest.invalid"),
-                  Level         => Second_Structure_Severity,
-                  Message       => To_Unbounded_String ("manifest has a second invalid field"),
-                  Relative_Path => To_Unbounded_String ("alire.toml"),
-                  Line          => 2,
-                  Fingerprint   => To_Unbounded_String ("fixture-manifest-second")));
-         end if;
-         Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-         Toolchain.Execution := Blocked;
-         Toolchain.Compliance := Unknown;
-         Toolchain.Summary := To_Unbounded_String ("toolchain unavailable");
-         Toolchain.Measurement :=
-           (Kind => Unavailable_Value, Reason => To_Unbounded_String ("toolchain probe unavailable"));
-         Value.Results.Replace_Element (Value.Results.First_Index + 8, Toolchain);
-      end;
-      Run := Ada_Quality.Storage.Publish (Store, Value);
-      Later := Ada_Quality.Storage.Start_Assessment (Store, Project, "source-b", "policy-a");
-      Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
-      Ada_Quality.Storage.Close (Store);
-      return
-        (To_Unbounded_String (Directory), To_Unbounded_String (DB_Path), Project, Run, Later,
-         To_Unbounded_String (Target));
-   end Build_Fixture;
-
-   function Add_Fixture_Project (Data : Fixture; Label : String) return Fixture is
-      use Ada_Quality.Types;
-      Target  : constant String := To_String (Data.Directory) & "/" & Label;
-      Store   : Ada_Quality.Storage.Store;
-      Project : Positive;
-      Run     : Positive;
-      Later   : Positive;
-      Value   : Assessment;
-   begin
-      Ada.Directories.Create_Directory (Target);
-      Project_Tools.Files.Write_Text_File
-        (Target & "/alire.toml",
-         "name = ""improve_fixture_" & Label & """" & ASCII.LF &
-         "version = ""0.1.0-dev""" & ASCII.LF &
-         "licenses = ""MIT""" & ASCII.LF);
-      Ada_Quality.Storage.Open (Store, To_String (Data.Database));
-      Project := Ada_Quality.Storage.Add_Project (Store, Target);
-      declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
-         Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
-         Value.Source_Fingerprint := To_Unbounded_String (Source);
-      end;
-      Value.Id := Run;
-      Value.Project_Id := Project;
-      Value.Project_Path := To_Unbounded_String (Target);
-      Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
-      Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  => Succeeded,
-               Compliance => (if Indicator = STR_01 then Violation else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String (if Indicator = STR_01 then "violation" else "pass"),
-               Evidence    => To_Unbounded_String ("fixture evidence for " & Image (Indicator)),
-               Measurement => (Kind => Boolean_Value, Boolean_Data => Indicator /= STR_01),
-               Findings    => <>));
-      end loop;
-      declare Structure : Indicator_Result := Value.Results.First_Element; begin
-         Structure.Findings.Append
-           (Finding'
-              (Indicator     => STR_01,
-               Rule          => To_Unbounded_String ("manifest.invalid"),
-               Level         => High,
-               Message       => To_Unbounded_String ("manifest is invalid"),
-               Relative_Path => To_Unbounded_String ("alire.toml"),
-               Line          => 1,
-               Fingerprint   => To_Unbounded_String ("fixture-" & Label & "-manifest")));
-         Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-      end;
-      Run := Ada_Quality.Storage.Publish (Store, Value);
-      Later := Ada_Quality.Storage.Start_Assessment (Store, Project, "interrupted-source", "policy-a");
-      Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
-      Ada_Quality.Storage.Close (Store);
-      return
-        (Directory => Data.Directory,
-         Database => Data.Database,
-         Project => Project,
-         Run => Run,
-         Interrupted => Later,
-         Target => To_Unbounded_String (Target));
-   end Add_Fixture_Project;
-
-   procedure Initialize_Harness (Directory : String) is
-      package Config renames Model_Runner.Framework.Configuration_Records;
-      package Errors renames Model_Runner.Errors;
-      package Records renames Model_Runner.Framework.Records;
-      package Schemas renames Model_Runner.Framework.Schemas;
-      package Stores renames Model_Runner.Framework.Stores;
-      Store    : Stores.Store;
-      Initial  : Stores.Transaction;
-      Resolved : Records.Item := Records.Create (Schemas.Configuration_Schema, 1, "CONFIG", 1);
-      Status   : Errors.Error_Info;
-   begin
-      Records.Set (Resolved, "template_id", "improve-tests");
-      Records.Set (Resolved, "template_version", "1");
-      Records.Set (Resolved, "template_fingerprint", "fixture");
-      Records.Set (Resolved, "template_origin", "Improve tests");
-      Records.Set (Resolved, "template_order", "improve-tests");
-      Records.Set (Resolved, "task_kind.remediation", "acceptance, notes?");
-      Records.Set (Resolved, "configuration_fingerprint", Config.Fingerprint (Resolved));
-      Stores.Put (Initial, Model_Runner.Framework.Config_Area, "resolved", Resolved);
-      Stores.Create (Store, Directory, "Improve tests", Status, Initial);
-      Assert (Errors.Is_Ok (Status), "harness fixture initialization failed");
-      Stores.Close (Store);
-   end Initialize_Harness;
-
-   procedure Remove (Item : Fixture) is
-   begin
-      Project_Tools.Files.Delete_Tree (To_String (Item.Directory));
-   end Remove;
-
-   function Publish_Real_Assessment
-     (Database : String;
-      Project  : Positive;
-      Root     : String;
-      Policy   : Ada_Quality.Policy.Quality_Policy) return Positive is
-      Store : Ada_Quality.Storage.Store;
-      Run   : Natural := 0;
-   begin
-      Ada_Quality.Storage.Open (Store, Database);
-      Run := Ada_Quality.Storage.Start_Assessment
-        (Store, Project, Ada_Quality.Checks.Source_Fingerprint (Root), Ada_Quality.Policy.Fingerprint (Policy));
-      declare
-         Value : Ada_Quality.Types.Assessment := Ada_Quality.Checks.Assess (Project, Root, Policy);
-      begin
-         Value.Id := Run;
-         if Ada_Quality.Storage.Publish (Store, Value) /= Run then
-            raise Program_Error with "real assessment publication changed its identity";
-         end if;
-      end;
-      Ada_Quality.Storage.Close (Store);
-      return Positive (Run);
-   exception
-      when others =>
-         if Ada_Quality.Storage.Is_Open (Store) then
-            if Run > 0 then
-               Ada_Quality.Storage.Interrupt_Assessment
-                 (Store, Positive (Run), "end-to-end assessment aborted");
-            end if;
-            Ada_Quality.Storage.Close (Store);
-         end if;
-         raise;
-   end Publish_Real_Assessment;
-
-   type Followup_State is (All_Pass, Structure_Failing, Structure_Unmeasurable);
-
-   function Publish_Followup
-     (Data            : Fixture;
-      Structure_State : Followup_State := All_Pass;
-      Policy           : String := "policy-a";
-      Source           : String := "";
-      Toolchain        : String := "gnat-15.2.1";
-      Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High;
-      New_Critical     : Boolean := False) return Positive is
-      use Ada_Quality.Types;
-      Store : Ada_Quality.Storage.Store;
-      Run   : Positive;
-      Value : Assessment;
-      Effective_Source : constant String :=
-        (if Source = "" then Ada_Quality.Checks.Source_Fingerprint (To_String (Data.Target)) else Source);
-   begin
-      Ada_Quality.Storage.Open (Store, To_String (Data.Database));
-      Run := Ada_Quality.Storage.Start_Assessment (Store, Data.Project, Effective_Source, Policy);
-      Value.Id := Run;
-      Value.Project_Id := Data.Project;
-      Value.Project_Path := Data.Target;
-      Value.Source_Fingerprint := To_Unbounded_String (Effective_Source);
-      Value.Policy_Fingerprint := To_Unbounded_String (Policy);
-      Value.Toolchain_Fingerprint := To_Unbounded_String (Toolchain);
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  =>
-                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Blocked
-                  else Succeeded),
-               Compliance =>
-                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then Violation
-                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Unknown
-                  else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String
-                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then "violation"
-                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01
-                  then "measurement unavailable"
-                  else "pass"),
-               Evidence    => To_Unbounded_String ("follow-up evidence for " & Image (Indicator)),
-               Measurement =>
-                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01
-                  then (Kind => Unavailable_Value, Reason => To_Unbounded_String ("fixture evidence unavailable"))
-                  else (Kind => Boolean_Value,
-                        Boolean_Data => not (Structure_State = Structure_Failing and then Indicator = STR_01))),
-               Findings => <>));
-      end loop;
-      if Structure_State = Structure_Failing then
-         declare Structure : Indicator_Result := Value.Results.First_Element; begin
-            Structure.Findings.Append
-              (Finding'
-                 (Indicator     => STR_01,
-                Rule          => To_Unbounded_String ("manifest.invalid"),
-                Level         => Structure_Severity,
-                Message       => To_Unbounded_String ("manifest is invalid"),
-                Relative_Path => To_Unbounded_String ("alire.toml"),
-                Line          => 1,
-                Fingerprint   => To_Unbounded_String ("fixture-manifest")));
-            Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-         end;
-      end if;
-      if New_Critical then
-         declare
-            Index    : constant Positive := Value.Results.First_Index + Indicator_Id'Pos (SEC_01);
-            Security : Indicator_Result := Value.Results (Index);
-         begin
-            Security.Compliance := Violation;
-            Security.Summary := To_Unbounded_String ("new critical security violation");
-            Security.Measurement := (Kind => Boolean_Value, Boolean_Data => False);
-            Security.Findings.Append
-              (Finding'
-                 (Indicator     => SEC_01,
-                  Rule          => To_Unbounded_String ("security.new-critical"),
-                  Level         => Critical,
-                  Message       => To_Unbounded_String ("unrelated critical finding"),
-                  Relative_Path => To_Unbounded_String ("src/new_issue.adb"),
-                  Line          => 1,
-                  Fingerprint   => To_Unbounded_String ("fixture-new-critical")));
-            Value.Results.Replace_Element (Index, Security);
-         end;
-      end if;
-      Run := Ada_Quality.Storage.Publish (Store, Value);
-      Ada_Quality.Storage.Close (Store);
-      return Run;
-   end Publish_Followup;
-
-   function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome is
-     (Improve.CLI.Execute
-        (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
-               Id_Image (Data.Project) & "|--format|json")));
-
-   procedure Approve_Latest (State : String) is
-      Result : constant Improve.CLI.Outcome :=
-        Improve.CLI.Execute (Args ("plan|approve|PLAN-000001|--state|" & State & "|--format|json"));
-   begin
-      Assert
-        (Result.Exit_Code = 0 and then
-         Ada.Strings.Fixed.Index (To_String (Result.Output), """approved"":true") > 0,
-         "plan approval failed: " & To_String (Result.Errors));
-   end Approve_Latest;
-
-   function Draft_For (Data : Fixture) return Improve.Model.Plan_Revision is
-      Quality  : Improve.Source.Repository;
-      Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
-   begin
-      Improve.Source.Open (Quality, To_String (Data.Database));
-      declare
-         Project  : constant Improve.Model.Project_Reference :=
-           Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
-         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
-         Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
-         Result   : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
-      begin
-         Improve.Source.Close (Quality);
-         return Result;
-      end;
-   end Draft_For;
 
    type Fake_Mode is
      (Valid_Agent, Malformed_Agent, Missing_File_Agent, Invented_Evidence_Agent, Invalid_Category_Agent,
@@ -584,7 +194,7 @@ package body Improve_Test_Suite is
      (Mode     : Fake_Mode;
       Expected : Improve.Refinement.Refinement_Status;
       Label    : String) is
-      Data     : constant Fixture := Build_Fixture ("agent_" & Label, Harness_Project => True);
+      Data     : constant Fixture := Build_Fixture ("agent_" & Label);
       Draft    : Improve.Model.Plan_Revision;
       Settings : Improve.Config.Settings := Improve.Config.Defaults;
    begin
@@ -605,9 +215,6 @@ package body Improve_Test_Suite is
    end Check_Agent_Fallback;
 
    procedure Run_Agent_Test (Item : in out Case_Test) is separate;
-   procedure Run_Operations_Test (Item : in out Case_Test) is separate;
-   procedure Run_Publication_Test (Item : in out Case_Test) is separate;
-   procedure Run_Verification_Test (Item : in out Case_Test) is separate;
 
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
@@ -972,7 +579,7 @@ package body Improve_Test_Suite is
          when Plan_Fingerprint_Severity_Sensitive =>
             declare
                Data    : constant Fixture := Build_Fixture
-                 ("severity_fingerprint", Harness_Project => True, Multiple_Structure => True,
+                 ("severity_fingerprint", Multiple_Structure => True,
                   Second_Structure_Severity => Ada_Quality.Types.Low);
                Quality : Improve.Source.Repository;
                Low_Settings  : Improve.Config.Settings := Improve.Config.Defaults;
@@ -1017,7 +624,7 @@ package body Improve_Test_Suite is
             end;
          when Plan_Fingerprint_Ignores_Unrelated_Snapshot =>
             declare
-               Data       : constant Fixture := Build_Fixture ("unrelated_snapshot", Harness_Project => True);
+               Data       : constant Fixture := Build_Fixture ("unrelated_snapshot");
                Quality    : Improve.Source.Repository;
                State_Path : constant String := To_String (Data.Directory) & "/snapshot-improve.db";
                First_Plan : Improve.Model.Plan_Revision;
@@ -1337,7 +944,7 @@ package body Improve_Test_Suite is
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("approval_required", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("approval_required");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Applied   : Improve.CLI.Outcome;
@@ -1383,7 +990,7 @@ package body Improve_Test_Suite is
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data    : constant Fixture := Build_Fixture ("source_stale", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("source_stale");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Applied : Improve.CLI.Outcome;
@@ -1414,7 +1021,7 @@ package body Improve_Test_Suite is
             end;
          when Measurement_Source_Mismatch_Blocks_Plan =>
             declare
-               Data   : constant Fixture := Build_Fixture ("measurement_source_mismatch", Harness_Project => True);
+               Data   : constant Fixture := Build_Fixture ("measurement_source_mismatch");
                State  : constant String := To_String (Data.Directory) & "/improve.db";
                Result : Improve.CLI.Outcome;
             begin
@@ -1433,8 +1040,8 @@ package body Improve_Test_Suite is
             end;
          when Quality_Database_Identity_Rejected =>
             declare
-               First   : constant Fixture := Build_Fixture ("identity_first", Harness_Project => True);
-               Second  : constant Fixture := Build_Fixture ("identity_second", Harness_Project => True);
+               First   : constant Fixture := Build_Fixture ("identity_first");
+               Second  : constant Fixture := Build_Fixture ("identity_second");
                State   : constant String := To_String (First.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State);
                Applied : Improve.CLI.Outcome;
@@ -1462,8 +1069,8 @@ package body Improve_Test_Suite is
             end;
          when Quality_Database_Histories_Isolated =>
             declare
-               First       : constant Fixture := Build_Fixture ("history_first", Harness_Project => True);
-               Second      : constant Fixture := Build_Fixture ("history_second", Harness_Project => True);
+               First       : constant Fixture := Build_Fixture ("history_first");
+               Second      : constant Fixture := Build_Fixture ("history_second");
                State_Path  : constant String := To_String (First.Directory) & "/improve.db";
                First_Plan  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State_Path);
                Second_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Second, State_Path);
@@ -1505,7 +1112,7 @@ package body Improve_Test_Suite is
             end;
          when Publication_Policy_Change_Rejected =>
             declare
-               Data    : constant Fixture := Build_Fixture ("publication_policy", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("publication_policy");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Baseline_Source : constant String := To_String (Draft_For (Data).Baseline.Source_Id);
@@ -1575,29 +1182,11 @@ package body Improve_Test_Suite is
                   "exact historical plan revision cannot be inspected");
                Remove (Data);
             end;
-         when Native_Publication_And_Recovery | Native_Task_Contract_Fidelity |
-              Changed_Task_Contract_Replaced | Replacement_Running_And_Completed |
-              Workspace_Lifecycle_Fails_Closed | Selective_Publication_Resolves_Dependency |
-              Prerequisite_Replacement_Migrates_Dependents | Refresh_Reconciles_State =>
-            Run_Publication_Test (Item);
-         when Verification_Resolved | Verification_Still_Failing | Verification_Task_Scope_Not_Project |
-              Verification_Severity_Drop_Outstanding | Verification_Partially_Resolved |
-              Verification_Missing_Evidence | Verification_Regressed | Unrelated_Critical_Project_Regression |
-              Out_Of_Order_Verification_Not_Regression | Changed_Contract_Not_Regression |
-              Verification_Policy_Changed | Verification_Incomplete_Rejected | Verification_Revisions_Coexist =>
-            Run_Verification_Test (Item);
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
               Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
               Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback |
               Agent_Weakening_Rejected =>
             Run_Agent_Test (Item);
-         when Tasks_CLI_Golden | Tasks_JSON_Filter | Status_Project_And_All |
-              Status_Verification_Freshness | Status_All_Mixed_Freshness | Interrupted_Publication_Recovery |
-              Recovery_Rejects_Stale_Uncommitted | Published_Task_Reused_Across_Revisions |
-              Recovery_Uses_Exact_Revision | Recovery_Limit_Enforced | Recover_Missing_State |
-              Configuration_Bounds | Operational_Terminal_Paths |
-              Real_End_To_End_Workflow =>
-            Run_Operations_Test (Item);
       end case;
    end Run_Test;
 
@@ -1605,10 +1194,13 @@ package body Improve_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
+      Result.Add_Test (Improve_Operations_Test_Suite.Suite);
       Result.Add_Test (Improve_Planning_Test_Suite.Suite);
+      Result.Add_Test (Improve_Publication_Test_Suite.Suite);
       Result.Add_Test (Improve_Source_Test_Suite.Suite);
       Result.Add_Test (Improve_Storage_Test_Suite.Suite);
       Result.Add_Test (Improve_Tasks_Test_Suite.Suite);
+      Result.Add_Test (Improve_Verification_Test_Suite.Suite);
       for Id in Test_Id loop
          declare
             Item : constant Case_Access := new Case_Test (Id);

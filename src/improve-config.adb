@@ -34,6 +34,14 @@ package body Improve.Config is
        Format                    => Terminal_Format,
        Color                     => Color_Auto));
 
+   function Quality_Severity (Value : Severity_Level) return Ada_Quality.Types.Severity is
+     (case Value is
+         when Info => Ada_Quality.Types.Info,
+         when Low => Ada_Quality.Types.Low,
+         when Medium => Ada_Quality.Types.Medium,
+         when High => Ada_Quality.Types.High,
+         when Critical => Ada_Quality.Types.Critical);
+
    function Load (Path : String) return Settings is
       Result : Settings := Defaults;
    begin

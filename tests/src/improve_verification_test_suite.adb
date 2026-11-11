@@ -1,5 +1,37 @@
-separate (Improve_Test_Suite)
-procedure Run_Verification_Test (Item : in out Case_Test) is
+with Ada.Strings.Fixed;
+with Ada.Containers;
+with Ada.Strings.Unbounded;
+with Ada_Quality.Types;
+with AUnit;
+with AUnit.Assertions;
+with AUnit.Simple_Test_Cases;
+with Improve.CLI;
+with Improve.Model;
+with Improve.Storage;
+with Improve_Test_Support;
+
+package body Improve_Verification_Test_Suite is
+   use Ada.Strings.Unbounded;
+   use AUnit.Assertions;
+   use Improve_Test_Support;
+   use type Improve.Model.Quality_Outcome;
+   use type Improve.Storage.Verification_Scope;
+   use type Ada.Containers.Count_Type;
+
+   type Test_Id is
+     (Verification_Resolved, Verification_Still_Failing, Verification_Task_Scope_Not_Project,
+      Verification_Severity_Drop_Outstanding, Verification_Partially_Resolved,
+      Verification_Missing_Evidence, Verification_Regressed, Unrelated_Critical_Project_Regression,
+      Out_Of_Order_Verification_Not_Regression, Changed_Contract_Not_Regression,
+      Verification_Policy_Changed, Verification_Incomplete_Rejected, Verification_Revisions_Coexist);
+
+   type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
+   type Case_Access is access all Case_Test;
+
+   overriding function Name (Item : Case_Test) return AUnit.Message_String is
+     (AUnit.Format ("IMP_VERIFICATION_" & Test_Id'Image (Item.Id)));
+
+   overriding procedure Run_Test (Item : in out Case_Test) is
 begin
    case Item.Id is
          when Verification_Resolved =>
@@ -420,7 +452,15 @@ begin
                Assert (Plan_Count = 2, "verification revisions conflicted or duplicated");
                Remove (Data);
             end;
-      when others =>
-         raise Program_Error with "non-verification test delegated to verification subunit";
    end case;
-end Run_Verification_Test;
+   end Run_Test;
+
+   function Suite return AUnit.Test_Suites.Access_Test_Suite is
+      Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
+   begin
+      for Id in Test_Id loop
+         Result.Add_Test (Case_Access'(new Case_Test (Id)));
+      end loop;
+      return Result;
+   end Suite;
+end Improve_Verification_Test_Suite;

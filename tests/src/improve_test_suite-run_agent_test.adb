@@ -4,7 +4,7 @@ begin
    case Item.Id is
       when Agent_Context_Bounded =>
          declare
-            Data     : constant Fixture := Build_Fixture ("agent_context", Harness_Project => True);
+            Data     : constant Fixture := Build_Fixture ("agent_context");
             Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
             Settings : Improve.Config.Settings := Improve.Config.Defaults;
          begin
@@ -49,7 +49,7 @@ begin
          end;
       when Agent_Valid_Refinement =>
          declare
-            Data     : constant Fixture := Build_Fixture ("agent_valid", Harness_Project => True);
+            Data     : constant Fixture := Build_Fixture ("agent_valid");
             Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
             Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
             Provider : aliased Fake_Adapter :=

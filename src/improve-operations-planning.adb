@@ -1,20 +1,10 @@
 with Ada.Strings.Unbounded;
-with Ada_Quality.Types;
 with Improve.Findings;
 with Improve.Planner;
 with Improve.Source;
 
 package body Improve.Operations.Planning is
    use Ada.Strings.Unbounded;
-
-   function Quality_Severity
-     (Value : Improve.Config.Severity_Level) return Ada_Quality.Types.Severity is
-     (case Value is
-         when Improve.Config.Info => Ada_Quality.Types.Info,
-         when Improve.Config.Low => Ada_Quality.Types.Low,
-         when Improve.Config.Medium => Ada_Quality.Types.Medium,
-         when Improve.Config.High => Ada_Quality.Types.High,
-         when Improve.Config.Critical => Ada_Quality.Types.Critical);
 
    function Generate
      (State_Path       : String;
@@ -34,9 +24,12 @@ package body Improve.Operations.Planning is
          Findings : constant Improve.Model.Finding_Vectors.Vector :=
            Improve.Findings.Normalize
              (Selected,
-              Quality_Severity (Settings.Minimum_Severity),
+              Improve.Config.Quality_Severity (Settings.Minimum_Severity),
               Settings.Allow_Investigation_Tasks);
-         Draft : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+         Draft : constant Improve.Model.Plan_Revision :=
+           Improve.Planner.Generate
+             (Selected, Findings, Settings,
+              Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path), State_Path));
       begin
          Improve.Source.Close (Quality);
          if Dry_Run then

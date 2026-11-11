@@ -52,7 +52,9 @@ package body Improve.Operations.Publication is
          raise Argument_Error with
            "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
       end if;
-      if Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path)) /= To_String (Plan.Working_Source_Id) then
+      if Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path), State_Path) /=
+        To_String (Plan.Working_Source_Id)
+      then
          raise Data_Error with
            "current project source differs from the assessment baseline; remeasure and refresh the plan";
       end if;

@@ -1,10 +1,81 @@
-separate (Improve_Test_Suite)
-procedure Run_Operations_Test (Item : in out Case_Test) is
+with Ada.Directories;
+with Ada.Containers;
+with Ada.Strings.Fixed;
+with Ada.Strings.Unbounded;
+with Ada_Quality.Checks;
+with Ada_Quality.Policy;
+with Ada_Quality.Reporting;
+with Ada_Quality.Storage;
+with Ada_Quality.Types;
+with AUnit;
+with AUnit.Assertions;
+with AUnit.Simple_Test_Cases;
+with Improve;
+with Improve.CLI;
+with Improve.Config;
+with Improve.Model;
+with Improve.Operations.Inspection;
+with Improve.Recovery;
+with Improve.Storage;
+with Improve.Tasks;
+with Improve.Workflow;
+with Improve_Test_Support;
+with Model_Runner.Errors;
+with Model_Runner.Framework.Stores;
+with Model_Runner.Framework.Tasks;
+with Project_Tools.Files;
+
+package body Improve_Operations_Test_Suite is
+   use Ada.Strings.Unbounded;
+   use AUnit.Assertions;
+   use Improve_Test_Support;
+   use type Improve.Config.Color_Mode;
+   use type Improve.Config.Output_Format;
+   use type Improve.Config.Severity_Level;
+   use type Ada.Containers.Count_Type;
+   use type Ada_Quality.Types.Indicator_Id;
+
+   type Test_Id is
+     (In_Project_State_Does_Not_Stale_Plan, Tasks_CLI_Golden, Tasks_JSON_Filter,
+      Status_Project_And_All, Status_Verification_Freshness,
+      Status_All_Mixed_Freshness, Interrupted_Publication_Recovery, Recovery_Rejects_Stale_Uncommitted,
+      Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision, Recovery_Limit_Enforced,
+      Recover_Missing_State, Configuration_Bounds, Operational_Terminal_Paths, Real_End_To_End_Workflow);
+
+   type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
+   type Case_Access is access all Case_Test;
+
+   overriding function Name (Item : Case_Test) return AUnit.Message_String is
+     (AUnit.Format ("IMP_OPERATIONS_" & Test_Id'Image (Item.Id)));
+
+   overriding procedure Run_Test (Item : in out Case_Test) is
 begin
    case Item.Id is
+         when In_Project_State_Does_Not_Stale_Plan =>
+            declare
+               Data    : constant Fixture := Build_Fixture ("in_project_state");
+               State_Directory : constant String := To_String (Data.Target) & "/state";
+               State   : constant String := State_Directory & "/improve.db";
+               Planned : Improve.CLI.Outcome;
+               Applied : Improve.CLI.Outcome;
+            begin
+               Ada.Directories.Create_Directory (State_Directory);
+               Planned := Prepare_Verification_Plan (Data, State);
+               Assert (Planned.Exit_Code = 0, "in-project state fixture planning failed");
+               Initialize_Harness (To_String (Data.Target));
+               Approve_Latest (State);
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = 0,
+                  "configured in-project state invalidated its own source fingerprint: " &
+                  To_String (Applied.Errors));
+               Remove (Data);
+            end;
          when Tasks_CLI_Golden =>
             declare
-               Data     : constant Fixture := Build_Fixture ("tasks_golden", Harness_Project => True);
+               Data     : constant Fixture := Build_Fixture ("tasks_golden");
                State    : constant String := To_String (Data.Directory) & "/improve.db";
                Planned  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Result   : Improve.CLI.Outcome;
@@ -26,7 +97,7 @@ begin
             end;
          when Tasks_JSON_Filter =>
             declare
-               Data    : constant Fixture := Build_Fixture ("tasks_json", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("tasks_json");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Result  : Improve.CLI.Outcome;
@@ -49,7 +120,7 @@ begin
             end;
          when Status_Project_And_All =>
             declare
-               Data    : constant Fixture := Build_Fixture ("status", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("status");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                One     : Improve.CLI.Outcome;
@@ -73,7 +144,7 @@ begin
             end;
          when Status_Verification_Freshness =>
             declare
-               Data       : constant Fixture := Build_Fixture ("status_freshness", Harness_Project => True);
+               Data       : constant Fixture := Build_Fixture ("status_freshness");
                State      : constant String := To_String (Data.Directory) & "/improve.db";
                Planned    : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Verified   : Positive;
@@ -134,7 +205,7 @@ begin
             end;
          when Status_All_Mixed_Freshness =>
             declare
-               First       : constant Fixture := Build_Fixture ("status_all_mixed", Harness_Project => True);
+               First       : constant Fixture := Build_Fixture ("status_all_mixed");
                Second      : constant Fixture := Add_Fixture_Project (First, "second");
                State       : constant String := To_String (First.Directory) & "/improve.db";
                First_Plan  : constant Improve.CLI.Outcome := Prepare_Verification_Plan (First, State);
@@ -180,7 +251,7 @@ begin
             end;
          when Interrupted_Publication_Recovery =>
             declare
-               Data      : constant Fixture := Build_Fixture ("recover", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("recover");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Plan      : Improve.Model.Plan_Revision;
@@ -231,7 +302,7 @@ begin
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("recover_stale", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("recover_stale");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Plan      : Improve.Model.Plan_Revision;
@@ -279,7 +350,7 @@ begin
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data       : constant Fixture := Build_Fixture ("revision_reuse", Harness_Project => True);
+               Data       : constant Fixture := Build_Fixture ("revision_reuse");
                State      : constant String := To_String (Data.Directory) & "/improve.db";
                First_Plan : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Applied    : Improve.CLI.Outcome;
@@ -339,7 +410,7 @@ begin
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("recovery_revision", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("recovery_revision");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Plan      : Improve.Model.Plan_Revision;
@@ -384,7 +455,7 @@ begin
             end;
          when Recovery_Limit_Enforced =>
             declare
-               Data      : constant Fixture := Build_Fixture ("recover_limit", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("recover_limit");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Plan      : Improve.Model.Plan_Revision;
@@ -532,7 +603,7 @@ begin
             end;
          when Operational_Terminal_Paths =>
             declare
-               Data    : constant Fixture := Build_Fixture ("terminal_paths", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("terminal_paths");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
                Result  : Improve.CLI.Outcome;
@@ -796,7 +867,15 @@ begin
                end;
                Project_Tools.Files.Delete_Tree (Work);
             end;
-      when others =>
-         raise Program_Error with "non-operational test delegated to operations subunit";
    end case;
-end Run_Operations_Test;
+   end Run_Test;
+
+   function Suite return AUnit.Test_Suites.Access_Test_Suite is
+      Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
+   begin
+      for Id in Test_Id loop
+         Result.Add_Test (Case_Access'(new Case_Test (Id)));
+      end loop;
+      return Result;
+   end Suite;
+end Improve_Operations_Test_Suite;

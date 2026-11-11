@@ -62,7 +62,7 @@ package body Improve.Recovery is
                   if not Approved then
                      raise Data_Error with
                        "pending publication requires renewed approval before creating missing native tasks";
-                  elsif Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path)) /=
+                  elsif Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path), State_Path) /=
                     To_String (Plan.Working_Source_Id)
                   then
                      raise Data_Error with

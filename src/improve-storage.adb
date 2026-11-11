@@ -875,13 +875,15 @@ package body Improve.Storage is
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
       declare
-         Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Revisions_Table);
+         Status : constant Database.Status.Result :=
+           Entity_Tables.Find
+             (Tx, Item.DB, Item.Schemas (Revisions_Table),
+              Physical_Key (Revisions_Table, Revision_Id), Revision);
       begin
-         while Entity_Tables.Has_Element (Cursor) and then Entity_Tables.Element (Cursor).Id /= Revision_Id loop
-            Advance (Item, Tx, Revisions_Table, Cursor);
-         end loop;
-         if not Entity_Tables.Has_Element (Cursor) then raise Argument_Error with "unknown plan revision"; end if;
-         Revision := Entity_Tables.Element (Cursor);
+         if Status.Code = Database.Status.Not_Found then
+            raise Argument_Error with "unknown plan revision";
+         end if;
+         Check (Status, "read plan revision");
       end;
       declare Payload : constant String := S (Revision.Payload); begin
          Result.Plan_Id := To_Unbounded_String (Id_Image ("PLAN-", Positive (Revision.Parent_Id)));
@@ -901,7 +903,7 @@ package body Improve.Storage is
          Result.Fingerprint := To_Unbounded_String (S (Revision.Kind));
          Result.Review_Status := To_Unbounded_String (S (Revision.State));
       end;
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Findings_Table);
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Findings_Table, Revision_Id);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare
@@ -909,53 +911,25 @@ package body Improve.Storage is
                Payload : constant String := S (Row.Payload);
                Finding : Improve.Model.Finding_Reference;
             begin
-               if Row.Parent_Id = Revision_Id then
-                  Finding.Project_Id := Result.Project.Id;
-                  Finding.Run_Id := Result.Baseline.Run_Id;
-                  Finding.Indicator := Indicator_Value (Field (Payload, "indicator"));
-                  Finding.Rule := To_Unbounded_String (Field (Payload, "rule"));
-                  Finding.Level := Ada_Quality.Types.Severity'Value (Field (Payload, "severity"));
-                  Finding.Relative_Path := To_Unbounded_String (Field (Payload, "path"));
-                  Finding.Line := Natural'Value (Field (Payload, "line"));
-                  Finding.Fingerprint := To_Unbounded_String (S (Row.Kind));
-                  Finding.Semantic_Subject := To_Unbounded_String (Field (Payload, "subject"));
-                  Finding.Message := To_Unbounded_String (Field (Payload, "message"));
-                  Finding.Evidence := To_Unbounded_String (Field (Payload, "evidence"));
-                  Finding.Kind := Kind_Value (S (Row.State));
-                  Finding.Indicator_Level := Boolean'Value (Field (Payload, "indicator_level"));
-                  Result.Findings.Append (Finding);
-               end if;
+               Finding.Project_Id := Result.Project.Id;
+               Finding.Run_Id := Result.Baseline.Run_Id;
+               Finding.Indicator := Indicator_Value (Field (Payload, "indicator"));
+               Finding.Rule := To_Unbounded_String (Field (Payload, "rule"));
+               Finding.Level := Ada_Quality.Types.Severity'Value (Field (Payload, "severity"));
+               Finding.Relative_Path := To_Unbounded_String (Field (Payload, "path"));
+               Finding.Line := Natural'Value (Field (Payload, "line"));
+               Finding.Fingerprint := To_Unbounded_String (S (Row.Kind));
+               Finding.Semantic_Subject := To_Unbounded_String (Field (Payload, "subject"));
+               Finding.Message := To_Unbounded_String (Field (Payload, "message"));
+               Finding.Evidence := To_Unbounded_String (Field (Payload, "evidence"));
+               Finding.Kind := Kind_Value (S (Row.State));
+               Finding.Indicator_Level := Boolean'Value (Field (Payload, "indicator_level"));
+               Result.Findings.Append (Finding);
             end;
-            Advance (Item, Tx, Findings_Table, Cursor);
+            Advance_Children (Item, Tx, Findings_Table, Revision_Id, Cursor);
          end loop;
       end;
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Details_Table); begin
-         while Entity_Tables.Has_Element (Cursor) loop
-            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-               Details.Include
-                 (Number (Row.Parent_Id) & Character'Val (0) & S (Row.Kind),
-                  To_Unbounded_String (S (Row.Payload)));
-            end;
-            Advance (Item, Tx, Task_Details_Table, Cursor);
-         end loop;
-      end;
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Dependencies_Table); begin
-         while Entity_Tables.Has_Element (Cursor) loop
-            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-               Append_Packed (Dependency_Packs, Number (Row.Parent_Id), S (Row.Kind));
-            end;
-            Advance (Item, Tx, Task_Dependencies_Table, Cursor);
-         end loop;
-      end;
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Task_Findings_Table); begin
-         while Entity_Tables.Has_Element (Cursor) loop
-            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-               Append_Packed (Finding_Packs, Number (Row.Parent_Id), S (Row.Kind));
-            end;
-            Advance (Item, Tx, Task_Findings_Table, Cursor);
-         end loop;
-      end;
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table);
+      declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Tasks_Table, Revision_Id);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
             declare
@@ -963,36 +937,63 @@ package body Improve.Storage is
                Payload : constant String := S (Row.Payload);
                Spec : Improve.Model.Task_Specification;
             begin
-               if Row.Parent_Id = Revision_Id then
-                  Spec.Id := To_Unbounded_String (Field (Payload, "draft_id"));
-                  if Length (Spec.Id) = 0 then Spec.Id := To_Unbounded_String (Id_Image ("IMP-", Row.Id)); end if;
-                  Spec.Title := To_Unbounded_String (Field (Payload, "title"));
-                  Spec.Category := To_Unbounded_String (S (Row.Kind));
-                  Spec.Task_Priority := Priority_Value (Field (Payload, "priority"));
-                  Spec.Goal := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "goal"));
-                  Spec.Problem := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "problem"));
-                  Spec.Evidence := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "evidence"));
-                  Spec.Relevant_Files := Unpack (Field (Payload, "files"));
-                  Spec.Scope := To_Unbounded_String (Field (Payload, "scope"));
-                  Spec.Out_Of_Scope := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "out_of_scope"));
-                  Spec.Requirements := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "requirements"));
-                  Spec.Acceptance := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "acceptance"));
-                  Spec.Verification := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "verification"));
-                  Spec.Dependencies := Unpack (Field_Or (Payload, "dependencies", ""));
-                  Spec.Finding_Keys := Unpack (Field_Or (Payload, "finding_keys", ""));
-                  if Spec.Dependencies.Is_Empty and then Dependency_Packs.Contains (Number (Row.Id)) then
-                     Spec.Dependencies := Unpack (To_String (Dependency_Packs.Element (Number (Row.Id))));
-                  end if;
-                  if Spec.Finding_Keys.Is_Empty and then Finding_Packs.Contains (Number (Row.Id)) then
-                     Spec.Finding_Keys := Unpack (To_String (Finding_Packs.Element (Number (Row.Id))));
-                  end if;
-                  Spec.Confidence := Natural'Value (Field (Payload, "confidence"));
-                  Spec.Requires_Review := Boolean'Value (Field (Payload, "review"));
-                  Spec.Kind := Kind_Value (S (Row.State));
-                  Result.Tasks.Append (Spec);
+               declare
+                  Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
+               begin
+                  while Entity_Tables.Has_Element (Child) loop
+                     declare Detail : constant Entity := Entity_Tables.Element (Child); begin
+                        Details.Include
+                          (Number (Row.Id) & Character'Val (0) & S (Detail.Kind),
+                           To_Unbounded_String (S (Detail.Payload)));
+                     end;
+                     Advance_Children (Item, Tx, Task_Details_Table, Row.Id, Child);
+                  end loop;
+               end;
+               declare
+                  Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Dependencies_Table, Row.Id);
+               begin
+                  while Entity_Tables.Has_Element (Child) loop
+                     Append_Packed
+                       (Dependency_Packs, Number (Row.Id), S (Entity_Tables.Element (Child).Kind));
+                     Advance_Children (Item, Tx, Task_Dependencies_Table, Row.Id, Child);
+                  end loop;
+               end;
+               declare
+                  Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Findings_Table, Row.Id);
+               begin
+                  while Entity_Tables.Has_Element (Child) loop
+                     Append_Packed (Finding_Packs, Number (Row.Id), S (Entity_Tables.Element (Child).Kind));
+                     Advance_Children (Item, Tx, Task_Findings_Table, Row.Id, Child);
+                  end loop;
+               end;
+               Spec.Id := To_Unbounded_String (Field (Payload, "draft_id"));
+               if Length (Spec.Id) = 0 then Spec.Id := To_Unbounded_String (Id_Image ("IMP-", Row.Id)); end if;
+               Spec.Title := To_Unbounded_String (Field (Payload, "title"));
+               Spec.Category := To_Unbounded_String (S (Row.Kind));
+               Spec.Task_Priority := Priority_Value (Field (Payload, "priority"));
+               Spec.Goal := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "goal"));
+               Spec.Problem := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "problem"));
+               Spec.Evidence := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "evidence"));
+               Spec.Relevant_Files := Unpack (Field (Payload, "files"));
+               Spec.Scope := To_Unbounded_String (Field (Payload, "scope"));
+               Spec.Out_Of_Scope := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "out_of_scope"));
+               Spec.Requirements := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "requirements"));
+               Spec.Acceptance := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "acceptance"));
+               Spec.Verification := To_Unbounded_String (Loaded_Detail (Payload, Row.Id, "verification"));
+               Spec.Dependencies := Unpack (Field_Or (Payload, "dependencies", ""));
+               Spec.Finding_Keys := Unpack (Field_Or (Payload, "finding_keys", ""));
+               if Spec.Dependencies.Is_Empty and then Dependency_Packs.Contains (Number (Row.Id)) then
+                  Spec.Dependencies := Unpack (To_String (Dependency_Packs.Element (Number (Row.Id))));
                end if;
+               if Spec.Finding_Keys.Is_Empty and then Finding_Packs.Contains (Number (Row.Id)) then
+                  Spec.Finding_Keys := Unpack (To_String (Finding_Packs.Element (Number (Row.Id))));
+               end if;
+               Spec.Confidence := Natural'Value (Field (Payload, "confidence"));
+               Spec.Requires_Review := Boolean'Value (Field (Payload, "review"));
+               Spec.Kind := Kind_Value (S (Row.State));
+               Result.Tasks.Append (Spec);
             end;
-            Advance (Item, Tx, Tasks_Table, Cursor);
+            Advance_Children (Item, Tx, Tasks_Table, Revision_Id, Cursor);
          end loop;
       end;
       Database.Transactions.Rollback (Tx);
@@ -1786,38 +1787,33 @@ package body Improve.Storage is
    function Pending_Publications (Item : in out Store) return Operation_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Operation_Vectors.Vector;
+      Completed : String_Id_Maps.Map;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
+      declare Ends : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
+         while Entity_Tables.Has_Element (Ends) loop
+            declare Row : constant Entity := Entity_Tables.Element (Ends); begin
+               if Row.Parent_Id > 0 and then S (Row.State) = "completed" then
+                  Completed.Include (Number (Row.Parent_Id), Row.Id);
+               end if;
+            end;
+            Advance (Item, Tx, Operations_Table, Ends);
+         end loop;
+      end;
       declare Starts : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
          while Entity_Tables.Has_Element (Starts) loop
-            declare
-               Row       : constant Entity := Entity_Tables.Element (Starts);
-               Completed : Boolean := False;
-            begin
-               if S (Row.State) = "started" then
-                  declare Ends : Entity_Tables.Cursor := Scan (Item, Tx, Operations_Table); begin
-                     while Entity_Tables.Has_Element (Ends) loop
-                        if Entity_Tables.Element (Ends).Parent_Id = Row.Id and then
-                          S (Entity_Tables.Element (Ends).State) = "completed"
-                        then
-                           Completed := True;
-                           exit;
-                        end if;
-                        Advance (Item, Tx, Operations_Table, Ends);
-                     end loop;
+            declare Row : constant Entity := Entity_Tables.Element (Starts); begin
+               if S (Row.State) = "started" and then not Completed.Contains (Number (Row.Id)) then
+                  declare Payload : constant String := S (Row.Payload); begin
+                     Result.Append
+                       (Operation_Record'
+                          (Id       => Row.Id,
+                           Key      => To_Unbounded_String (S (Row.Kind)),
+                           Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
+                           Revision => Positive'Value (Field_Or (Payload, "revision", "1")),
+                           Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
+                           Task_Ids => Unpack (Field (Payload, "task_ids"))));
                   end;
-                  if not Completed then
-                     declare Payload : constant String := S (Row.Payload); begin
-                        Result.Append
-                          (Operation_Record'
-                             (Id       => Row.Id,
-                              Key      => To_Unbounded_String (S (Row.Kind)),
-                              Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
-                              Revision => Positive'Value (Field_Or (Payload, "revision", "1")),
-                              Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
-                              Task_Ids => Unpack (Field (Payload, "task_ids"))));
-                     end;
-                  end if;
                end if;
             end;
             Advance (Item, Tx, Operations_Table, Starts);

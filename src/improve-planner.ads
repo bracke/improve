@@ -12,13 +12,15 @@ package Improve.Planner is
    function Generate
      (Selected : Improve.Source.Selection;
       Findings : Improve.Model.Finding_Vectors.Vector;
-      Settings : Improve.Config.Settings) return Improve.Model.Plan_Revision;
+      Settings : Improve.Config.Settings;
+      Working_Source_Id : String := "") return Improve.Model.Plan_Revision;
    --  Group related evidence, split oversized groups, and generate explicit task
    --  specifications. Equal inputs and planner configuration produce the same
    --  plan fingerprint and task definitions.
    --  @param Selected Completed assessment and provenance.
    --  @param Findings Normalized eligible findings.
    --  @param Settings Validated planner limits and policy.
+   --  @param Working_Source_Id Precomputed working-tree identity, or empty to calculate it.
    --  @return Deterministic immutable draft revision.
    --  @exception Data_Error Evidence cannot form a safe plan or limits are exceeded.
 end Improve.Planner;

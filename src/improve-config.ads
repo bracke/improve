@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Ada_Quality.Types;
 
 --  Improve-owned configuration schema and validation.
 package Improve.Config is
@@ -81,6 +82,11 @@ package Improve.Config is
    function Defaults return Settings;
    --  Return documented schema-version-1 defaults.
    --  @return Complete default settings.
+
+   function Quality_Severity (Value : Severity_Level) return Ada_Quality.Types.Severity;
+   --  Convert planning severity configuration to the Ada Quality domain type.
+   --  @param Value Configured severity level.
+   --  @return Equivalent Ada Quality severity.
 
    function Load (Path : String) return Settings;
    --  Load and validate a configuration file; an empty path returns defaults.

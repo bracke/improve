@@ -1,5 +1,41 @@
-separate (Improve_Test_Suite)
-procedure Run_Publication_Test (Item : in out Case_Test) is
+with Ada.Exceptions;
+with Ada.Containers;
+with Ada.Strings.Fixed;
+with Ada.Strings.Unbounded;
+with AUnit;
+with AUnit.Assertions;
+with AUnit.Simple_Test_Cases;
+with Improve;
+with Improve.CLI;
+with Improve.Model;
+with Improve.Storage;
+with Improve.Workflow;
+with Improve_Test_Support;
+with Model_Runner.Errors;
+with Model_Runner.Framework.Records;
+with Model_Runner.Framework.Schemas;
+with Model_Runner.Framework.Stores;
+with Model_Runner.Framework.Tasks;
+
+package body Improve_Publication_Test_Suite is
+   use Ada.Strings.Unbounded;
+   use AUnit.Assertions;
+   use Improve_Test_Support;
+   use type Ada.Containers.Count_Type;
+
+   type Test_Id is
+     (Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
+      Replacement_Running_And_Completed, Workspace_Lifecycle_Fails_Closed,
+      Selective_Publication_Resolves_Dependency, Prerequisite_Replacement_Migrates_Dependents,
+      Refresh_Reconciles_State);
+
+   type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
+   type Case_Access is access all Case_Test;
+
+   overriding function Name (Item : Case_Test) return AUnit.Message_String is
+     (AUnit.Format ("IMP_PUBLICATION_" & Test_Id'Image (Item.Id)));
+
+   overriding procedure Run_Test (Item : in out Case_Test) is
 begin
    case Item.Id is
          when Native_Publication_And_Recovery =>
@@ -8,7 +44,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data    : constant Fixture := Build_Fixture ("native_publication", Harness_Project => True);
+               Data    : constant Fixture := Build_Fixture ("native_publication");
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Plan_Result : Improve.CLI.Outcome;
                Preview_Result : Improve.CLI.Outcome;
@@ -111,7 +147,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data       : constant Fixture := Build_Fixture ("native_contract", Harness_Project => True);
+               Data       : constant Fixture := Build_Fixture ("native_contract");
                Plan       : Improve.Model.Plan_Revision := Draft_For (Data);
                Spec       : Improve.Model.Task_Specification := Plan.Tasks (1);
                Published  : Improve.Workflow.Publication_Result;
@@ -163,7 +199,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data       : constant Fixture := Build_Fixture ("changed_contract", Harness_Project => True);
+               Data       : constant Fixture := Build_Fixture ("changed_contract");
                State      : constant String := To_String (Data.Directory) & "/improve.db";
                First      : Improve.Storage.Save_Result;
                Second     : Improve.Storage.Save_Result;
@@ -311,7 +347,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data        : constant Fixture := Build_Fixture ("replacement_states", Harness_Project => True);
+               Data        : constant Fixture := Build_Fixture ("replacement_states");
                State       : constant String := To_String (Data.Directory) & "/improve.db";
                Draft       : Improve.Model.Plan_Revision := Draft_For (Data);
                First       : Improve.Storage.Save_Result;
@@ -421,7 +457,7 @@ begin
                package Schemas renames Model_Runner.Framework.Schemas;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("workspace_fail_closed", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("workspace_fail_closed");
                Plan      : constant Improve.Model.Plan_Revision := Draft_For (Data);
                Published : Improve.Workflow.Publication_Result;
                Store     : Stores.Store;
@@ -475,7 +511,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("selective_dependency", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("selective_dependency");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Draft     : Improve.Model.Plan_Revision := Draft_For (Data);
                Stored    : Improve.Storage.Save_Result;
@@ -536,7 +572,7 @@ begin
                package Records renames Model_Runner.Framework.Records;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data        : constant Fixture := Build_Fixture ("dependency_replacement", Harness_Project => True);
+               Data        : constant Fixture := Build_Fixture ("dependency_replacement");
                State       : constant String := To_String (Data.Directory) & "/improve.db";
                Draft       : Improve.Model.Plan_Revision := Draft_For (Data);
                First       : Improve.Storage.Save_Result;
@@ -687,7 +723,7 @@ begin
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Data      : constant Fixture := Build_Fixture ("refresh_state", Harness_Project => True);
+               Data      : constant Fixture := Build_Fixture ("refresh_state");
                State     : constant String := To_String (Data.Directory) & "/improve.db";
                Planned   : Improve.CLI.Outcome;
                Applied   : Improve.CLI.Outcome;
@@ -736,7 +772,15 @@ begin
                Assert (To_String (Mapping.State) = "accepted", "refresh did not synchronize harness state");
                Remove (Data);
             end;
-      when others =>
-         raise Program_Error with "non-publication test delegated to publication subunit";
    end case;
-end Run_Publication_Test;
+   end Run_Test;
+
+   function Suite return AUnit.Test_Suites.Access_Test_Suite is
+      Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
+   begin
+      for Id in Test_Id loop
+         Result.Add_Test (Case_Access'(new Case_Test (Id)));
+      end loop;
+      return Result;
+   end Suite;
+end Improve_Publication_Test_Suite;
