@@ -11,10 +11,10 @@ with Improve.Findings;
 with Improve.JSON;
 with Improve.Model;
 with Improve.Operations.Inspection;
+with Improve.Operations.Planning;
 with Improve.Operations.Publication;
 with Improve.Operations.Reconciliation;
 with Improve.Operations.Verification;
-with Improve.Planner;
 with Improve.Presentation;
 with Improve.Recovery;
 with Improve.Source;
@@ -192,8 +192,6 @@ package body Improve.CLI is
    end Findings_Output;
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Quality : Improve.Source.Repository;
-
       function Stored_Plan_Terminal (Plan : Improve.Model.Plan_Revision) return String is
          Result : Unbounded_String;
       begin
@@ -218,13 +216,9 @@ package body Improve.CLI is
    begin
       if Item.Plan_Action = Approve_Plan then
          declare
-            State : Improve.Storage.Store;
-            Plan  : Improve.Model.Plan_Revision;
+            Plan : constant Improve.Model.Plan_Revision :=
+              Improve.Operations.Planning.Approve (State_Path (Item), To_String (Item.Target));
          begin
-            Improve.Storage.Open (State, State_Path (Item), Writable => True);
-            Plan := Improve.Storage.Load (State, To_String (Item.Target));
-            Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision);
-            Improve.Storage.Close (State);
             if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
             return
               Message
@@ -232,71 +226,45 @@ package body Improve.CLI is
                  [Arg ("id", To_String (Plan.Plan_Id)), Arg ("revision", Number (Plan.Revision))]) & LF;
          end;
       elsif Item.Plan_Action = Show_Plan then
-         declare State : Improve.Storage.Store; begin
-            Improve.Storage.Open (State, State_Path (Item), Writable => False);
-            declare Plan : constant Improve.Model.Plan_Revision :=
-              (if Item.Has_Revision then
-                  Improve.Storage.Load (State, To_String (Item.Target), Positive (Item.Revision))
-               else Improve.Storage.Load (State, To_String (Item.Target)));
-            begin
-               Improve.Storage.Close (State);
-               if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
-               return Stored_Plan_Terminal (Plan);
-            end;
+         declare
+            Plan : constant Improve.Model.Plan_Revision :=
+              Improve.Operations.Planning.Load
+                (State_Path (Item), To_String (Item.Target),
+                 (if Item.Has_Revision then Item.Revision else 0));
+         begin
+            if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
+            return Stored_Plan_Terminal (Plan);
          end;
       elsif Item.Plan_Action = List_Plans then
-         Improve.Source.Open (Quality, Quality_Path (Item, Settings));
          declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
-            State : Improve.Storage.Store;
+            Values : constant Improve.Storage.Summary_Vectors.Vector :=
+              Improve.Operations.Planning.List
+                (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project));
          begin
-            Improve.Source.Close (Quality);
-            Improve.Storage.Open (State, State_Path (Item), Writable => False);
-            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project);
-            begin
-               Improve.Storage.Close (State);
-               if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
-               declare Result : Unbounded_String; begin
-                  Append (Result, Improve.Presentation.Header (Message ("plan.list.title")) & LF);
-                  if Values.Is_Empty then Append (Result, Message ("plan.list.none") & LF); end if;
-                  for Value of Values loop
-                     Append (Result, To_String (Value.Plan_Id) & "  r" & Number (Value.Revision) & "  " &
-                       Number (Value.Task_Count) & " tasks  run " & Number (Value.Run_Id) & LF);
-                  end loop;
-                  return To_String (Result);
-               end;
+            if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
+            declare Result : Unbounded_String; begin
+               Append (Result, Improve.Presentation.Header (Message ("plan.list.title")) & LF);
+               if Values.Is_Empty then Append (Result, Message ("plan.list.none") & LF); end if;
+               for Value of Values loop
+                  Append
+                    (Result,
+                     Message
+                       ("plan.list.item",
+                        [Arg ("id", To_String (Value.Plan_Id)), Arg ("revision", Number (Value.Revision)),
+                         Arg ("tasks", Number (Value.Task_Count)), Arg ("run", Number (Value.Run_Id))]) & LF);
+               end loop;
+               return To_String (Result);
             end;
          end;
       end if;
-      Improve.Source.Open (Quality, Quality_Path (Item, Settings));
       declare
-         Project  : constant Improve.Model.Project_Reference :=
-           Improve.Source.Resolve_Project (Quality, To_String (Item.Project));
-         Selected : constant Improve.Source.Selection :=
-           Improve.Source.Select_Assessment (Quality, Project, Item.Run_Id);
-         Findings : constant Improve.Model.Finding_Vectors.Vector :=
-           Improve.Findings.Normalize
-             (Selected, Quality_Severity (Settings.Minimum_Severity), Settings.Allow_Investigation_Tasks);
-         Draft    : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
-         Plan     : Improve.Model.Plan_Revision := Draft;
-         Existing : Boolean := False;
-         Result   : Unbounded_String;
+         Executed : constant Improve.Operations.Planning.Generation_Result :=
+           Improve.Operations.Planning.Generate
+             (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
+              Item.Run_Id, Settings, Item.Dry_Run);
+         Plan   : constant Improve.Model.Plan_Revision := Executed.Plan;
+         Result : Unbounded_String;
       begin
-         Improve.Source.Close (Quality);
-         if not Item.Dry_Run then
-            declare
-               State : Improve.Storage.Store;
-               Saved : Improve.Storage.Save_Result;
-            begin
-               Improve.Storage.Open (State, State_Path (Item), Writable => True);
-               Saved := Improve.Storage.Save (State, Draft);
-               Improve.Storage.Close (State);
-               Plan := Saved.Plan;
-               Existing := Saved.Existing;
-            end;
-         end if;
          if Item.Format = JSON_Format then
             Result := To_Unbounded_String (Improve.JSON.Plan (Plan, Item.Dry_Run));
          else
@@ -305,11 +273,14 @@ package body Improve.CLI is
                Improve.Presentation.Header
                  (Message
                     ("plan.title",
-                     [Arg ("project", To_String (Project.Name)), Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
+                     [Arg ("project", To_String (Plan.Project.Name)),
+                      Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
             Append
               (Result,
                Message
-                 ((if Item.Dry_Run then "plan.dry_run" elsif Existing then "plan.existing" else "plan.stored")) & LF);
+                 ((if Item.Dry_Run then "plan.dry_run"
+                   elsif Executed.Existing then "plan.existing"
+                   else "plan.stored")) & LF);
             Append
               (Result,
                Message
@@ -424,28 +395,46 @@ package body Improve.CLI is
                Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
                Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
                Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF &
-               "Plan quality: " &
-               (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run
-                then Improve.Model.Image (Value.Plan_Quality)
-                else "unverified") & LF &
-               "Project quality: " &
-               (if Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run
-                then Improve.Model.Image (Value.Project_Quality)
-                else "unverified") & LF);
+               Message
+                 ("status.plan_quality",
+                  [Arg
+                     ("outcome",
+                      (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run
+                       then Improve.Model.Image (Value.Plan_Quality)
+                       else Improve.Model.Image (Improve.Model.Unverified)))]) & LF &
+               Message
+                 ("status.project_quality",
+                  [Arg
+                     ("outcome",
+                      (if Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run
+                       then Improve.Model.Image (Value.Project_Quality)
+                       else Improve.Model.Image (Improve.Model.Unverified)))]) & LF);
             if Value.Has_Plan_Verification then
                Append
                  (Result,
-                  "Last plan verification assessment: " & Number (Value.Plan_Verification_Run) & LF);
+                  Message
+                    ("status.last_plan_verification",
+                     [Arg ("run", Number (Value.Plan_Verification_Run))]) & LF);
                if Value.Plan_Verification_Run /= Value.Latest_Run then
-                  Append (Result, "Previous plan result: " & Improve.Model.Image (Value.Plan_Quality) & LF);
+                  Append
+                    (Result,
+                     Message
+                       ("status.previous_plan_result",
+                        [Arg ("outcome", Improve.Model.Image (Value.Plan_Quality))]) & LF);
                end if;
             end if;
             if Value.Has_Project_Verification then
                Append
                  (Result,
-                  "Last project verification assessment: " & Number (Value.Project_Verification_Run) & LF);
+                  Message
+                    ("status.last_project_verification",
+                     [Arg ("run", Number (Value.Project_Verification_Run))]) & LF);
                if Value.Project_Verification_Run /= Value.Latest_Run then
-                  Append (Result, "Previous project result: " & Improve.Model.Image (Value.Project_Quality) & LF);
+                  Append
+                    (Result,
+                     Message
+                       ("status.previous_project_result",
+                        [Arg ("outcome", Improve.Model.Image (Value.Project_Quality))]) & LF);
                end if;
             end if;
             for Status in Improve.Tasks.Operational_Status loop
@@ -456,20 +445,29 @@ package body Improve.CLI is
                   if Count > 0 then
                      Append
                        (Result,
-                        "  " & Improve.Tasks.Image (Status) & " " & Number (Count) & LF);
+                        Message
+                          ("status.count",
+                           [Arg ("status", Improve.Tasks.Image (Status)), Arg ("count", Number (Count))]) & LF);
                   end if;
                end;
             end loop;
             Append
               (Result,
                Message ("status.findings") & LF &
-               "  resolved " & Number (Value.Findings.Resolved) & LF &
-               "  outstanding " & Number (Value.Findings.Outstanding) & LF &
-               "  not_measurable " & Number (Value.Findings.Not_Measurable) & LF &
-               "  regressed " & Number (Value.Findings.Regressed) & LF &
-               "  superseded " & Number (Value.Findings.Superseded) & LF &
-               "  previously_resolved " & Number (Value.Findings.Previously_Resolved) & LF &
-               "  unverified " & Number (Value.Findings.Unverified) & LF);
+               Message ("status.count", [Arg ("status", "resolved"),
+                 Arg ("count", Number (Value.Findings.Resolved))]) & LF &
+               Message ("status.count", [Arg ("status", "outstanding"),
+                 Arg ("count", Number (Value.Findings.Outstanding))]) & LF &
+               Message ("status.count", [Arg ("status", "not_measurable"),
+                 Arg ("count", Number (Value.Findings.Not_Measurable))]) & LF &
+               Message ("status.count", [Arg ("status", "regressed"),
+                 Arg ("count", Number (Value.Findings.Regressed))]) & LF &
+               Message ("status.count", [Arg ("status", "superseded"),
+                 Arg ("count", Number (Value.Findings.Superseded))]) & LF &
+               Message ("status.count", [Arg ("status", "previously_resolved"),
+                 Arg ("count", Number (Value.Findings.Previously_Resolved))]) & LF &
+               Message ("status.count", [Arg ("status", "unverified"),
+                 Arg ("count", Number (Value.Findings.Unverified))]) & LF);
          end loop;
          return To_String (Result);
       end;
@@ -515,7 +513,10 @@ package body Improve.CLI is
               (Message
                  ((if Command = "refresh" then "refresh.title" else "verify.title"),
                   [Arg ("plan", To_String (Executed.Plan.Plan_Id))])) & LF);
-         Append (Output, "Outcome: " & Improve.Model.Image (Executed.Report.Outcome) & LF);
+         Append
+           (Output,
+            Message
+              ("verify.outcome", [Arg ("outcome", Improve.Model.Image (Executed.Report.Outcome))]) & LF);
          for Result of Executed.Report.Tasks loop
             Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
          end loop;

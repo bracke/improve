@@ -65,6 +65,7 @@ package body Improve.Text is
      "en.plan.none = No remediation tasks are required." & LF &
      "en.plan.list.title = Stored remediation plans" & LF &
      "en.plan.list.none = No stored remediation plans." & LF &
+     "en.plan.list.item = {id}  r{revision}  {tasks} tasks  run {run}" & LF &
      "en.apply.title = Harness publication for {plan}" & LF &
      "en.apply.preview = Preview only; harness and Improve state were not modified." & LF &
      "en.apply.complete = Native harness transaction committed and publication mappings recorded." & LF &
@@ -77,7 +78,15 @@ package body Improve.Text is
      "en.status.latest = Latest assessment: {run}" & LF &
      "en.status.plans = Remediation plans: {count}" & LF &
      "en.status.tasks = Generated tasks: {count}" & LF &
+     "en.status.plan_quality = Plan quality: {outcome}" & LF &
+     "en.status.project_quality = Project quality: {outcome}" & LF &
+     "en.status.last_plan_verification = Last plan verification assessment: {run}" & LF &
+     "en.status.previous_plan_result = Previous plan result: {outcome}" & LF &
+     "en.status.last_project_verification = Last project verification assessment: {run}" & LF &
+     "en.status.previous_project_result = Previous project result: {outcome}" & LF &
+     "en.status.count =   {status} {count}" & LF &
      "en.status.findings = Quality findings:" & LF &
+     "en.verify.outcome = Outcome: {outcome}" & LF &
      "en.recover.title = Publication recovery" & LF &
      "en.recover.complete = Recovered {operations} operations and {tasks} tasks." & LF &
      "en.label.id = ID" & LF &

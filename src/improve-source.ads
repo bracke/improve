@@ -63,6 +63,16 @@ package Improve.Source is
    --  @param Run_Id Explicit run identity or zero for latest completed.
    --  @return Validated assessment selection.
 
+   function Latest_Completed_Run
+     (Item    : Repository;
+      Project : Improve.Model.Project_Reference) return Natural;
+   --  Return the greatest completed run identity, or zero when none exists.
+   --  Reporting failures remain visible to callers and are never treated as
+   --  an empty project.
+   --  @param Item Open repository.
+   --  @param Project Resolved project.
+   --  @return Greatest completed run identity or zero.
+
    function Working_Fingerprint (Root : String) return String;
    --  Fingerprint the current project source without following links. Only
    --  explicit generated build directories and Improve's default state

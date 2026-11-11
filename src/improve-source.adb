@@ -266,16 +266,34 @@ package body Improve.Source is
       end loop;
    end Validate;
 
+   function Latest_Completed_Run
+     (Item    : Repository;
+      Project : Improve.Model.Project_Reference) return Natural is
+      Result : Natural := 0;
+   begin
+      Require_Open (Item);
+      for Run of Ada_Quality.Reporting.Runs (Item.Session, Project.Id) loop
+         if Run.State = Ada_Quality.Types.Assessment_Completed then
+            Result := Natural'Max (Result, Run.Id);
+         end if;
+      end loop;
+      return Result;
+   exception
+      when Error : Ada_Quality.Reporting.Reporting_Error =>
+         raise Dependency_Error with Ada.Exceptions.Exception_Message (Error);
+      when Error : Ada_Quality.Reporting.Integrity_Error =>
+         raise Data_Error with Ada.Exceptions.Exception_Message (Error);
+   end Latest_Completed_Run;
+
    function Select_Assessment
      (Item       : Repository;
       Project    : Improve.Model.Project_Reference;
       Run_Id     : Natural := 0) return Selection is
-      Selected : Natural := 0;
+      Selected : Natural := (if Run_Id = 0 then Latest_Completed_Run (Item, Project) else 0);
    begin
       Require_Open (Item);
       for Run of Ada_Quality.Reporting.Runs (Item.Session, Project.Id) loop
-         if (Run_Id = 0 and then Run.State = Ada_Quality.Types.Assessment_Completed) or else
-           (Run_Id > 0 and then Run.Id = Run_Id and then Run.State = Ada_Quality.Types.Assessment_Completed)
+         if Run_Id > 0 and then Run.Id = Run_Id and then Run.State = Ada_Quality.Types.Assessment_Completed
          then
             Selected := Run.Id;
          end if;

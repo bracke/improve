@@ -731,10 +731,17 @@ package body Improve_Test_Suite is
                   declare
                      Project : constant Improve.Model.Project_Reference :=
                        Improve.Source.Resolve_Project (Store, Id_Image (Empty_Id));
-                     Value : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
-                     pragma Unreferenced (Value);
                   begin
-                     null;
+                     Assert
+                       (Improve.Source.Latest_Completed_Run (Store, Project) = 0,
+                        "empty project reported a completed assessment");
+                     declare
+                        Value : constant Improve.Source.Selection :=
+                          Improve.Source.Select_Assessment (Store, Project);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
                   end;
                exception
                   when Improve.Dependency_Error => Rejected := True;

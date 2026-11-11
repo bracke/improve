@@ -212,13 +212,8 @@ package body Improve.Operations.Inspection is
       end Add_Project;
 
       procedure Add_Resolved_Project (Project : Improve.Model.Project_Reference) is
-         Latest : Natural := 0;
+         Latest : constant Natural := Improve.Source.Latest_Completed_Run (Quality, Project);
       begin
-         begin
-            Latest := Improve.Source.Select_Assessment (Quality, Project).Baseline.Run_Id;
-         exception
-            when Dependency_Error => null;
-         end;
          Add_Project (Project, Latest);
       end Add_Resolved_Project;
    begin

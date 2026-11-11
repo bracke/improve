@@ -3,10 +3,11 @@
 Improve consumes one immutable `Ada_Quality.Reporting.Session`, builds deterministic remediation specifications, and
 publishes approved specifications through `Model_Runner.Framework.Tasks.Create` in a harness transaction.
 
-The CLI is a presentation adapter. Typed application use cases live below `Improve.Operations`: publication and
-verification enforce evidence and contract rules, inspection assembles assessment-aware task/status models, and
-reconciliation synchronizes cached harness state. These operations own project-identity checks, source and policy
-preconditions, journaling, and persistence. Terminal and JSON rendering do not participate in domain decisions.
+The CLI is a presentation adapter. Typed application use cases live below `Improve.Operations`: planning owns
+generation and immutable history, publication and verification enforce evidence and contract rules, inspection
+assembles assessment-aware task/status models, and reconciliation synchronizes cached harness state. These operations
+own project-identity checks, source and policy preconditions, journaling, and persistence. Terminal and JSON rendering
+do not participate in domain decisions.
 
 The assessment database is never created, migrated, recovered, or written by Improve. Improve's own state database
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
