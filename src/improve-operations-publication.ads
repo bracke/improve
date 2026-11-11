@@ -1,4 +1,5 @@
 with Improve.Model;
+with Improve.Storage;
 with Improve.Workflow;
 
 --  Publication authorization, journaling, and native task creation.
@@ -19,7 +20,8 @@ package Improve.Operations.Publication is
       Plan_Id          : String;
       Selected_Task_Id : String;
       Task_Kind        : String;
-      Dry_Run          : Boolean) return Result;
+      Dry_Run          : Boolean;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) return Result;
    --  Validate approval and source/evidence identity, journal the operation,
    --  publish through one native harness transaction, and persist mappings.
    --  @param State_Path Existing Improve state database.
@@ -28,5 +30,6 @@ package Improve.Operations.Publication is
    --  @param Selected_Task_Id One task to publish, or empty for the plan.
    --  @param Task_Kind Configured harness task kind or `auto`.
    --  @param Dry_Run Whether to validate without changing either writable store.
+   --  @param Limits Hard persistence and history limits.
    --  @return Exact plan and resulting native publication mappings.
 end Improve.Operations.Publication;

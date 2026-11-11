@@ -196,7 +196,26 @@ package body Improve_Storage_Test_Suite is
          Mappings : Improve.Storage.Publication_Vectors.Vector;
          Evidence : Improve.Storage.Verification_Vectors.Vector;
          Limit_Rejected : Boolean := False;
+         Read_Limit_Rejected : Boolean := False;
       begin
+         begin
+            declare
+               Value : constant Improve.Model.Plan_Revision :=
+                 Improve.Storage.Load
+                   (Store, "PLAN-000001",
+                    (Maximum_Findings     => 10,
+                     Maximum_Tasks        => 1,
+                     Maximum_Task_Details => 10,
+                     Maximum_Task_Links   => 10,
+                     Maximum_History      => 10));
+               pragma Unreferenced (Value);
+            begin
+               null;
+            end;
+         exception
+            when Improve.Data_Error => Read_Limit_Rejected := True;
+         end;
+         Assert (Read_Limit_Rejected, "plan reconstruction ignored its configured task limit");
          for Index in 1 .. 2 loop
             Mappings.Append
               (Improve.Storage.Publication_Record'

@@ -1,7 +1,6 @@
 with Ada.Strings.Unbounded;
 with Improve.Model;
 with Improve.Source;
-with Improve.Storage;
 with Improve.Workflow;
 
 package body Improve.Operations.Reconciliation is
@@ -10,7 +9,8 @@ package body Improve.Operations.Reconciliation is
    procedure Run
      (State_Path       : String;
       Quality_Path     : String;
-      Project_Selector : String) is
+      Project_Selector : String;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
       Publications : Improve.Storage.Publication_Vectors.Vector;
@@ -23,12 +23,13 @@ package body Improve.Operations.Reconciliation is
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path, Writable => False);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project);
+              Improve.Storage.List (State, Project, Limits.Maximum_History);
             begin
                if Values.Is_Empty then raise Argument_Error with "project has no stored remediation plan"; end if;
-               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id));
+               Plan := Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id), Limits);
                Improve.Operations.Require_Project_Identity (Plan.Project, Project);
-               Publications := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
+               Publications := Improve.Storage.Publications
+                 (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
             end;
             Improve.Storage.Close (State);
          end;

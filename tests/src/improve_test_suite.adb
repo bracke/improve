@@ -16,6 +16,7 @@ with Improve_Operations_Test_Suite;
 with Improve_Publication_Test_Suite;
 with Improve_Source_Test_Suite;
 with Improve_Storage_Test_Suite;
+with Improve_Storage_Codec_Test_Suite;
 with Improve_Tasks_Test_Suite;
 with Improve_Test_Support;
 with Improve_Verification_Test_Suite;
@@ -1212,6 +1213,7 @@ package body Improve_Test_Suite is
       Result.Add_Test (Improve_Publication_Test_Suite.Suite);
       Result.Add_Test (Improve_Source_Test_Suite.Suite);
       Result.Add_Test (Improve_Storage_Test_Suite.Suite);
+      Result.Add_Test (Improve_Storage_Codec_Test_Suite.Suite);
       Result.Add_Test (Improve_Tasks_Test_Suite.Suite);
       Result.Add_Test (Improve_Verification_Test_Suite.Suite);
       for Id in Test_Id loop

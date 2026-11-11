@@ -212,7 +212,9 @@ package body Improve.CLI is
       if Item.Plan_Action = Approve_Plan then
          declare
             Plan : constant Improve.Model.Plan_Revision :=
-              Improve.Operations.Planning.Approve (State_Path (Item), To_String (Item.Target));
+              Improve.Operations.Planning.Approve
+                (State_Path (Item), To_String (Item.Target),
+                 Improve.Operations.Storage_Read_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
             return
@@ -225,7 +227,8 @@ package body Improve.CLI is
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Operations.Planning.Load
                 (State_Path (Item), To_String (Item.Target),
-                 (if Item.Has_Revision then Item.Revision else 0));
+                 (if Item.Has_Revision then Item.Revision else 0),
+                 Improve.Operations.Storage_Read_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
             return Stored_Plan_Terminal (Plan);
@@ -306,7 +309,8 @@ package body Improve.CLI is
            Plan_Id          => To_String (Item.Target),
            Selected_Task_Id => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
            Task_Kind        => To_String (Settings.Task_Kind),
-           Dry_Run          => Item.Dry_Run);
+           Dry_Run          => Item.Dry_Run,
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then
          return Improve.JSON.Publication
@@ -339,7 +343,8 @@ package body Improve.CLI is
            Task_Id          => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
            Revision         => Item.Revision,
            Filter           => Filter,
-           Maximum_Items    => Settings.Maximum_Output_Items);
+           Maximum_Items    => Settings.Maximum_Output_Items,
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
       declare Result : Unbounded_String; begin
@@ -370,7 +375,8 @@ package body Improve.CLI is
            Quality_Path     => Quality_Path (Item, Settings),
            Project_Selector => (if Item.All_Projects then "" else To_String (Item.Project)),
            All_Projects     => Item.All_Projects,
-           Maximum_Items    => Settings.Maximum_Output_Items);
+           Maximum_Items    => Settings.Maximum_Output_Items,
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
       declare Result : Unbounded_String; begin
@@ -467,7 +473,8 @@ package body Improve.CLI is
    function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Report : constant Improve.Recovery.Recovery_Report :=
         Improve.Recovery.Recover
-          (State_Path (Item), To_String (Settings.Task_Kind), Settings.Maximum_Recovery_Operations);
+          (State_Path (Item), To_String (Settings.Task_Kind), Settings.Maximum_Recovery_Operations,
+           Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
       return
@@ -519,7 +526,8 @@ package body Improve.CLI is
       Ignored     : Boolean;
    begin
       Improve.Operations.Reconciliation.Run
-        (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project));
+        (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
+         Improve.Operations.Storage_Read_Limits (Settings));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 

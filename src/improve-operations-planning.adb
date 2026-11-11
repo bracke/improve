@@ -58,14 +58,16 @@ package body Improve.Operations.Planning is
    function Load
      (State_Path : String;
       Plan_Id    : String;
-      Revision   : Natural := 0) return Improve.Model.Plan_Revision is
+      Revision   : Natural := 0;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Model.Plan_Revision is
       State : Improve.Storage.Store;
    begin
       Improve.Storage.Open (State, State_Path, Writable => False);
       declare
          Plan : constant Improve.Model.Plan_Revision :=
-           (if Revision = 0 then Improve.Storage.Load (State, Plan_Id)
-            else Improve.Storage.Load (State, Plan_Id, Positive (Revision)));
+           (if Revision = 0 then Improve.Storage.Load (State, Plan_Id, Limits)
+            else Improve.Storage.Load (State, Plan_Id, Positive (Revision), Limits));
       begin
          Improve.Storage.Close (State);
          return Plan;
@@ -80,7 +82,8 @@ package body Improve.Operations.Planning is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Maximum_Items    : Positive := Positive'Last) return Improve.Storage.Summary_Vectors.Vector is
+      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum)
+      return Improve.Storage.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
@@ -108,12 +111,14 @@ package body Improve.Operations.Planning is
 
    function Approve
      (State_Path : String;
-      Plan_Id    : String) return Improve.Model.Plan_Revision is
+      Plan_Id    : String;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Model.Plan_Revision is
       State : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;
    begin
       Improve.Storage.Open (State, State_Path, Writable => True);
-      Plan := Improve.Storage.Load (State, Plan_Id);
+      Plan := Improve.Storage.Load (State, Plan_Id, Limits);
       Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision);
       Improve.Storage.Close (State);
       return Plan;

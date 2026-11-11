@@ -70,7 +70,7 @@ package Improve.Tasks is
       Publications  : Improve.Storage.Publication_Vectors.Vector;
       Verifications : Improve.Storage.Verification_Vectors.Vector;
       Current_Assessment : Natural := 0;
-      Maximum_Items : Positive := Positive'Last) return View_Vectors.Vector;
+      Maximum_Items : Positive := Improve.Storage.Default_Query_Maximum) return View_Vectors.Vector;
    --  Build one stable view per task in plan order.
    --  @param Plan Immutable plan revision.
    --  @param Publications Publication mappings for the plan.

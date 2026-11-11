@@ -33,18 +33,22 @@ package Improve.Operations.Planning is
    function Load
      (State_Path : String;
       Plan_Id    : String;
-      Revision   : Natural := 0) return Improve.Model.Plan_Revision;
+      Revision   : Natural := 0;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Model.Plan_Revision;
    --  Load the latest or an exact immutable plan revision.
    --  @param State_Path Existing Improve state database path.
    --  @param Plan_Id Stable plan identity.
    --  @param Revision Exact revision, or zero for the latest.
+   --  @param Limits Hard persistence reconstruction limits.
    --  @return Selected immutable plan revision.
 
    function List
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Maximum_Items    : Positive := Positive'Last) return Improve.Storage.Summary_Vectors.Vector;
+      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum)
+      return Improve.Storage.Summary_Vectors.Vector;
    --  List stored plans for one database-qualified project.
    --  @param State_Path Existing Improve state database path.
    --  @param Quality_Path Read-only Ada Quality database path.
@@ -54,9 +58,12 @@ package Improve.Operations.Planning is
 
    function Approve
      (State_Path : String;
-      Plan_Id    : String) return Improve.Model.Plan_Revision;
+      Plan_Id    : String;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Model.Plan_Revision;
    --  Approve the latest immutable revision and return it.
    --  @param State_Path Existing Improve state database path.
    --  @param Plan_Id Stable plan identity.
+   --  @param Limits Hard persistence reconstruction limits.
    --  @return Exact approved immutable plan revision.
 end Improve.Operations.Planning;

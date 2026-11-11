@@ -3,7 +3,6 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Reporting;
 with Improve.Source;
-with Improve.Storage;
 
 package body Improve.Operations.Inspection is
    use Ada.Strings.Unbounded;
@@ -17,17 +16,19 @@ package body Improve.Operations.Inspection is
      (State              : in out Improve.Storage.Store;
       Plan               : Improve.Model.Plan_Revision;
       Current_Assessment : Natural;
-      Maximum_Items      : Positive) return Improve.Tasks.View_Vectors.Vector is
+      Maximum_Items      : Positive;
+      Limits             : Improve.Storage.Read_Limits) return Improve.Tasks.View_Vectors.Vector is
    begin
       if Plan.Tasks.Length > Ada.Containers.Count_Type (Maximum_Items) then
          raise Data_Error with "task query exceeds output.maximum_output_items";
       end if;
       declare
          Publications : constant Improve.Storage.Publication_Vectors.Vector :=
-           Improve.Storage.Publications (State, To_String (Plan.Plan_Id), Maximum_Items);
+           Improve.Storage.Publications
+             (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
          Verifications : constant Improve.Storage.Verification_Vectors.Vector :=
            Improve.Storage.Verifications
-             (State, To_String (Plan.Plan_Id), Maximum => Maximum_Items);
+             (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History);
       begin
          return Improve.Tasks.Build
            (Plan, Publications, Verifications, Current_Assessment, Maximum_Items);
@@ -41,7 +42,9 @@ package body Improve.Operations.Inspection is
       Task_Id          : String;
       Revision         : Natural;
       Filter           : String;
-      Maximum_Items    : Positive) return Improve.Tasks.View_Vectors.Vector is
+      Maximum_Items    : Positive;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Tasks.View_Vectors.Vector is
       State              : Improve.Storage.Store;
       Selected_Project   : Improve.Model.Project_Reference :=
         (Id => 1, Name | Path | Database_Id => Null_Unbounded_String);
@@ -69,9 +72,10 @@ package body Improve.Operations.Inspection is
       Improve.Storage.Open (State, State_Path, Writable => False);
       if Task_Id /= "" then
          declare
-            Plan : constant Improve.Model.Plan_Revision := Improve.Storage.Load_Task (State, Task_Id, Revision);
+            Plan : constant Improve.Model.Plan_Revision :=
+              Improve.Storage.Load_Task (State, Task_Id, Revision, Limits);
             Views : constant Improve.Tasks.View_Vectors.Vector :=
-              Views_For (State, Plan, Current_Assessment, Maximum_Items);
+              Views_For (State, Plan, Current_Assessment, Maximum_Items, Limits);
          begin
             if Has_Project then
                begin
@@ -103,12 +107,13 @@ package body Improve.Operations.Inspection is
             for Summary of Summaries loop
                declare
                   Plan : constant Improve.Model.Plan_Revision :=
-                    Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+                    Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                   Remaining : constant Natural := Maximum_Items - Natural (Result.Length);
                   Views : constant Improve.Tasks.View_Vectors.Vector :=
                     (if Remaining = 0 and then not Plan.Tasks.Is_Empty
                      then raise Data_Error with "task query exceeds output.maximum_output_items"
-                     else Views_For (State, Plan, Current_Assessment, Positive'Max (1, Remaining)));
+                     else Views_For
+                       (State, Plan, Current_Assessment, Positive'Max (1, Remaining), Limits));
                begin
                   for View of Views loop
                      if Improve.Tasks.Matches (View, Filter) then
@@ -133,7 +138,9 @@ package body Improve.Operations.Inspection is
       Quality_Path     : String;
       Project_Selector : String;
       All_Projects     : Boolean;
-      Maximum_Items    : Positive) return Improve.Tasks.Status_Vectors.Vector is
+      Maximum_Items    : Positive;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Tasks.Status_Vectors.Vector is
       State       : Improve.Storage.Store;
       Quality     : Improve.Source.Repository;
       Result      : Improve.Tasks.Status_Vectors.Vector;
@@ -154,16 +161,18 @@ package body Improve.Operations.Inspection is
          for Summary of Summaries loop
             declare
                Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load (State, To_String (Summary.Plan_Id));
+                 Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                Remaining : constant Natural := Maximum_Items - Total_Items;
                Views : constant Improve.Tasks.View_Vectors.Vector :=
                  (if Remaining = 0 and then not Plan.Tasks.Is_Empty
                   then raise Data_Error with "status query exceeds output.maximum_output_items"
-                  else Views_For (State, Plan, Latest_Run, Positive'Max (1, Remaining)));
+                  else Views_For (State, Plan, Latest_Run, Positive'Max (1, Remaining), Limits));
                Latest_Project_Run : Natural := 0;
                Latest_Plan_Run : Natural := 0;
             begin
-               for Evidence of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
+               for Evidence of Improve.Storage.Verifications
+                 (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History)
+               loop
                   if Evidence.Plan_Revision = Plan.Revision and then
                     Evidence.Contract_Fingerprint = Plan.Fingerprint and then
                     Evidence.Scope = Improve.Storage.Project_Evaluation and then

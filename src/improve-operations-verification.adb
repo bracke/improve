@@ -23,10 +23,11 @@ package body Improve.Operations.Verification is
       State : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;
       Previously_Verified : Improve.Model.UString_Vectors.Vector;
+      Limits : constant Improve.Storage.Read_Limits := Improve.Operations.Storage_Read_Limits (Settings);
    begin
       Improve.Storage.Open (State, State_Path, Writable => False);
       if Task_Id /= "" then
-         Plan := Improve.Storage.Load_Task (State, Task_Id, Revision);
+         Plan := Improve.Storage.Load_Task (State, Task_Id, Revision, Limits);
       else
          declare
             Quality : Improve.Source.Repository;
@@ -36,15 +37,16 @@ package body Improve.Operations.Verification is
             Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Improve.Source.Close (Quality);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project);
+              Improve.Storage.List (State, Project, Limits.Maximum_History);
             begin
                if Values.Is_Empty then
                   raise Argument_Error with "project has no stored remediation plan";
                end if;
                Plan :=
                  (if Revision > 0 then
-                     Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id), Positive (Revision))
-                  else Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id)));
+                     Improve.Storage.Load
+                       (State, To_String (Values.Last_Element.Plan_Id), Positive (Revision), Limits)
+                  else Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id), Limits));
             end;
          end;
       end if;
@@ -62,7 +64,9 @@ package body Improve.Operations.Verification is
             Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path, Writable => False);
-            for Record_Value of Improve.Storage.Verifications (State, To_String (Plan.Plan_Id)) loop
+            for Record_Value of Improve.Storage.Verifications
+              (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History)
+            loop
                for Spec of Plan.Tasks loop
                   if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
                     Record_Value.Task_Id = Spec.Id and then

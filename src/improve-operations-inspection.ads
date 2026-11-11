@@ -1,3 +1,4 @@
+with Improve.Storage;
 with Improve.Tasks;
 
 --  Read-only task and project status use cases.
@@ -11,7 +12,9 @@ package Improve.Operations.Inspection is
       Task_Id          : String;
       Revision         : Natural;
       Filter           : String;
-      Maximum_Items    : Positive) return Improve.Tasks.View_Vectors.Vector;
+      Maximum_Items    : Positive;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Tasks.View_Vectors.Vector;
    --  Return filtered task views for an optional database-qualified project or task.
    --  @param State_Path Existing Improve state database.
    --  @param Quality_Path Existing read-only Ada Quality database.
@@ -20,6 +23,7 @@ package Improve.Operations.Inspection is
    --  @param Revision Exact historical plan revision, or zero for the latest task definition.
    --  @param Filter Valid operational status filter.
    --  @param Maximum_Items Hard result-size limit.
+   --  @param Limits Hard persistence and history limits.
    --  @return Stable, filtered, assessment-aware task views.
 
    function Status
@@ -27,13 +31,16 @@ package Improve.Operations.Inspection is
       Quality_Path     : String;
       Project_Selector : String;
       All_Projects     : Boolean;
-      Maximum_Items    : Positive) return Improve.Tasks.Status_Vectors.Vector;
+      Maximum_Items    : Positive;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Improve.Tasks.Status_Vectors.Vector;
    --  Return assessment-aware remediation status for one or every registered project.
    --  @param State_Path Existing Improve state database.
    --  @param Quality_Path Existing read-only Ada Quality database.
    --  @param Project_Selector Project identity or unique name; ignored when All_Projects is true.
    --  @param All_Projects Whether to inspect every registered project.
    --  @param Maximum_Items Hard project and task result-size limit.
+   --  @param Limits Hard persistence and history limits.
    --  @return Stable project status models with freshness-qualified evidence.
 
 end Improve.Operations.Inspection;

@@ -1,10 +1,7 @@
 with Ada.Calendar;
-with Ada.Calendar.Formatting;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
 with Ada.Strings.Hash;
-with Ada.Strings.Fixed;
-with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada_Quality.Types;
 with Database.Predicates;
@@ -14,17 +11,18 @@ with Database.Tables;
 with Database.Transactions;
 with Database.Types;
 with Database.Values;
+with Improve.Storage_Codec;
 with Interfaces;
 
 package body Improve.Storage is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
+   use Improve.Storage_Codec;
    use type Ada.Containers.Count_Type;
    use type Database.Status_Code;
    use type Database.Predicates.Predicate;
 
    LF : constant Character := Character'Val (10);
-   CR : constant Character := Character'Val (13);
 
    Schema_Metadata_Table     : constant Positive := 1;
    Projects_Table            : constant Positive := 2;
@@ -49,8 +47,6 @@ package body Improve.Storage is
       new Wide_Wide_String'("task_dependencies"), new Wide_Wide_String'("publications"),
       new Wide_Wide_String'("verification_records"), new Wide_Wide_String'("operations"),
       new Wide_Wide_String'("task_details"), new Wide_Wide_String'("task_identities")];
-
-   function Decode (Text : Wide_Wide_String) return String;
 
    function Logical_Table_List return String is
       Result : Unbounded_String;
@@ -114,18 +110,6 @@ package body Improve.Storage is
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
 
-   function Encode (Text : String) return Wide_Wide_String is
-     (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Text));
-
-   function Decode (Text : Wide_Wide_String) return String is
-     (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode (Text));
-
-   function WW (Text : String) return Unbounded_Wide_Wide_String is
-     (To_Unbounded_Wide_Wide_String (Encode (Text)));
-
-   function S (Text : Unbounded_Wide_Wide_String) return String is
-     (Decode (To_Wide_Wide_String (Text)));
-
    function New_Schema (Name : Wide_Wide_String) return Database.Schema.Table_Schema is
       Result : Database.Schema.Table_Schema;
    begin
@@ -147,144 +131,6 @@ package body Improve.Storage is
          raise Data_Error with Context & ": " & Decode (To_Wide_Wide_String (Status.Message));
       end if;
    end Check;
-
-   function Escape (Text : String) return String is
-      Result : Unbounded_String;
-   begin
-      for C of Text loop
-         case C is
-            when '\' => Append (Result, "\\");
-            when LF => Append (Result, "\n");
-            when CR => Append (Result, "\r");
-            when others => Append (Result, C);
-         end case;
-      end loop;
-      return To_String (Result);
-   end Escape;
-
-   function Unescape (Text : String) return String is
-      Result : Unbounded_String;
-      Index  : Natural := Text'First;
-   begin
-      while Index <= Text'Last loop
-         if Text (Index) = '\' then
-            if Index = Text'Last then raise Data_Error with "invalid persisted escape sequence"; end if;
-            case Text (Index + 1) is
-               when '\' => Append (Result, '\');
-               when 'n' => Append (Result, LF);
-               when 'r' => Append (Result, CR);
-               when others => raise Data_Error with "invalid persisted escape sequence";
-            end case;
-            Index := Index + 2;
-         else
-            Append (Result, Text (Index));
-            Index := Index + 1;
-         end if;
-      end loop;
-      return To_String (Result);
-   end Unescape;
-
-   function Field (Payload, Name : String) return String is
-      Prefix : constant String := Name & "=";
-      Start  : Natural := Payload'First;
-   begin
-      while Start <= Payload'Last loop
-         declare Stop : Natural := Start; begin
-            while Stop <= Payload'Last and then Payload (Stop) /= LF loop Stop := Stop + 1; end loop;
-            if Stop - Start >= Prefix'Length and then Payload (Start .. Start + Prefix'Length - 1) = Prefix then
-               return Unescape (Payload (Start + Prefix'Length .. Stop - 1));
-            end if;
-            Start := Stop + 1;
-         end;
-      end loop;
-      raise Data_Error with "missing persisted field " & Name;
-   end Field;
-
-   function Has_Field (Payload, Name : String) return Boolean is
-      Prefix : constant String := Name & "=";
-      Start  : Natural := Payload'First;
-   begin
-      while Start <= Payload'Last loop
-         declare Stop : Natural := Start; begin
-            while Stop <= Payload'Last and then Payload (Stop) /= LF loop Stop := Stop + 1; end loop;
-            if Stop - Start >= Prefix'Length and then Payload (Start .. Start + Prefix'Length - 1) = Prefix then
-               return True;
-            end if;
-            Start := Stop + 1;
-         end;
-      end loop;
-      return False;
-   end Has_Field;
-
-   function Field_Or (Payload, Name, Default : String) return String is
-     (if Has_Field (Payload, Name) then Field (Payload, Name) else Default);
-
-   function Pair (Name, Value : String) return String is (Name & "=" & Escape (Value));
-
-   function Number (Value : Natural) return String is
-     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
-
-   function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
-
-   function Pack (Values : Improve.Model.UString_Vectors.Vector) return String is
-      Result : Unbounded_String;
-   begin
-      for Value of Values loop
-         declare Text : constant String := To_String (Value); begin
-            Append (Result, Number (Text'Length) & ":" & Text);
-         end;
-      end loop;
-      return To_String (Result);
-   end Pack;
-
-   function Unpack (Text : String) return Improve.Model.UString_Vectors.Vector is
-      Result : Improve.Model.UString_Vectors.Vector;
-      Index  : Natural := Text'First;
-   begin
-      while Index <= Text'Last loop
-         declare Colon : Natural := Index; begin
-            while Colon <= Text'Last and then Text (Colon) /= ':' loop
-               if Text (Colon) not in '0' .. '9' then raise Data_Error with "invalid persisted list"; end if;
-               Colon := Colon + 1;
-            end loop;
-            if Colon > Text'Last or else Colon = Index then raise Data_Error with "invalid persisted list"; end if;
-            declare
-               Length : constant Natural := Natural'Value (Text (Index .. Colon - 1));
-               First  : constant Natural := Colon + 1;
-               Last   : constant Natural := Colon + Length;
-            begin
-               if Last > Text'Last then raise Data_Error with "truncated persisted list"; end if;
-               Result.Append (To_Unbounded_String (Text (First .. Last)));
-               Index := Last + 1;
-            end;
-         end;
-      end loop;
-      return Result;
-   exception
-      when Constraint_Error => raise Data_Error with "invalid persisted list length";
-   end Unpack;
-
-   function Timestamp (Value : Ada.Calendar.Time) return String is
-     (Ada.Calendar.Formatting.Image (Value, Include_Time_Fraction => False, Time_Zone => 0));
-
-   function Parse_Time (Text : String) return Ada.Calendar.Time is
-     (Ada.Calendar.Formatting.Value (Text, Time_Zone => 0));
-
-   function Id_Image (Prefix : String; Id : Positive) return String is
-      Value_Text : constant String := Number (Id);
-   begin
-      return Prefix & [1 .. Integer'Max (0, 6 - Value_Text'Length) => '0'] & Value_Text;
-   end Id_Image;
-
-   function Plan_Row_Id (Plan_Id : String) return Positive is
-   begin
-      if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
-         raise Argument_Error with "invalid plan identity " & Plan_Id;
-      end if;
-      return Positive'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
-   exception
-      when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
-   end Plan_Row_Id;
 
    function Scan
      (Item      : in out Store;
@@ -649,7 +495,9 @@ package body Improve.Storage is
       Pair ("policy", To_String (Value.Baseline.Policy_Id)) & LF &
       Pair ("toolchain", To_String (Value.Baseline.Toolchain_Id)) & LF &
       Pair ("snapshot", To_String (Value.Baseline.Snapshot_Id)) & LF &
-      Pair ("planner", To_String (Value.Planner_Id)) & LF & Pair ("created_at", Timestamp (Value.Created_At)));
+      Pair ("planner", To_String (Value.Planner_Id)) & LF &
+      Pair ("task_count", Number (Natural (Value.Tasks.Length))) & LF &
+      Pair ("created_at", Timestamp (Value.Created_At)));
 
    function Find_Revision
      (Item : in out Store; Tx : in out Database.Transactions.Transaction; Fingerprint : String) return Natural is
@@ -694,7 +542,27 @@ package body Improve.Storage is
       Existing_Revision := Find_Revision (Item, Tx, To_String (Value.Fingerprint));
       if Existing_Revision > 0 then
          Database.Transactions.Rollback (Tx);
-         return (Plan => Load (Item, "@revision:" & Number (Existing_Revision)), Existing => True);
+         declare
+            Task_Count : constant Positive := Positive'Max (1, Natural (Value.Tasks.Length));
+            Link_Count : Natural := 0;
+         begin
+            for Spec of Value.Tasks loop
+               Link_Count :=
+                 Link_Count + Natural (Spec.Relevant_Files.Length) +
+                 Natural (Spec.Finding_Keys.Length) + Natural (Spec.Dependencies.Length);
+            end loop;
+            return
+              (Plan =>
+                 Load
+                   (Item, "@revision:" & Number (Existing_Revision),
+                    Limits =>
+                      (Maximum_Findings     => Positive'Max (1, Natural (Value.Findings.Length)),
+                       Maximum_Tasks        => Task_Count,
+                       Maximum_Task_Details => 7 * Task_Count,
+                       Maximum_Task_Links   => Positive'Max (1, Link_Count),
+                       Maximum_History      => Default_Read_Limits.Maximum_History)),
+               Existing => True);
+         end;
       end if;
       Stored.Created_At := Ada.Calendar.Clock;
       declare
@@ -947,13 +815,17 @@ package body Improve.Storage is
    end Indicator_Value;
 
    function Load_Revision
-     (Item : in out Store; Revision_Id : Positive) return Improve.Model.Plan_Revision is
+     (Item        : in out Store;
+      Revision_Id : Positive;
+      Limits      : Read_Limits) return Improve.Model.Plan_Revision is
       Tx : Database.Transactions.Transaction;
       Revision : Entity;
       Result : Improve.Model.Plan_Revision;
       Details : String_Value_Maps.Map;
       Dependency_Packs : String_Value_Maps.Map;
       Finding_Packs : String_Value_Maps.Map;
+      Detail_Count : Natural := 0;
+      Link_Count   : Natural := 0;
 
       procedure Append_Packed
         (Values : in out String_Value_Maps.Map;
@@ -1012,6 +884,9 @@ package body Improve.Storage is
       declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Findings_Table, Revision_Id);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
+            if Result.Findings.Length >= Ada.Containers.Count_Type (Limits.Maximum_Findings) then
+               raise Data_Error with "plan revision exceeds configured finding read limit";
+            end if;
             declare
                Row : constant Entity := Entity_Tables.Element (Cursor);
                Payload : constant String := S (Row.Payload);
@@ -1038,6 +913,9 @@ package body Improve.Storage is
       declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Tasks_Table, Revision_Id);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
+            if Result.Tasks.Length >= Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
+               raise Data_Error with "plan revision exceeds configured task read limit";
+            end if;
             declare
                Row : constant Entity := Entity_Tables.Element (Cursor);
                Payload : constant String := S (Row.Payload);
@@ -1047,6 +925,10 @@ package body Improve.Storage is
                   Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
                begin
                   while Entity_Tables.Has_Element (Child) loop
+                     if Detail_Count >= Limits.Maximum_Task_Details then
+                        raise Data_Error with "plan revision exceeds configured task-detail read limit";
+                     end if;
+                     Detail_Count := Detail_Count + 1;
                      declare Detail : constant Entity := Entity_Tables.Element (Child); begin
                         Details.Include
                           (Number (Row.Id) & Character'Val (0) & S (Detail.Kind),
@@ -1059,6 +941,10 @@ package body Improve.Storage is
                   Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Dependencies_Table, Row.Id);
                begin
                   while Entity_Tables.Has_Element (Child) loop
+                     if Link_Count >= Limits.Maximum_Task_Links then
+                        raise Data_Error with "plan revision exceeds configured task-link read limit";
+                     end if;
+                     Link_Count := Link_Count + 1;
                      Append_Packed
                        (Dependency_Packs, Number (Row.Id), S (Entity_Tables.Element (Child).Kind));
                      Advance_Children (Item, Tx, Task_Dependencies_Table, Row.Id, Child);
@@ -1068,6 +954,10 @@ package body Improve.Storage is
                   Child : Entity_Tables.Cursor := Scan_Children (Item, Tx, Task_Findings_Table, Row.Id);
                begin
                   while Entity_Tables.Has_Element (Child) loop
+                     if Link_Count >= Limits.Maximum_Task_Links then
+                        raise Data_Error with "plan revision exceeds configured task-link read limit";
+                     end if;
+                     Link_Count := Link_Count + 1;
                      Append_Packed (Finding_Packs, Number (Row.Id), S (Entity_Tables.Element (Child).Kind));
                      Advance_Children (Item, Tx, Task_Findings_Table, Row.Id, Child);
                   end loop;
@@ -1094,6 +984,19 @@ package body Improve.Storage is
                if Spec.Finding_Keys.Is_Empty and then Finding_Packs.Contains (Number (Row.Id)) then
                   Spec.Finding_Keys := Unpack (To_String (Finding_Packs.Element (Number (Row.Id))));
                end if;
+               declare
+                  Inline_Links : constant Natural :=
+                    Natural (Spec.Relevant_Files.Length) +
+                    (if Dependency_Packs.Contains (Number (Row.Id)) then 0
+                     else Natural (Spec.Dependencies.Length)) +
+                    (if Finding_Packs.Contains (Number (Row.Id)) then 0
+                     else Natural (Spec.Finding_Keys.Length));
+               begin
+                  if Inline_Links > Limits.Maximum_Task_Links - Link_Count then
+                     raise Data_Error with "plan revision exceeds configured task-link read limit";
+                  end if;
+                  Link_Count := Link_Count + Inline_Links;
+               end;
                Spec.Confidence := Natural'Value (Field (Payload, "confidence"));
                Spec.Requires_Review := Boolean'Value (Field (Payload, "review"));
                Spec.Kind := Kind_Value (S (Row.State));
@@ -1110,13 +1013,17 @@ package body Improve.Storage is
          raise;
    end Load_Revision;
 
-   function Load (Item : in out Store; Plan_Id : String) return Improve.Model.Plan_Revision is
+   function Load
+     (Item    : in out Store;
+      Plan_Id : String;
+      Limits  : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
       Tx : Database.Transactions.Transaction;
       Revision_Id : Natural := 0;
       Plan_Row : Natural := 0;
    begin
       if Plan_Id'Length > 10 and then Plan_Id (Plan_Id'First .. Plan_Id'First + 9) = "@revision:" then
-         return Load_Revision (Item, Positive'Value (Plan_Id (Plan_Id'First + 10 .. Plan_Id'Last)));
+         return Load_Revision
+           (Item, Positive'Value (Plan_Id (Plan_Id'First + 10 .. Plan_Id'Last)), Limits);
       elsif Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
          raise Argument_Error with "invalid plan identity " & Plan_Id;
       end if;
@@ -1134,7 +1041,7 @@ package body Improve.Storage is
       end;
       Database.Transactions.Rollback (Tx);
       if Revision_Id = 0 then raise Argument_Error with "unknown plan " & Plan_Id; end if;
-      return Load_Revision (Item, Positive (Revision_Id));
+      return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
       when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
       when others =>
@@ -1145,7 +1052,8 @@ package body Improve.Storage is
    function Load
      (Item     : in out Store;
       Plan_Id  : String;
-      Revision : Positive) return Improve.Model.Plan_Revision is
+      Revision : Positive;
+      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
       Tx          : Database.Transactions.Transaction;
       Plan_Row    : Natural := 0;
       Revision_Id : Natural := 0;
@@ -1175,7 +1083,7 @@ package body Improve.Storage is
       if Revision_Id = 0 then
          raise Argument_Error with "unknown plan revision " & Plan_Id & " r" & Number (Revision);
       end if;
-      return Load_Revision (Item, Positive (Revision_Id));
+      return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
       when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
       when others =>
@@ -1186,7 +1094,8 @@ package body Improve.Storage is
    function Load_Task
      (Item     : in out Store;
       Task_Id  : String;
-      Revision : Natural := 0) return Improve.Model.Plan_Revision is
+      Revision : Natural := 0;
+      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
       Tx               : Database.Transactions.Transaction;
       Revision_Id      : Natural := 0;
 
@@ -1238,7 +1147,7 @@ package body Improve.Storage is
            "unknown Improve task " & Task_Id &
            (if Revision = 0 then "" else " in revision " & Number (Revision));
       end if;
-      return Load_Revision (Item, Positive (Revision_Id));
+      return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
       when Constraint_Error =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
@@ -1262,9 +1171,53 @@ package body Improve.Storage is
       return Result;
    end Latest_Revision_Id;
 
+   function Summary_Of
+     (Item        : in out Store;
+      Tx          : in out Database.Transactions.Transaction;
+      Revision_Id : Positive) return Plan_Summary is
+      Revision : Entity;
+      Status   : Database.Status.Result;
+      Tasks    : Natural := 0;
+   begin
+      Status := Entity_Tables.Find
+        (Tx, Item.DB, Item.Schemas (Revisions_Table),
+         Physical_Key (Revisions_Table, Revision_Id), Revision);
+      Check (Status, "read plan revision summary");
+      declare
+         Payload : constant String := S (Revision.Payload);
+      begin
+         if Has_Field (Payload, "task_count") then
+            Tasks := Natural'Value (Field (Payload, "task_count"));
+         else
+            declare Cursor : Entity_Tables.Cursor :=
+              Scan_Children (Item, Tx, Tasks_Table, Revision_Id);
+            begin
+               while Entity_Tables.Has_Element (Cursor) loop
+                  if Tasks >= Default_Read_Limits.Maximum_Tasks then
+                     raise Data_Error with "plan summary exceeds configured task read limit";
+                  end if;
+                  Tasks := Tasks + 1;
+                  Advance_Children (Item, Tx, Tasks_Table, Revision_Id, Cursor);
+               end loop;
+            end;
+         end if;
+         return
+           (Plan_Id     => To_Unbounded_String (Id_Image ("PLAN-", Positive (Revision.Parent_Id))),
+            Revision    => Positive'Value (Field (Payload, "revision")),
+            Project_Id  => Positive'Value (Field (Payload, "project_id")),
+            Project     => To_Unbounded_String (Field (Payload, "project")),
+            Run_Id      => Positive'Value (Field (Payload, "run_id")),
+            Task_Count  => Tasks,
+            Fingerprint => To_Unbounded_String (S (Revision.Kind)));
+      end;
+   exception
+      when Constraint_Error =>
+         raise Data_Error with "stored plan summary is malformed";
+   end Summary_Of;
+
    function List_All
      (Item    : in out Store;
-      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector is
+      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
@@ -1280,15 +1233,7 @@ package body Improve.Storage is
                if Result.Length >= Ada.Containers.Count_Type (Maximum) then
                   raise Data_Error with "plan query exceeds configured item limit";
                end if;
-               declare
-                  Plan : constant Improve.Model.Plan_Revision :=
-                    Load_Revision (Item, Positive (Latest));
-               begin
-                  Result.Append
-                    (Plan_Summary'
-                       (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
-                        Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
-               end;
+               Result.Append (Summary_Of (Item, Tx, Positive (Latest)));
             end if;
          end;
          Advance (Item, Tx, Plans_Table, Plans);
@@ -1304,7 +1249,7 @@ package body Improve.Storage is
    function List
      (Item    : in out Store;
       Project : Improve.Model.Project_Reference;
-      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector is
+      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector is
       Result : Summary_Vectors.Vector;
       Tx : Database.Transactions.Transaction;
       Plans : Entity_Tables.Cursor;
@@ -1324,16 +1269,23 @@ package body Improve.Storage is
                      raise Data_Error with "plan query exceeds configured item limit";
                   end if;
                   declare
-                     Plan : constant Improve.Model.Plan_Revision := Load_Revision (Item, Positive (Latest));
+                     Revision : Entity;
+                     Status   : constant Database.Status.Result :=
+                       Entity_Tables.Find
+                         (Tx, Item.DB, Item.Schemas (Revisions_Table),
+                          Physical_Key (Revisions_Table, Positive (Latest)), Revision);
                   begin
-                     if Plan.Project.Id = Project.Id and then Plan.Project.Path = Project.Path and then
-                       Plan.Project.Database_Id = Project.Database_Id
-                     then
-                        Result.Append
-                          (Plan_Summary'
-                             (Plan.Plan_Id, Plan.Revision, Plan.Project.Id, Plan.Project.Name,
-                              Plan.Baseline.Run_Id, Natural (Plan.Tasks.Length), Plan.Fingerprint));
-                     end if;
+                     Check (Status, "read plan identity summary");
+                     declare
+                        Payload : constant String := S (Revision.Payload);
+                     begin
+                        if Positive'Value (Field (Payload, "project_id")) = Project.Id and then
+                          Field (Payload, "project_path") = To_String (Project.Path) and then
+                          Field_Or (Payload, "quality_database", "") = To_String (Project.Database_Id)
+                        then
+                           Result.Append (Summary_Of (Item, Tx, Positive (Latest)));
+                        end if;
+                     end;
                   end;
                end if;
             end;
@@ -1419,7 +1371,7 @@ package body Improve.Storage is
    function Publications
      (Item       : in out Store;
       Plan_Id    : String := "";
-      Maximum    : Positive := Positive'Last) return Publication_Vectors.Vector is
+      Maximum    : Positive := Default_Query_Maximum) return Publication_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Publication_Vectors.Vector;
 
@@ -1659,7 +1611,7 @@ package body Improve.Storage is
      (Item    : in out Store;
       Plan_Id : String := "";
       Task_Id : String := "";
-      Maximum : Positive := Positive'Last) return Verification_Vectors.Vector is
+      Maximum : Positive := Default_Query_Maximum) return Verification_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Verification_Vectors.Vector;
 
@@ -1913,7 +1865,7 @@ package body Improve.Storage is
 
    function Pending_Publications
      (Item    : in out Store;
-      Maximum : Positive := Positive'Last) return Operation_Vectors.Vector is
+      Maximum : Positive := Default_Query_Maximum) return Operation_Vectors.Vector is
       Tx     : Database.Transactions.Transaction;
       Result : Operation_Vectors.Vector;
    begin

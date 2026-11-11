@@ -16,6 +16,26 @@ package Improve.Storage is
    type Store is limited private;
    --  Open Improve state database handle.
 
+   type Read_Limits is record
+      Maximum_Findings     : Positive := 10_000;
+      Maximum_Tasks        : Positive := 1_000;
+      Maximum_Task_Details : Positive := 10_000;
+      Maximum_Task_Links   : Positive := 50_000;
+      Maximum_History      : Positive := 10_000;
+   end record;
+   --  Hard limits applied while reconstructing one immutable plan revision.
+   --  @field Maximum_Findings Maximum findings reconstructed from one revision.
+   --  @field Maximum_Tasks Maximum task specifications reconstructed from one revision.
+   --  @field Maximum_Task_Details Maximum task-detail records reconstructed from one revision.
+   --  @field Maximum_Task_Links Maximum finding and dependency links reconstructed from one revision.
+   --  @field Maximum_History Maximum history records materialized by an operation.
+
+   Default_Read_Limits    : constant Read_Limits := (others => <>);
+   --  Conservative limits for callers without validated configuration.
+
+   Default_Query_Maximum  : constant Positive := 10_000;
+   --  Maximum records materialized by a default history or summary query.
+
    type Save_Result is record
       Plan     : Improve.Model.Plan_Revision;
       Existing : Boolean := False;
@@ -130,36 +150,44 @@ package Improve.Storage is
    --  @param Value Plan revision to persist.
    --  @return Assigned plan and idempotency result.
 
-   function Load (Item : in out Store; Plan_Id : String) return Improve.Model.Plan_Revision;
+   function Load
+     (Item    : in out Store;
+      Plan_Id : String;
+      Limits  : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision;
    --  Load the latest immutable revision for a plan.
    --  @param Item Open store.
    --  @param Plan_Id Stable plan identity.
+   --  @param Limits Hard reconstruction limits.
    --  @return Latest immutable revision.
 
    function Load
      (Item     : in out Store;
       Plan_Id  : String;
-      Revision : Positive) return Improve.Model.Plan_Revision;
+      Revision : Positive;
+      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision;
    --  Load one exact immutable plan revision.
    --  @param Item Open store.
    --  @param Plan_Id Stable plan identity.
    --  @param Revision Immutable revision ordinal.
+   --  @param Limits Hard reconstruction limits.
    --  @return Exact plan revision.
 
    function Load_Task
      (Item     : in out Store;
       Task_Id  : String;
-      Revision : Natural := 0) return Improve.Model.Plan_Revision;
+      Revision : Natural := 0;
+      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision;
    --  Load the newest immutable revision containing a logical task, or an
    --  explicitly selected revision containing it.
    --  @param Item Open store.
    --  @param Task_Id Stable Improve task identity.
    --  @param Revision Exact revision ordinal, or zero for the newest containing revision.
+   --  @param Limits Hard reconstruction limits.
    --  @return Immutable plan revision containing the requested task.
 
    function List_All
      (Item    : in out Store;
-      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector;
    --  List latest plan revisions across all database-qualified projects.
    --  @param Item Open store.
    --  @param Maximum Maximum summaries to materialize.
@@ -168,7 +196,7 @@ package Improve.Storage is
    function List
      (Item    : in out Store;
       Project : Improve.Model.Project_Reference;
-      Maximum : Positive := Positive'Last) return Summary_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector;
    --  List latest plans for one database-qualified Ada Quality project.
    --  @param Item Open store.
    --  @param Project Full project identity including database and canonical path.
@@ -188,7 +216,7 @@ package Improve.Storage is
    function Publications
      (Item       : in out Store;
       Plan_Id    : String := "";
-      Maximum    : Positive := Positive'Last) return Publication_Vectors.Vector;
+      Maximum    : Positive := Default_Query_Maximum) return Publication_Vectors.Vector;
    --  Read publication mappings, optionally for one plan.
    --  @param Item Open store.
    --  @param Plan_Id Plan identity or empty for every plan.
@@ -219,7 +247,7 @@ package Improve.Storage is
      (Item    : in out Store;
       Plan_Id : String := "";
       Task_Id : String := "";
-      Maximum : Positive := Positive'Last) return Verification_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum) return Verification_Vectors.Vector;
    --  Read historical evidence in insertion order, optionally filtered by
    --  plan and Improve task identity.
    --  @param Item Open store.
@@ -266,7 +294,7 @@ package Improve.Storage is
 
    function Pending_Publications
      (Item    : in out Store;
-      Maximum : Positive := Positive'Last) return Operation_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum) return Operation_Vectors.Vector;
    --  Return authorized publication starts with no completion event.
    --  @param Item Open store.
    --  @param Maximum Maximum pending operations to materialize.

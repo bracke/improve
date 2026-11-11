@@ -1,7 +1,6 @@
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Improve.Source;
-with Improve.Storage;
 
 package body Improve.Operations.Publication is
    use Ada.Strings.Unbounded;
@@ -15,7 +14,8 @@ package body Improve.Operations.Publication is
       Plan_Id          : String;
       Selected_Task_Id : String;
       Task_Kind        : String;
-      Dry_Run          : Boolean) return Result
+      Dry_Run          : Boolean;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) return Result
    is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
@@ -25,8 +25,9 @@ package body Improve.Operations.Publication is
       Operation_Id : Natural := 0;
    begin
       Improve.Storage.Open (State, State_Path, Writable => False);
-      Plan := Improve.Storage.Load (State, Plan_Id);
-      Existing := Improve.Storage.Publications (State, To_String (Plan.Plan_Id));
+      Plan := Improve.Storage.Load (State, Plan_Id, Limits);
+      Existing := Improve.Storage.Publications
+        (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
       Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision);
       Improve.Storage.Close (State);
       if Selected_Task_Id /= "" then

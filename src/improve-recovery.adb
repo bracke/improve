@@ -1,7 +1,6 @@
 with Ada.Strings.Unbounded;
 with Improve.Model;
 with Improve.Source;
-with Improve.Storage;
 with Improve.Workflow;
 with Project_Tools.Files;
 
@@ -11,7 +10,9 @@ package body Improve.Recovery is
    function Recover
      (State_Path      : String;
       Requested_Kind : String;
-      Maximum         : Positive) return Recovery_Report is
+      Maximum         : Positive;
+      Limits          : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      return Recovery_Report is
       State   : Improve.Storage.Store;
       Pending : Improve.Storage.Operation_Vectors.Vector;
       Result  : Recovery_Report;
@@ -26,9 +27,10 @@ package body Improve.Recovery is
          Improve.Storage.Open (State, State_Path, Writable => False);
          declare
             Plan : constant Improve.Model.Plan_Revision :=
-              Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision);
+              Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision, Limits);
             Existing : constant Improve.Storage.Publication_Vectors.Vector :=
-              Improve.Storage.Publications (State, To_String (Operation.Plan_Id));
+              Improve.Storage.Publications
+                (State, To_String (Operation.Plan_Id), Limits.Maximum_History);
             Approved : constant Boolean :=
               Improve.Storage.Is_Approved (State, To_String (Operation.Plan_Id), Operation.Revision);
          begin
