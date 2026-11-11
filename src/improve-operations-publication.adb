@@ -28,7 +28,7 @@ package body Improve.Operations.Publication is
       Plan := Improve.Storage.Load (State, Plan_Id, Limits);
       Existing := Improve.Storage.Publications
         (State, To_String (Plan.Plan_Id), Limits.Maximum_History);
-      Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision);
+      Approved := Improve.Storage.Is_Approved (State, To_String (Plan.Plan_Id), Plan.Revision, Limits);
       Improve.Storage.Close (State);
       if Selected_Task_Id /= "" then
          if (for all Spec of Plan.Tasks => To_String (Spec.Id) /= Selected_Task_Id) then
@@ -89,7 +89,7 @@ package body Improve.Operations.Publication is
                Task_Ids := Selected;
             end if;
             Improve.Storage.Open (State, State_Path, Writable => True);
-            Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids);
+            Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids, Limits);
             Improve.Storage.Close (State);
          end;
       end if;

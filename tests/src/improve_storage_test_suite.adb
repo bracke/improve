@@ -207,7 +207,8 @@ package body Improve_Storage_Test_Suite is
                      Maximum_Tasks        => 1,
                      Maximum_Task_Details => 10,
                      Maximum_Task_Links   => 10,
-                     Maximum_History      => 10));
+                     Maximum_History      => 10,
+                     Maximum_Text_Bytes   => 1_024));
                pragma Unreferenced (Value);
             begin
                null;
@@ -269,6 +270,47 @@ package body Improve_Storage_Test_Suite is
          Assert
            (Migrated.Revision = Stored_Plan.Revision,
             "schema migration did not build the historical task identity index");
+      end;
+      declare
+         Large_Plan : Improve.Model.Plan_Revision := Plan;
+         Large_Text : Unbounded_String;
+         Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      begin
+         Append (Large_Text, [1 .. 384 => 'x']);
+         Large_Plan.Tasks (1).Goal := Large_Text;
+         Large_Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("large approved revision"));
+         declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Large_Plan); begin
+            Limits.Maximum_Text_Bytes := 128;
+            declare
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Improve.Storage.Approve
+                    (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits);
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "approval ignored its configured payload limit");
+            end;
+            Limits.Maximum_Text_Bytes := 1_024;
+            Improve.Storage.Approve
+              (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits);
+            Assert
+              (Improve.Storage.Is_Approved
+                 (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits),
+               "configured read limits were lost during approval validation");
+            declare
+               Task_Ids : Improve.Model.UString_Vectors.Vector;
+               Operation : Positive;
+            begin
+               Task_Ids.Append (Saved.Plan.Tasks.First_Element.Id);
+               Operation := Improve.Storage.Begin_Publication (Store, Saved.Plan, Task_Ids, Limits);
+               Improve.Storage.Complete_Publication (Store, Operation);
+               Assert
+                 (Improve.Storage.Pending_Publications (Store, Limits => Limits).Is_Empty,
+                  "configured read limits were lost during publication journaling");
+            end;
+         end;
       end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);

@@ -155,6 +155,32 @@ package body Improve_Storage_Codec_Test_Suite is
       Invalid := False;
       begin
          declare
+            Ignored : constant Improve.Model.UString_Vectors.Vector :=
+              Improve.Storage_Codec.Unpack ("1:a1:b", Maximum_Items => 1);
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Data_Error => Invalid := True;
+      end;
+      Assert (Invalid, "storage codec exceeded its decoded item limit");
+      Invalid := False;
+      begin
+         declare
+            Ignored : constant Improve.Model.UString_Vectors.Vector :=
+              Improve.Storage_Codec.Unpack ("4:abcd", Maximum_Bytes => 3);
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Data_Error => Invalid := True;
+      end;
+      Assert (Invalid, "storage codec exceeded its encoded byte limit");
+      Invalid := False;
+      begin
+         declare
             Ignored : constant Positive := Improve.Storage_Codec.Plan_Row_Id ("invalid");
             pragma Unreferenced (Ignored);
          begin

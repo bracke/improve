@@ -119,7 +119,7 @@ package body Improve.Operations.Planning is
    begin
       Improve.Storage.Open (State, State_Path, Writable => True);
       Plan := Improve.Storage.Load (State, Plan_Id, Limits);
-      Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision);
+      Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision, Limits);
       Improve.Storage.Close (State);
       return Plan;
    exception

@@ -23,6 +23,8 @@ package body Improve.Config is
        Agent_Max_Response_Bytes  => 131_072,
        Agent_Timeout_Seconds     => 60,
        Maximum_Output_Items      => 10_000,
+       Maximum_History_Items     => 100_000,
+       Maximum_Persisted_Text_Bytes => 1_048_576,
        Maximum_Recovery_Operations => 100,
        Task_Kind                 => To_Unbounded_String ("auto"),
        Publication               => Candidate_Publication,
@@ -134,6 +136,9 @@ package body Improve.Config is
          Result.Agent_Max_Response_Bytes := Natural_Value ("agent_max_response_bytes", 131_072);
          Result.Agent_Timeout_Seconds := Natural_Value ("agent_timeout_seconds", 60);
          Result.Maximum_Output_Items := Natural_Value ("maximum_output_items", 10_000);
+         Result.Maximum_History_Items := Natural_Value ("maximum_history_items", 100_000);
+         Result.Maximum_Persisted_Text_Bytes :=
+           Natural_Value ("maximum_persisted_text_bytes", 1_048_576);
          Result.Maximum_Recovery_Operations := Natural_Value ("maximum_recovery_operations", 100);
          if Result.Agent_Max_Context_Bytes < 1_024 or else Result.Agent_Max_Context_Bytes > 10_485_760 then
             raise Argument_Error with "planning.agent_max_context_bytes must be between 1024 and 10485760";
@@ -145,6 +150,10 @@ package body Improve.Config is
             raise Argument_Error with "planning.agent_timeout_seconds exceeds 3600";
          elsif Result.Maximum_Output_Items > 100_000 then
             raise Argument_Error with "output.maximum_output_items exceeds 100000";
+         elsif Result.Maximum_History_Items > 1_000_000 then
+            raise Argument_Error with "operations.maximum_history_items exceeds 1000000";
+         elsif Result.Maximum_Persisted_Text_Bytes > 16_777_216 then
+            raise Argument_Error with "operations.maximum_persisted_text_bytes exceeds 16777216";
          elsif Result.Maximum_Recovery_Operations > 10_000 then
             raise Argument_Error with "operations.maximum_recovery_operations exceeds 10000";
          end if;
@@ -189,6 +198,9 @@ package body Improve.Config is
         "planning.agent_max_response_bytes =" & Positive'Image (Item.Agent_Max_Response_Bytes) & LF &
         "planning.agent_timeout_seconds =" & Positive'Image (Item.Agent_Timeout_Seconds) & LF &
         "operations.maximum_recovery_operations =" & Positive'Image (Item.Maximum_Recovery_Operations) & LF &
+        "operations.maximum_history_items =" & Positive'Image (Item.Maximum_History_Items) & LF &
+        "operations.maximum_persisted_text_bytes =" &
+          Positive'Image (Item.Maximum_Persisted_Text_Bytes) & LF &
         "workflow.task_kind = """ & To_String (Item.Task_Kind) & """" & LF &
         "workflow.publication = ""candidate""" & LF &
         "workflow.require_initialized_project = " & Boolean_Image (Item.Require_Initialized) & LF &

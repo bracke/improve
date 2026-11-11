@@ -12,7 +12,10 @@ and timeout cannot exceed one hour.
 Command-line database, state, project, format, and color values override effective configuration where applicable.
 Read-only commands do not create, migrate, recover, or repair an external database.
 
-Operational queries are bounded by `output.maximum_output_items`, which defaults to 10,000 and may not exceed
-100,000. Publication recovery is bounded by `operations.maximum_recovery_operations`, which defaults to 100 and may
-not exceed 10,000. Exceeding either limit fails before unbounded output or harness modification occurs.
+Operational output is bounded by `output.maximum_output_items`, which defaults to 10,000 and may not exceed
+100,000. Persisted history examined by one operation is independently bounded by `operations.maximum_history_items`,
+which defaults to 100,000 and may not exceed 1,000,000. Publication recovery is bounded by
+`operations.maximum_recovery_operations`, which defaults to 100 and may
+not exceed 10,000. `operations.maximum_persisted_text_bytes` bounds each decoded state payload, defaults to 1 MiB,
+and may not exceed 16 MiB. Exceeding a limit fails before unbounded result materialization or harness modification.
 

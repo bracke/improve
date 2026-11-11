@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Characters.Handling;
 with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
@@ -40,6 +41,44 @@ procedure Improve_Coverage is
      (To_String (Unit.Stem) = "improve-operations" and then
       Length (Unit.Body_Path) = 0);
 
+   function Compilation_Stem
+     (Unit : Ada_Quality.Coverage.Production_Unit) return String is
+      Prefix : constant String := "separate (";
+   begin
+      if Length (Unit.Body_Path) > 0 then
+         declare
+            Text : constant String :=
+              Project_Tools.Files.Read_Raw_File (To_String (Unit.Body_Path));
+         begin
+            if Text'Length > Prefix'Length and then
+              Text (Text'First .. Text'First + Prefix'Length - 1) = Prefix
+            then
+               declare
+                  Closing : constant Natural :=
+                    Ada.Strings.Fixed.Index
+                      (Text, ")", From => Text'First + Prefix'Length);
+               begin
+                  if Closing > Text'First + Prefix'Length then
+                     declare
+                        Result : String :=
+                          Ada.Characters.Handling.To_Lower
+                            (Text (Text'First + Prefix'Length .. Closing - 1));
+                     begin
+                        for Index in Result'Range loop
+                           if Result (Index) = '.' then
+                              Result (Index) := '-';
+                           end if;
+                        end loop;
+                        return Result;
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+      return To_String (Unit.Stem);
+   end Compilation_Stem;
+
    procedure Fail (Message : String) is
    begin
       Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "coverage: " & Message);
@@ -69,16 +108,11 @@ begin
    declare
       Units   : constant Ada_Quality.Coverage.Production_Unit_Vectors.Vector :=
         Ada_Quality.Coverage.Production_Units (Root);
-      Missing : constant Ada_Quality.Coverage.Production_Unit_Vectors.Vector :=
-        Ada_Quality.Coverage.Missing_Objects (Units, Object_Dir);
    begin
-      if Units.Is_Empty then Fail ("production source inventory is empty");
-      elsif not Missing.Is_Empty then
-         Fail ("instrumented data is missing for " & To_String (Missing.First_Element.Stem));
-      end if;
+      if Units.Is_Empty then Fail ("production source inventory is empty"); end if;
       for Unit of Units loop
          declare
-            Object_Name : constant String := To_String (Unit.Stem) & ".gcno";
+            Object_Name : constant String := Compilation_Stem (Unit) & ".gcno";
             Run : constant Project_Tools.Processes.Captured_Process :=
               Project_Tools.Processes.Capture
                 ("gcov " & Object_Name, Root, Alr,
@@ -109,6 +143,11 @@ begin
                Has_Record := True;
             end Include;
          begin
+            if not Project_Tools.Files.File_Exists
+              (Project_Tools.Files.Join (Object_Dir, Object_Name))
+            then
+               Fail ("instrumented data is missing for " & To_String (Unit.Stem));
+            end if;
             if Run.Status /= 0 then Fail ("gcov failed for " & Object_Name); end if;
             Include (Unit.Body_Path);
             Include (Unit.Spec_Path);

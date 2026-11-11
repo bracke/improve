@@ -66,9 +66,14 @@ package Improve.Storage_Codec is
    --  @param Values Values to encode.
    --  @return Canonical packed vector.
 
-   function Unpack (Text : String) return Improve.Model.UString_Vectors.Vector;
+   function Unpack
+     (Text          : String;
+      Maximum_Items : Natural := 10_000;
+      Maximum_Bytes : Natural := 1_048_576) return Improve.Model.UString_Vectors.Vector;
    --  Decode a length-delimited vector, rejecting malformed input.
    --  @param Text Packed vector.
+   --  @param Maximum_Items Maximum decoded elements.
+   --  @param Maximum_Bytes Maximum total encoded bytes.
    --  @return Decoded values.
 
    function Timestamp (Value : Ada.Calendar.Time) return String;

@@ -44,6 +44,8 @@ package Improve.Config is
       Agent_Max_Response_Bytes  : Positive := 131_072;
       Agent_Timeout_Seconds     : Positive := 60;
       Maximum_Output_Items      : Positive := 10_000;
+      Maximum_History_Items     : Positive := 100_000;
+      Maximum_Persisted_Text_Bytes : Positive := 1_048_576;
       Maximum_Recovery_Operations : Positive := 100;
       Task_Kind                 : UString;
       Publication               : Publication_Mode := Candidate_Publication;
@@ -68,6 +70,8 @@ package Improve.Config is
    --  @field Agent_Max_Response_Bytes Maximum refinement response size.
    --  @field Agent_Timeout_Seconds Refinement request deadline.
    --  @field Maximum_Output_Items Maximum result items emitted by inspection.
+   --  @field Maximum_History_Items Maximum persisted history records examined by one operation.
+   --  @field Maximum_Persisted_Text_Bytes Maximum encoded bytes accepted from one persisted text field.
    --  @field Maximum_Recovery_Operations Maximum operations recovered in one invocation.
    --  @field Task_Kind Configured harness task kind or auto.
    --  @field Publication Harness publication policy.

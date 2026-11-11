@@ -4,9 +4,15 @@ with Ada.Strings.Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Ada_Quality.Reporting;
 with Improve.CLI;
 with Improve.Config;
 with Improve.Presentation;
+with Improve.Recovery;
+with Improve.Storage;
+with Improve.Tasks;
+with Improve.Verification;
+with Improve.Workflow;
 
 package body Improve_CLI_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -95,11 +101,29 @@ package body Improve_CLI_Test_Suite is
             declare
                Unsafe : constant String := "before" & Character'Val (27) & "[2J" & ASCII.LF & "after";
                Safe   : constant String := Improve.Presentation.Safe_Text (Unsafe);
+               Publications : constant Improve.Workflow.Publication_Result := (others => <>);
+               Recovery     : constant Improve.Recovery.Recovery_Report :=
+                 (Operations_Recovered => 1, Tasks_Recovered => 2);
+               Verification : constant Improve.Verification.Report :=
+                 (Plan_Id          => To_Unbounded_String ("PLAN-000001"),
+                  Baseline_Run     => 1,
+                  Verification_Run => 2,
+                  others           => <>);
             begin
                Assert
                  (Ada.Strings.Fixed.Index (Safe, Character'Val (27) & "[2J") = 0 and then
                   Ada.Strings.Fixed.Index (Safe, ASCII.LF & "after") = 0,
                   "terminal sanitizer retained control characters");
+               Assert
+                 (Improve.Presentation.Projects (Ada_Quality.Reporting.Project_Vectors.Empty_Vector)'Length > 0
+                  and then
+                  Improve.Presentation.Plans (Improve.Storage.Summary_Vectors.Empty_Vector)'Length > 0 and then
+                  Improve.Presentation.Tasks (Improve.Tasks.View_Vectors.Empty_Vector)'Length > 0 and then
+                  Improve.Presentation.Status (Improve.Tasks.Status_Vectors.Empty_Vector) = "" and then
+                  Improve.Presentation.Publication ("PLAN-000001", Publications, True)'Length > 0 and then
+                  Improve.Presentation.Recovery (Recovery)'Length > 0 and then
+                  Improve.Presentation.Verification ("PLAN-000001", Verification, "refresh")'Length > 0,
+                  "terminal empty-state rendering failed");
             end;
          when Help_Smoke =>
             declare

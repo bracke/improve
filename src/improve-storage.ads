@@ -22,6 +22,7 @@ package Improve.Storage is
       Maximum_Task_Details : Positive := 10_000;
       Maximum_Task_Links   : Positive := 50_000;
       Maximum_History      : Positive := 10_000;
+      Maximum_Text_Bytes   : Positive := 1_024;
    end record;
    --  Hard limits applied while reconstructing one immutable plan revision.
    --  @field Maximum_Findings Maximum findings reconstructed from one revision.
@@ -29,6 +30,7 @@ package Improve.Storage is
    --  @field Maximum_Task_Details Maximum task-detail records reconstructed from one revision.
    --  @field Maximum_Task_Links Maximum finding and dependency links reconstructed from one revision.
    --  @field Maximum_History Maximum history records materialized by an operation.
+   --  @field Maximum_Text_Bytes Maximum encoded bytes accepted from one persisted payload.
 
    Default_Read_Limits    : constant Read_Limits := (others => <>);
    --  Conservative limits for callers without validated configuration.
@@ -259,32 +261,38 @@ package Improve.Storage is
    procedure Approve
      (Item     : in out Store;
       Plan_Id  : String;
-      Revision : Positive);
+      Revision : Positive;
+      Limits   : Read_Limits := Default_Read_Limits);
    --  Append an idempotent approval for one exact immutable plan revision.
    --  Approval never transfers to a different revision or fingerprint.
    --  @param Item Writable store.
    --  @param Plan_Id Stable plan identity.
    --  @param Revision Exact immutable revision to approve.
+   --  @param Limits Hard reconstruction limits.
 
    function Is_Approved
      (Item     : in out Store;
       Plan_Id  : String;
-      Revision : Positive) return Boolean;
+      Revision : Positive;
+      Limits   : Read_Limits := Default_Read_Limits) return Boolean;
    --  Test whether one exact immutable plan revision has durable approval.
    --  @param Item Open store.
    --  @param Plan_Id Stable plan identity.
    --  @param Revision Exact immutable revision to inspect.
+   --  @param Limits Hard reconstruction limits.
    --  @return True only for an approval matching the revision fingerprint.
 
    function Begin_Publication
      (Item     : in out Store;
       Plan     : Improve.Model.Plan_Revision;
-      Task_Ids : Improve.Model.UString_Vectors.Vector) return Positive;
+      Task_Ids : Improve.Model.UString_Vectors.Vector;
+      Limits   : Read_Limits := Default_Read_Limits) return Positive;
    --  Durably record deliberate publication authorization before touching
    --  harness state. Repeating the same plan/task set returns the same ID.
    --  @param Item Writable store.
    --  @param Plan Exact authorized immutable plan revision.
    --  @param Task_Ids Exact authorized Improve task identities.
+   --  @param Limits Hard reconstruction limits.
    --  @return Durable operation identity.
 
    procedure Complete_Publication (Item : in out Store; Operation_Id : Positive);
@@ -294,10 +302,12 @@ package Improve.Storage is
 
    function Pending_Publications
      (Item    : in out Store;
-      Maximum : Positive := Default_Query_Maximum) return Operation_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Operation_Vectors.Vector;
    --  Return authorized publication starts with no completion event.
    --  @param Item Open store.
    --  @param Maximum Maximum pending operations to materialize.
+   --  @param Limits Hard limits for each recovered operation payload.
    --  @return Pending publication operations.
 
 private

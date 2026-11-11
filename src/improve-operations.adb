@@ -22,6 +22,7 @@ package body Improve.Operations is
          Maximum_Tasks        => Tasks,
          Maximum_Task_Details => Tasks * 16,
          Maximum_Task_Links   => Findings + Tasks * 16,
-         Maximum_History      => Settings.Maximum_Output_Items);
+         Maximum_History      => Settings.Maximum_History_Items,
+         Maximum_Text_Bytes   => Settings.Maximum_Persisted_Text_Bytes);
    end Storage_Read_Limits;
 end Improve.Operations;

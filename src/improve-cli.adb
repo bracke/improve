@@ -1,11 +1,9 @@
 with Ada.Command_Line;
 with Ada.Exceptions;
 with Ada.IO_Exceptions;
-with Ada.Strings.Fixed;
 with Ada.Text_IO;
 with Ada.Text_IO.Text_Streams;
 with Ada_Quality.Reporting;
-with Ada_Quality.Types;
 with Improve.CLI.Parsing;
 with Improve.Findings;
 with Improve.JSON;
@@ -30,7 +28,6 @@ package body Improve.CLI is
    use Improve.Config;
    use Improve.Text;
    use type Improve.Model.Quality_Outcome;
-   use type Improve.Tasks.Operational_Status;
 
    LF : constant Character := Character'Val (10);
 
@@ -91,9 +88,6 @@ package body Improve.CLI is
       elsif Project_Tools.Files.File_Exists ("../config/improve.toml") then "../config/improve.toml"
       else "");
 
-   function Number (Value : Natural) return String is
-     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
-
    function Quality_Path (Item : Invocation; Settings : Improve.Config.Settings) return String is
      (if Item.Has_Database then To_String (Item.Database) else To_String (Settings.Quality_Database));
 
@@ -107,28 +101,12 @@ package body Improve.CLI is
       declare
          Values   : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Store);
          Snapshot : constant String := Improve.Source.Identity (Store);
-         Result   : Unbounded_String;
+         Result   : constant String :=
+           (if Item.Format = JSON_Format then Improve.JSON.Projects (Values, Snapshot)
+            else Improve.Presentation.Projects (Values));
       begin
-         if Item.Format = JSON_Format then
-            Result := To_Unbounded_String (Improve.JSON.Projects (Values, Snapshot));
-         else
-            Append (Result, Improve.Presentation.Header (Message ("projects.title")) & LF);
-            if Values.Is_Empty then
-               Append (Result, Message ("projects.none") & LF);
-            else
-               Append
-                 (Result,
-                  Message ("label.id") & "  " & Message ("label.enabled") & "  " & Message ("label.path") & LF);
-               for Value of Values loop
-                  Append
-                    (Result,
-                     Number (Value.Id) & "   " & (if Value.Enabled then "yes" else "no ") & "      " &
-                     Improve.Presentation.Safe_Text (To_String (Value.Path)) & LF);
-               end loop;
-            end if;
-         end if;
          Improve.Source.Close (Store);
-         return To_String (Result);
+         return Result;
       end;
    end Projects_Output;
 
@@ -144,70 +122,16 @@ package body Improve.CLI is
            Improve.Findings.Normalize
              (Selected, Improve.Config.Quality_Severity (Settings.Minimum_Severity),
               Settings.Allow_Investigation_Tasks);
-         Result   : Unbounded_String;
+         Result   : constant String :=
+           (if Item.Format = JSON_Format then Improve.JSON.Findings (Selected, Values)
+            else Improve.Presentation.Findings (Selected, Values));
       begin
-         if Item.Format = JSON_Format then
-            Result := To_Unbounded_String (Improve.JSON.Findings (Selected, Values));
-         else
-            Append
-              (Result,
-               Improve.Presentation.Header
-                 (Message
-                    ("findings.title",
-                     [Arg ("project", To_String (Project.Name)),
-                      Arg ("run", Number (Selected.Assessment.Run.Id))])) & LF);
-            if Values.Is_Empty then
-               Append (Result, Message ("findings.none") & LF);
-            else
-               Append
-                 (Result,
-                  Message ("label.indicator") & "  " & Message ("label.severity") & "  " &
-                  Message ("label.location") & "  " & Message ("label.message") & LF);
-               for Value of Values loop
-                  declare
-                     Location : constant String :=
-                       (if Length (Value.Relative_Path) = 0 then "-"
-                        elsif Value.Line = 0 then To_String (Value.Relative_Path)
-                        else To_String (Value.Relative_Path) & ":" & Number (Value.Line));
-                  begin
-                     Append
-                       (Result,
-                        Ada_Quality.Types.Image (Value.Indicator) & "  " &
-                        Ada_Quality.Types.Severity'Image (Value.Level) & "  " &
-                        Improve.Presentation.Safe_Text (Location) & "  " &
-                        Improve.Presentation.Safe_Text (To_String (Value.Message)) & LF);
-                  end;
-               end loop;
-            end if;
-         end if;
          Improve.Source.Close (Store);
-         return To_String (Result);
+         return Result;
       end;
    end Findings_Output;
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      function Stored_Plan_Terminal (Plan : Improve.Model.Plan_Revision) return String is
-         Result : Unbounded_String;
-      begin
-         Append
-           (Result,
-            Improve.Presentation.Header
-              (Message
-                 ("plan.title",
-                  [Arg ("project", To_String (Plan.Project.Name)),
-                   Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
-         Append (Result, Message ("plan.persisted.identity", [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
-         Append (Result, Message ("plan.revision", [Arg ("revision", Number (Plan.Revision))]) & LF);
-         if Plan.Tasks.Is_Empty then Append (Result, Message ("plan.none") & LF); end if;
-         for Spec of Plan.Tasks loop
-            Append
-              (Result,
-               To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
-               Improve.Presentation.Safe_Text (To_String (Spec.Title)) & LF & "  " &
-               Improve.Presentation.Safe_Text (To_String (Spec.Acceptance)) & LF);
-         end loop;
-         return To_String (Result);
-      end Stored_Plan_Terminal;
    begin
       if Item.Plan_Action = Approve_Plan then
          declare
@@ -217,10 +141,7 @@ package body Improve.CLI is
                  Improve.Operations.Storage_Read_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
-            return
-              Message
-                ("plan.approved",
-                 [Arg ("id", To_String (Plan.Plan_Id)), Arg ("revision", Number (Plan.Revision))]) & LF;
+            return Improve.Presentation.Plan_Approval (Plan);
          end;
       elsif Item.Plan_Action = Show_Plan then
          declare
@@ -231,7 +152,7 @@ package body Improve.CLI is
                  Improve.Operations.Storage_Read_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
-            return Stored_Plan_Terminal (Plan);
+            return Improve.Presentation.Plan (Plan);
          end;
       elsif Item.Plan_Action = List_Plans then
          declare
@@ -241,19 +162,7 @@ package body Improve.CLI is
                  Settings.Maximum_Output_Items);
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
-            declare Result : Unbounded_String; begin
-               Append (Result, Improve.Presentation.Header (Message ("plan.list.title")) & LF);
-               if Values.Is_Empty then Append (Result, Message ("plan.list.none") & LF); end if;
-               for Value of Values loop
-                  Append
-                    (Result,
-                     Message
-                       ("plan.list.item",
-                        [Arg ("id", To_String (Value.Plan_Id)), Arg ("revision", Number (Value.Revision)),
-                         Arg ("tasks", Number (Value.Task_Count)), Arg ("run", Number (Value.Run_Id))]) & LF);
-               end loop;
-               return To_String (Result);
-            end;
+            return Improve.Presentation.Plans (Values);
          end;
       end if;
       declare
@@ -262,42 +171,10 @@ package body Improve.CLI is
              (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
               Item.Run_Id, Settings, Item.Dry_Run);
          Plan   : constant Improve.Model.Plan_Revision := Executed.Plan;
-         Result : Unbounded_String;
       begin
-         if Item.Format = JSON_Format then
-            Result := To_Unbounded_String (Improve.JSON.Plan (Plan, Item.Dry_Run));
-         else
-            Append
-              (Result,
-               Improve.Presentation.Header
-                 (Message
-                    ("plan.title",
-                     [Arg ("project", To_String (Plan.Project.Name)),
-                      Arg ("run", Number (Plan.Baseline.Run_Id))])) & LF);
-            Append
-              (Result,
-               Message
-                 ((if Item.Dry_Run then "plan.dry_run"
-                   elsif Executed.Existing then "plan.existing"
-                   else "plan.stored")) & LF);
-            Append
-              (Result,
-               Message
-                 ((if Item.Dry_Run then "plan.identity" else "plan.persisted.identity"),
-                  [Arg ("id", To_String (Plan.Plan_Id))]) & LF);
-            if Plan.Tasks.Is_Empty then
-               Append (Result, Message ("plan.none") & LF);
-            else
-               for Spec of Plan.Tasks loop
-                  Append
-                    (Result,
-                     To_String (Spec.Id) & "  [" & Improve.Model.Image (Spec.Task_Priority) & "] " &
-                     Improve.Presentation.Safe_Text (To_String (Spec.Title)) & LF & "  " &
-                     Improve.Presentation.Safe_Text (To_String (Spec.Acceptance)) & LF);
-               end loop;
-            end if;
-         end if;
-         return To_String (Result);
+         return
+           (if Item.Format = JSON_Format then Improve.JSON.Plan (Plan, Item.Dry_Run)
+            else Improve.Presentation.Generated_Plan (Plan, Item.Dry_Run, Executed.Existing));
       end;
    end Plan_Output;
 
@@ -316,21 +193,9 @@ package body Improve.CLI is
          return Improve.JSON.Publication
            (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
       end if;
-      declare Result : Unbounded_String; begin
-         Append
-           (Result,
-            Improve.Presentation.Header
-              (Message ("apply.title", [Arg ("plan", To_String (Executed.Plan.Plan_Id))])) & LF);
-         Append (Result, Message (if Item.Dry_Run then "apply.preview" else "apply.complete") & LF);
-         for Value of Executed.Published.Tasks loop
-            Append
-              (Result,
-               To_String (Value.Improve_Id) & " -> " &
-               (if Length (Value.Harness_Id) = 0 then "candidate" else To_String (Value.Harness_Id)) &
-               "  " & To_String (Value.State) & (if Value.Recovered then " (recovered)" else "") & LF);
-         end loop;
-         return To_String (Result);
-      end;
+      return
+        Improve.Presentation.Publication
+          (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
    end Apply_Output;
 
    function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -347,25 +212,7 @@ package body Improve.CLI is
            Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
-      declare Result : Unbounded_String; begin
-         Append (Result, Improve.Presentation.Header (Message ("tasks.title")) & LF);
-         if Filtered.Is_Empty then Append (Result, Message ("tasks.none") & LF);
-         else
-            Append
-              (Result,
-               Message ("label.id") & "  " & Message ("label.harness") & "  " & Message ("label.status") &
-               "  " & Message ("label.title") & LF);
-            for View of Filtered loop
-               Append
-                 (Result,
-                  To_String (View.Improve_Id) & "  " &
-                  (if Length (View.Harness_Id) = 0 then "-" else To_String (View.Harness_Id)) & "  " &
-                  Improve.Tasks.Image (View.Status) & "  " &
-                  Improve.Presentation.Safe_Text (To_String (View.Title)) & LF);
-            end loop;
-         end if;
-         return To_String (Result);
-      end;
+      return Improve.Presentation.Tasks (Filtered);
    end Tasks_Output;
 
    function Status_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -379,95 +226,7 @@ package body Improve.CLI is
            Limits           => Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
-      declare Result : Unbounded_String; begin
-         for Value of Values loop
-            if Length (Result) > 0 then Append (Result, LF); end if;
-            Append
-              (Result,
-               Improve.Presentation.Header
-                 (Message
-                    ("status.title",
-                     [Arg ("project", Improve.Presentation.Safe_Text (To_String (Value.Project)))])) & LF &
-               Message ("status.baseline", [Arg ("run", Number (Value.Baseline_Run))]) & LF &
-               Message ("status.latest", [Arg ("run", Number (Value.Latest_Run))]) & LF &
-               Message ("status.plans", [Arg ("count", Number (Value.Plan_Count))]) & LF &
-               Message ("status.tasks", [Arg ("count", Number (Natural (Value.Tasks.Length)))]) & LF &
-               Message
-                 ("status.plan_quality",
-                  [Arg
-                     ("outcome",
-                      (if Value.Has_Plan_Verification and then Value.Plan_Verification_Run = Value.Latest_Run
-                       then Improve.Model.Image (Value.Plan_Quality)
-                       else Improve.Model.Image (Improve.Model.Unverified)))]) & LF &
-               Message
-                 ("status.project_quality",
-                  [Arg
-                     ("outcome",
-                      (if Value.Has_Project_Verification and then Value.Project_Verification_Run = Value.Latest_Run
-                       then Improve.Model.Image (Value.Project_Quality)
-                       else Improve.Model.Image (Improve.Model.Unverified)))]) & LF);
-            if Value.Has_Plan_Verification then
-               Append
-                 (Result,
-                  Message
-                    ("status.last_plan_verification",
-                     [Arg ("run", Number (Value.Plan_Verification_Run))]) & LF);
-               if Value.Plan_Verification_Run /= Value.Latest_Run then
-                  Append
-                    (Result,
-                     Message
-                       ("status.previous_plan_result",
-                        [Arg ("outcome", Improve.Model.Image (Value.Plan_Quality))]) & LF);
-               end if;
-            end if;
-            if Value.Has_Project_Verification then
-               Append
-                 (Result,
-                  Message
-                    ("status.last_project_verification",
-                     [Arg ("run", Number (Value.Project_Verification_Run))]) & LF);
-               if Value.Project_Verification_Run /= Value.Latest_Run then
-                  Append
-                    (Result,
-                     Message
-                       ("status.previous_project_result",
-                        [Arg ("outcome", Improve.Model.Image (Value.Project_Quality))]) & LF);
-               end if;
-            end if;
-            for Status in Improve.Tasks.Operational_Status loop
-               declare Count : Natural := 0; begin
-                  for View of Value.Tasks loop
-                     if View.Status = Status then Count := Count + 1; end if;
-                  end loop;
-                  if Count > 0 then
-                     Append
-                       (Result,
-                        Message
-                          ("status.count",
-                           [Arg ("status", Improve.Tasks.Image (Status)), Arg ("count", Number (Count))]) & LF);
-                  end if;
-               end;
-            end loop;
-            Append
-              (Result,
-               Message ("status.findings") & LF &
-               Message ("status.count", [Arg ("status", "resolved"),
-                 Arg ("count", Number (Value.Findings.Resolved))]) & LF &
-               Message ("status.count", [Arg ("status", "outstanding"),
-                 Arg ("count", Number (Value.Findings.Outstanding))]) & LF &
-               Message ("status.count", [Arg ("status", "not_measurable"),
-                 Arg ("count", Number (Value.Findings.Not_Measurable))]) & LF &
-               Message ("status.count", [Arg ("status", "regressed"),
-                 Arg ("count", Number (Value.Findings.Regressed))]) & LF &
-               Message ("status.count", [Arg ("status", "superseded"),
-                 Arg ("count", Number (Value.Findings.Superseded))]) & LF &
-               Message ("status.count", [Arg ("status", "previously_resolved"),
-                 Arg ("count", Number (Value.Findings.Previously_Resolved))]) & LF &
-               Message ("status.count", [Arg ("status", "unverified"),
-                 Arg ("count", Number (Value.Findings.Unverified))]) & LF);
-         end loop;
-         return To_String (Result);
-      end;
+      return Improve.Presentation.Status (Values);
    end Status_Output;
 
    function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -477,12 +236,7 @@ package body Improve.CLI is
            Improve.Operations.Storage_Read_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
-      return
-        Improve.Presentation.Header (Message ("recover.title")) & LF &
-        Message
-          ("recover.complete",
-           [Arg ("operations", Number (Report.Operations_Recovered)),
-            Arg ("tasks", Number (Report.Tasks_Recovered))]) & LF;
+      return Improve.Presentation.Recovery (Report);
    end Recover_Output;
 
    function Verify_Output
@@ -504,22 +258,9 @@ package body Improve.CLI is
       if Item.Format = JSON_Format then
          return Improve.JSON.Verification (Executed.Report, Command);
       end if;
-      declare Output : Unbounded_String; begin
-         Append
-           (Output,
-            Improve.Presentation.Header
-              (Message
-                 ((if Command = "refresh" then "refresh.title" else "verify.title"),
-                  [Arg ("plan", To_String (Executed.Plan.Plan_Id))])) & LF);
-         Append
-           (Output,
-            Message
-              ("verify.outcome", [Arg ("outcome", Improve.Model.Image (Executed.Report.Outcome))]) & LF);
-         for Result of Executed.Report.Tasks loop
-            Append (Output, To_String (Result.Task_Id) & "  " & Improve.Model.Image (Result.Outcome) & LF);
-         end loop;
-         return To_String (Output);
-      end;
+      return
+        Improve.Presentation.Verification
+          (To_String (Executed.Plan.Plan_Id), Executed.Report, Command);
    end Verify_Output;
 
    function Refresh_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is

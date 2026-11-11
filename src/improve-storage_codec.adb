@@ -1,4 +1,5 @@
 with Ada.Calendar.Formatting;
+with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
@@ -6,6 +7,7 @@ with Ada.Strings.Unbounded;
 package body Improve.Storage_Codec is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
+   use type Ada.Containers.Count_Type;
 
    LF : constant Character := Character'Val (10);
    CR : constant Character := Character'Val (13);
@@ -127,11 +129,20 @@ package body Improve.Storage_Codec is
       return To_String (Result);
    end Pack;
 
-   function Unpack (Text : String) return Improve.Model.UString_Vectors.Vector is
+   function Unpack
+     (Text          : String;
+      Maximum_Items : Natural := 10_000;
+      Maximum_Bytes : Natural := 1_048_576) return Improve.Model.UString_Vectors.Vector is
       Result : Improve.Model.UString_Vectors.Vector;
       Index  : Natural := Text'First;
    begin
+      if Text'Length > Maximum_Bytes then
+         raise Data_Error with "persisted list exceeds configured byte limit";
+      end if;
       while Index <= Text'Last loop
+         if Result.Length >= Ada.Containers.Count_Type (Maximum_Items) then
+            raise Data_Error with "persisted list exceeds configured item limit";
+         end if;
          declare
             Colon : Natural := Index;
          begin

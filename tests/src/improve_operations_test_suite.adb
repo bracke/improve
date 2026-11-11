@@ -545,6 +545,8 @@ begin
                   "agent_max_response_bytes = 1024" & ASCII.LF &
                   "agent_timeout_seconds = 2" & ASCII.LF &
                   "maximum_output_items = 8" & ASCII.LF &
+                  "maximum_history_items = 12" & ASCII.LF &
+                  "maximum_persisted_text_bytes = 16384" & ASCII.LF &
                   "maximum_recovery_operations = 9" & ASCII.LF &
                   "task_kind = ""remediation""" & ASCII.LF &
                   "publication = ""candidate""" & ASCII.LF &
@@ -561,10 +563,21 @@ begin
                      Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
                      not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
                      Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
+                     Value.Maximum_History_Items = 12 and then
+                     Value.Maximum_Persisted_Text_Bytes = 16_384 and then
                      Value.Maximum_Recovery_Operations = 9 and then Value.Format = Improve.Config.JSON_Format and then
                      Value.Color = Improve.Config.Color_Never and then Value.Require_Initialized and then
                      Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "operations.maximum") > 0,
                      "valid nondefault configuration was not preserved");
+                  declare
+                     Limits : constant Improve.Storage.Read_Limits :=
+                       Improve.Operations.Storage_Read_Limits (Value);
+                  begin
+                     Assert
+                       (Limits.Maximum_History = 12 and then Limits.Maximum_Text_Bytes = 16_384 and then
+                        Limits.Maximum_History /= Value.Maximum_Output_Items,
+                        "storage history and payload limits were coupled to presentation output");
+                  end;
                end;
                Project_Tools.Files.Write_Text_File (Path, "schema_version = 2" & ASCII.LF);
                begin
@@ -597,6 +610,8 @@ begin
                Reject ("agent_max_response_bytes = 1048577", "agent response limit");
                Reject ("agent_timeout_seconds = 3601", "agent timeout");
                Reject ("maximum_output_items = 100001", "output item limit");
+               Reject ("maximum_history_items = 1000001", "history item limit");
+               Reject ("maximum_persisted_text_bytes = 16777217", "persisted text limit");
                Reject ("maximum_recovery_operations = 10001", "recovery limit");
                Reject ("require_review = maybe", "boolean");
                Project_Tools.Files.Delete_File_If_Present (Path);

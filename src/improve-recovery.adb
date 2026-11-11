@@ -21,7 +21,7 @@ package body Improve.Recovery is
          raise Dependency_Error with "Improve state database is unavailable: " & State_Path;
       end if;
       Improve.Storage.Open (State, State_Path, Writable => True);
-      Pending := Improve.Storage.Pending_Publications (State, Maximum);
+      Pending := Improve.Storage.Pending_Publications (State, Maximum, Limits);
       Improve.Storage.Close (State);
       for Operation of Pending loop
          Improve.Storage.Open (State, State_Path, Writable => False);
@@ -32,7 +32,8 @@ package body Improve.Recovery is
               Improve.Storage.Publications
                 (State, To_String (Operation.Plan_Id), Limits.Maximum_History);
             Approved : constant Boolean :=
-              Improve.Storage.Is_Approved (State, To_String (Operation.Plan_Id), Operation.Revision);
+              Improve.Storage.Is_Approved
+                (State, To_String (Operation.Plan_Id), Operation.Revision, Limits);
          begin
             Improve.Storage.Close (State);
             if Length (Operation.Fingerprint) > 0 and then Plan.Fingerprint /= Operation.Fingerprint then
