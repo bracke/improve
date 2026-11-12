@@ -38,9 +38,9 @@ package body Improve.Findings is
       Bytes  : Natural := 0;
 
       procedure Add (Item : Improve.Model.Finding_Reference) is
-         Key : constant String :=
-           Positive'Image (Item.Project_Id) & "|" & Image (Item.Indicator) & "|" & To_String (Item.Rule) & "|" &
-           To_String (Item.Fingerprint) & "|" & To_String (Item.Semantic_Subject);
+         Key : constant String := Improve.Model.Canonical_Key
+           ([To_Unbounded_String (Positive'Image (Item.Project_Id)),
+             To_Unbounded_String (Image (Item.Indicator)), Item.Rule, Item.Fingerprint, Item.Semantic_Subject]);
       begin
          if not Seen.Contains (Key) then
             declare
@@ -85,7 +85,10 @@ package body Improve.Findings is
              Relative_Path    => Null_Unbounded_String,
              Line             => 0,
              Fingerprint      => To_Unbounded_String
-               (Prefix & ":" & Image (Value.Indicator) & ":" & Stable_Digest (Summary & To_String (Value.Evidence))),
+               (Prefix & ":" & Image (Value.Indicator) & ":" &
+                Stable_Digest
+                  (Improve.Model.Canonical_Key
+                     ([To_Unbounded_String (Summary), Value.Evidence]))),
              Semantic_Subject => To_Unbounded_String (Subject),
              Message          => Value.Summary,
              Evidence         => Value.Evidence,

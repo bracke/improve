@@ -107,6 +107,39 @@ begin
                   Assert
                     (Improve.Config.Load (Path).Maximum_Quality_Findings = 7_000,
                      "rendered configuration was not parseable");
+                  declare
+                     Escaped : Improve.Config.Settings := Value;
+                  begin
+                     Escaped.Quality_Database := To_Unbounded_String
+                       ("quality\\quoted""name.db" & ASCII.BS & ASCII.HT & ASCII.LF & ASCII.FF & ASCII.CR &
+                        Character'Val (1) & Character'Val (127));
+                     Escaped.Task_Kind := To_Unbounded_String ("repair\\""quoted");
+                     Project_Tools.Files.Write_Text_File (Path, Improve.Config.Image (Escaped));
+                     declare Roundtrip : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
+                        Assert
+                          (Roundtrip.Quality_Database = Escaped.Quality_Database and then
+                           Roundtrip.Task_Kind = Escaped.Task_Kind,
+                           "rendered configuration did not escape TOML string values");
+                     end;
+                  end;
+                  Write ("[quality]" & ASCII.LF & "database = '\literal\path'");
+                  Assert
+                    (To_String (Improve.Config.Load (Path).Quality_Database) = "\literal\path",
+                     "literal TOML string was not preserved");
+                  Write
+                    ("[quality]" & ASCII.LF &
+                     "database = ""\u00e9\u20ac\U0001f600""");
+                  declare
+                     Expected : constant String :=
+                       Character'Val (16#C3#) & Character'Val (16#A9#) &
+                       Character'Val (16#E2#) & Character'Val (16#82#) & Character'Val (16#AC#) &
+                       Character'Val (16#F0#) & Character'Val (16#9F#) &
+                       Character'Val (16#98#) & Character'Val (16#80#);
+                  begin
+                     Assert
+                       (To_String (Improve.Config.Load (Path).Quality_Database) = Expected,
+                        "Unicode TOML escapes were not decoded as UTF-8");
+                  end;
                end;
                Project_Tools.Files.Write_Text_File (Path, "schema_version = 2" & ASCII.LF);
                begin
@@ -123,6 +156,13 @@ begin
                Accept_Severity ("high", Improve.Config.High);
                Reject ("selection = ""newest""", "selection", "quality");
                Reject ("database = """"", "empty database", "quality");
+               Reject ("database = bare", "unquoted string", "quality");
+               Reject ("database = ""bad\q""", "unknown string escape", "quality");
+               Reject ("database = ""\u12""", "short Unicode escape", "quality");
+               Reject ("database = ""\u00xz""", "invalid Unicode escape", "quality");
+               Reject ("database = ""\ud800""", "surrogate Unicode escape", "quality");
+               Reject ("database = ""\U00110000""", "out-of-range Unicode escape", "quality");
+               Reject ("database = ""value"" trailing", "trailing string data", "quality");
                Reject ("maximum_database_projects = 100001", "quality project limit", "quality");
                Reject ("maximum_database_runs = 10000001", "quality run limit", "quality");
                Reject ("maximum_database_findings = 10000001", "quality finding load limit", "quality");

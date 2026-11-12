@@ -14,6 +14,11 @@ package Improve.Model is
      (Index_Type => Positive, Element_Type => UString, "=" => Ada.Strings.Unbounded."=");
    --  Ordered text values.
 
+   function Canonical_Key (Values : UString_Vectors.Vector) return String;
+   --  Encode ordered text components with explicit counts and lengths.
+   --  @param Values Components whose boundaries must remain unambiguous.
+   --  @return Canonical boundary-safe representation.
+
    type Project_Reference is record
       Id          : Positive;
       Name        : UString;

@@ -1,4 +1,7 @@
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Fixed;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Improve.Source;
 with Improve.Storage;
@@ -7,6 +10,17 @@ package body Improve.Operations.Verification is
    use Ada.Strings.Unbounded;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Storage.Verification_Scope;
+
+   package Contract_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Improve.Model.UString,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
 
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
@@ -23,6 +37,8 @@ package body Improve.Operations.Verification is
       State : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;
       Previously_Verified : Improve.Model.UString_Vectors.Vector;
+      Contracts           : Contract_Maps.Map;
+      Verified_Ids        : String_Sets.Set;
       Limits : constant Improve.Storage.Read_Limits := Improve.Operations.Storage_Read_Limits (Settings);
    begin
       Improve.Storage.Open (State, State_Path, Writable => False);
@@ -65,23 +81,34 @@ package body Improve.Operations.Verification is
          begin
             Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);
+            for Spec of Plan.Tasks loop
+               declare Identity : constant String := To_String (Spec.Id); begin
+                  if Contracts.Contains (Identity) then
+                     raise Data_Error with "plan contains duplicate task identity " & Identity;
+                  end if;
+                  Contracts.Insert
+                    (Identity, To_Unbounded_String (Improve.Verification.Contract_Fingerprint (Spec)));
+               end;
+            end loop;
             Improve.Storage.Open (State, State_Path, Writable => False);
             for Record_Value of Improve.Storage.Verifications
               (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
             loop
-               for Spec of Plan.Tasks loop
+               declare Identity : constant String := To_String (Record_Value.Task_Id); begin
                   if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
-                    Record_Value.Task_Id = Spec.Id and then
-                    To_String (Record_Value.Contract_Fingerprint) =
-                      Improve.Verification.Contract_Fingerprint (Spec) and then
+                    Contracts.Contains (Identity) and then
+                    Record_Value.Contract_Fingerprint = Contracts.Element (Identity) and then
                     Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
-                    Record_Value.Outcome = Improve.Model.Verified and then
-                    not Previously_Verified.Contains (Record_Value.Task_Id)
+                    Record_Value.Outcome = Improve.Model.Verified
                   then
-                     Previously_Verified.Append (Record_Value.Task_Id);
-                     exit;
+                     Verified_Ids.Include (Identity);
                   end if;
-               end loop;
+               end;
+            end loop;
+            for Spec of Plan.Tasks loop
+               if Verified_Ids.Contains (To_String (Spec.Id)) then
+                  Previously_Verified.Append (Spec.Id);
+               end if;
             end loop;
             Improve.Storage.Close (State);
             declare
@@ -90,22 +117,21 @@ package body Improve.Operations.Verification is
                Records : Improve.Storage.Verification_Vectors.Vector;
             begin
                for Task_Result of Report.Tasks loop
-                  for Spec of Plan.Tasks loop
-                     if Spec.Id = Task_Result.Task_Id then
-                        Records.Append
-                          (Improve.Storage.Verification_Record'
-                             (Scope                => Improve.Storage.Task_Evaluation,
-                              Task_Id              => Task_Result.Task_Id,
-                              Plan_Revision        => Plan.Revision,
-                              Contract_Fingerprint => To_Unbounded_String
-                                (Improve.Verification.Contract_Fingerprint (Spec)),
-                              Assessment_Id        => Report.Verification_Run,
-                              Outcome              => Task_Result.Outcome,
-                              Comparable           => Report.Comparable,
-                              Explanation          => Task_Result.Explanation));
-                        exit;
+                  declare Identity : constant String := To_String (Task_Result.Task_Id); begin
+                     if not Contracts.Contains (Identity) then
+                        raise Data_Error with "verification returned an unknown task " & Identity;
                      end if;
-                  end loop;
+                     Records.Append
+                       (Improve.Storage.Verification_Record'
+                          (Scope                => Improve.Storage.Task_Evaluation,
+                           Task_Id              => Task_Result.Task_Id,
+                           Plan_Revision        => Plan.Revision,
+                           Contract_Fingerprint => Contracts.Element (Identity),
+                           Assessment_Id        => Report.Verification_Run,
+                           Outcome              => Task_Result.Outcome,
+                           Comparable           => Report.Comparable,
+                           Explanation          => Task_Result.Explanation));
+                  end;
                end loop;
                if Task_Id = "" then
                   Records.Append

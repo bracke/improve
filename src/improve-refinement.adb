@@ -330,19 +330,17 @@ package body Improve.Refinement is
          end;
       end loop;
       Improve.Dependencies.Validate (Result.Tasks);
-      declare Material : UString := To_Unbounded_String (To_String (Draft.Fingerprint) & "|" & Adapter_Name); begin
+      declare
+         Components : Improve.Model.UString_Vectors.Vector :=
+           [Draft.Fingerprint, To_Unbounded_String (Adapter_Name)];
+      begin
          for Spec of Result.Tasks loop
-            Append
-              (Material,
-               "|" & To_String (Spec.Id) & "|" & To_String (Spec.Title) & "|" & To_String (Spec.Goal) & "|" &
-               To_String (Spec.Scope) & "|" & To_String (Spec.Acceptance) & "|" &
-               To_String (Spec.Verification) & "|" & Natural'Image (Spec.Confidence));
-            for File of Spec.Relevant_Files loop Append (Material, "|file:" & To_String (File)); end loop;
-            for Dependency of Spec.Dependencies loop
-               Append (Material, "|dependency:" & To_String (Dependency));
-            end loop;
+            Components.Append (Spec.Id);
+            Components.Append
+              (To_Unbounded_String (Improve.Model.Task_Contract_Fingerprint (Spec)));
          end loop;
-         Result.Fingerprint := To_Unbounded_String (Stable_Digest (To_String (Material)));
+         Result.Fingerprint := To_Unbounded_String
+           (Stable_Digest (Improve.Model.Canonical_Key (Components)));
          Result.Plan_Id := To_Unbounded_String ("PLAN-DRAFT-" & To_String (Result.Fingerprint));
          Result.Planner_Id := Result.Planner_Id & To_Unbounded_String ("+agent:" & Adapter_Name);
       end;

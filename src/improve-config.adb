@@ -1,8 +1,6 @@
 with Ada.Characters.Handling;
-with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
 with Ada.Strings.Fixed;
-with Ada.Strings.Hash;
 with Hostkit.Fs;
 with Project_Tools.Files;
 with Project_Tools.TOML;
@@ -11,22 +9,156 @@ package body Improve.Config is
    use Ada.Strings.Unbounded;
    use type Project_Tools.TOML.Boolean_Parse_Status;
    use type Project_Tools.TOML.Natural_Parse_Status;
-   use type Project_Tools.TOML.String_Parse_Status;
 
    LF : constant Character := Character'Val (10);
    Maximum_Configuration_Bytes : constant := 1_048_576;
+
+   type Setting_Value_Kind is (String_Value, Enum_Value, Positive_Value, Boolean_Value);
+   type Setting_Id is
+     (Schema_Version,
+      Quality_Database, Quality_Selection, Maximum_Quality_Projects, Maximum_Quality_Runs,
+      Maximum_Quality_Findings, Maximum_Assessment_Findings, Maximum_Assessment_Bytes,
+      Minimum_Severity, Maximum_Tasks_Per_Plan, Maximum_Findings_Per_Task,
+      Allow_Investigation_Tasks, Require_Review, Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
+      Agent_Max_Response_Bytes, Agent_Timeout_Seconds,
+      Maximum_Recovery_Operations, Maximum_History_Items, Maximum_Persisted_Text_Bytes,
+      Workflow_Task_Kind, Workflow_Publication, Require_Initialized_Project,
+      Require_Fresh_Measurement, Require_Same_Policy, Require_Same_Toolchain,
+      Require_No_New_Critical_Findings,
+      Maximum_Output_Items, Output_Format_Setting, Output_Color);
+
+   type Setting_Descriptor is record
+      Section : UString;
+      Name    : UString;
+      Default : UString;
+      Kind    : Setting_Value_Kind;
+      Minimum : Natural := 0;
+      Maximum : Natural := 0;
+   end record;
+
+   type Descriptor_Array is array (Setting_Id) of Setting_Descriptor;
+
+   function Define
+     (Section, Name, Default : String;
+      Kind                   : Setting_Value_Kind;
+      Minimum                : Natural := 0;
+      Maximum                : Natural := 0) return Setting_Descriptor is
+     ((To_Unbounded_String (Section), To_Unbounded_String (Name), To_Unbounded_String (Default),
+       Kind, Minimum, Maximum));
+
+   Definitions : constant Descriptor_Array :=
+     [Define ("", "schema_version", "1", Positive_Value, 1, 1),
+      Define ("quality", "database", ".ada-quality.db", String_Value),
+      Define ("quality", "selection", "latest_completed", Enum_Value),
+      Define ("quality", "maximum_database_projects", "10000", Positive_Value, 1, 100_000),
+      Define ("quality", "maximum_database_runs", "1000000", Positive_Value, 1, 10_000_000),
+      Define ("quality", "maximum_database_findings", "2000000", Positive_Value, 1, 10_000_000),
+      Define ("quality", "maximum_assessment_findings", "10000", Positive_Value, 1, 1_000_000),
+      Define ("quality", "maximum_assessment_bytes", "16777216", Positive_Value, 1, 268_435_456),
+      Define ("planning", "minimum_severity", "low", Enum_Value),
+      Define ("planning", "maximum_tasks_per_plan", "100", Positive_Value, 1, 10_000),
+      Define ("planning", "maximum_findings_per_task", "50", Positive_Value, 1, 10_000),
+      Define ("planning", "allow_investigation_tasks", "true", Boolean_Value),
+      Define ("planning", "require_review", "true", Boolean_Value),
+      Define ("planning", "agent_max_context_bytes", "131072", Positive_Value, 1_024, 10_485_760),
+      Define ("planning", "agent_max_file_bytes", "32768", Positive_Value, 1, 10_485_760),
+      Define ("planning", "agent_max_response_bytes", "131072", Positive_Value, 1, 1_048_576),
+      Define ("planning", "agent_timeout_seconds", "60", Positive_Value, 1, 3_600),
+      Define ("operations", "maximum_recovery_operations", "100", Positive_Value, 1, 10_000),
+      Define ("operations", "maximum_history_items", "100000", Positive_Value, 1, 1_000_000),
+      Define ("operations", "maximum_persisted_text_bytes", "1048576", Positive_Value, 1, 16_777_216),
+      Define ("workflow", "task_kind", "auto", String_Value),
+      Define ("workflow", "publication", "candidate", Enum_Value),
+      Define ("workflow", "require_initialized_project", "true", Boolean_Value),
+      Define ("verification", "require_fresh_measurement", "true", Boolean_Value),
+      Define ("verification", "require_same_policy", "true", Boolean_Value),
+      Define ("verification", "require_same_toolchain", "false", Boolean_Value),
+      Define ("verification", "require_no_new_critical_findings", "true", Boolean_Value),
+      Define ("output", "maximum_output_items", "10000", Positive_Value, 1, 100_000),
+      Define ("output", "format", "terminal", Enum_Value),
+      Define ("output", "color", "auto", Enum_Value)];
+
+   function Number (Value : Natural) return String is
+     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
+
+   function Qualified (Id : Setting_Id) return String is
+      Section : constant String := To_String (Definitions (Id).Section);
+   begin
+      return (if Section = "" then To_String (Definitions (Id).Name)
+              else Section & "." & To_String (Definitions (Id).Name));
+   end Qualified;
+
+   function Known_Section (Name : String) return Boolean is
+   begin
+      for Definition of Definitions loop
+         if Length (Definition.Section) > 0 and then To_String (Definition.Section) = Name then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Known_Section;
+
+   function Setting_Of (Section, Name : String) return Setting_Id is
+   begin
+      for Id in Setting_Id loop
+         if To_String (Definitions (Id).Section) = Section and then
+           To_String (Definitions (Id).Name) = Name
+         then
+            return Id;
+         end if;
+      end loop;
+      raise Argument_Error with
+        "unknown or misplaced configuration setting: " &
+        (if Section = "" then Name else Section & "." & Name);
+   end Setting_Of;
+
+   function Default_String (Id : Setting_Id) return String is
+     (To_String (Definitions (Id).Default));
+
+   function Default_Positive (Id : Setting_Id) return Positive is
+     (Positive'Value (Default_String (Id)));
+
+   function Default_Boolean (Id : Setting_Id) return Boolean is
+     (Default_String (Id) = "true");
+
+   function Severity_Of (Value : String) return Severity_Level is
+   begin
+      if Value = "info" then return Info;
+      elsif Value = "low" then return Low;
+      elsif Value = "medium" then return Medium;
+      elsif Value = "high" then return High;
+      elsif Value = "critical" then return Critical;
+      else raise Argument_Error with "planning.minimum_severity is invalid";
+      end if;
+   end Severity_Of;
+
+   function Format_Of (Value : String) return Output_Format is
+   begin
+      if Value = "terminal" then return Terminal_Format;
+      elsif Value = "json" then return JSON_Format;
+      else raise Argument_Error with "output.format must be terminal or json";
+      end if;
+   end Format_Of;
+
+   function Color_Of (Value : String) return Color_Mode is
+   begin
+      if Value = "auto" then return Color_Auto;
+      elsif Value = "always" then return Color_Always;
+      elsif Value = "never" then return Color_Never;
+      else raise Argument_Error with "output.color must be auto, always, or never";
+      end if;
+   end Color_Of;
 
    function Read_Configuration (Path : String) return String is
       Full    : constant String := Ada.Directories.Full_Name (Path);
       Root    : constant String := Ada.Directories.Containing_Directory (Full);
       Name    : constant String := Ada.Directories.Simple_Name (Full);
-      Text    : Unbounded_String;
+      Text    : UString;
       Outcome : Hostkit.Fs.Read_Beneath_Outcome;
    begin
       Hostkit.Fs.Read_Beneath (Root, Name, Maximum_Configuration_Bytes, Text, Outcome);
       case Outcome is
-         when Hostkit.Fs.Read_Done =>
-            return To_String (Text);
+         when Hostkit.Fs.Read_Done => return To_String (Text);
          when Hostkit.Fs.Read_Too_Large =>
             raise Argument_Error with "configuration file exceeds 1048576 bytes";
          when Hostkit.Fs.Read_Outside =>
@@ -36,66 +168,36 @@ package body Improve.Config is
       end case;
    end Read_Configuration;
 
-   function Known_Section (Name : String) return Boolean is
-     (Name in "quality" | "planning" | "operations" | "workflow" | "verification" | "output");
-
-   function Allowed_Key (Section, Key : String) return Boolean is
-   begin
-      if Section = "" then
-         return Key = "schema_version";
-      elsif Section = "quality" then
-         return Key in "database" | "selection" | "maximum_database_projects" |
-           "maximum_database_runs" | "maximum_database_findings" |
-           "maximum_assessment_findings" | "maximum_assessment_bytes";
-      elsif Section = "planning" then
-         return Key in "minimum_severity" | "maximum_tasks_per_plan" |
-           "maximum_findings_per_task" | "allow_investigation_tasks" | "require_review" |
-           "agent_max_context_bytes" | "agent_max_file_bytes" | "agent_max_response_bytes" |
-           "agent_timeout_seconds";
-      elsif Section = "operations" then
-         return Key in "maximum_recovery_operations" | "maximum_history_items" |
-           "maximum_persisted_text_bytes";
-      elsif Section = "workflow" then
-         return Key in "task_kind" | "publication" | "require_initialized_project";
-      elsif Section = "verification" then
-         return Key in "require_fresh_measurement" | "require_same_policy" |
-           "require_same_toolchain" | "require_no_new_critical_findings";
-      elsif Section = "output" then
-         return Key in "format" | "color" | "maximum_output_items";
-      end if;
-      return False;
-   end Allowed_Key;
-
    function Defaults return Settings is
-     ((Quality_Database          => To_Unbounded_String (".ada-quality.db"),
+     ((Quality_Database          => To_Unbounded_String (Default_String (Quality_Database)),
        Selection                 => Latest_Completed,
-       Maximum_Quality_Projects  => 10_000,
-       Maximum_Quality_Runs      => 1_000_000,
-       Maximum_Quality_Findings  => 2_000_000,
-       Maximum_Assessment_Findings => 10_000,
-       Maximum_Assessment_Bytes  => 16_777_216,
-       Minimum_Severity          => Low,
-       Maximum_Tasks_Per_Plan    => 100,
-       Maximum_Findings_Per_Task => 50,
-       Allow_Investigation_Tasks => True,
-       Require_Review            => True,
-       Agent_Max_Context_Bytes   => 131_072,
-       Agent_Max_File_Bytes      => 32_768,
-       Agent_Max_Response_Bytes  => 131_072,
-       Agent_Timeout_Seconds     => 60,
-       Maximum_Output_Items      => 10_000,
-       Maximum_History_Items     => 100_000,
-       Maximum_Persisted_Text_Bytes => 1_048_576,
-       Maximum_Recovery_Operations => 100,
-       Task_Kind                 => To_Unbounded_String ("auto"),
+       Maximum_Quality_Projects  => Default_Positive (Maximum_Quality_Projects),
+       Maximum_Quality_Runs      => Default_Positive (Maximum_Quality_Runs),
+       Maximum_Quality_Findings  => Default_Positive (Maximum_Quality_Findings),
+       Maximum_Assessment_Findings => Default_Positive (Maximum_Assessment_Findings),
+       Maximum_Assessment_Bytes  => Default_Positive (Maximum_Assessment_Bytes),
+       Minimum_Severity          => Severity_Of (Default_String (Minimum_Severity)),
+       Maximum_Tasks_Per_Plan    => Default_Positive (Maximum_Tasks_Per_Plan),
+       Maximum_Findings_Per_Task => Default_Positive (Maximum_Findings_Per_Task),
+       Allow_Investigation_Tasks => Default_Boolean (Allow_Investigation_Tasks),
+       Require_Review            => Default_Boolean (Require_Review),
+       Agent_Max_Context_Bytes   => Default_Positive (Agent_Max_Context_Bytes),
+       Agent_Max_File_Bytes      => Default_Positive (Agent_Max_File_Bytes),
+       Agent_Max_Response_Bytes  => Default_Positive (Agent_Max_Response_Bytes),
+       Agent_Timeout_Seconds     => Default_Positive (Agent_Timeout_Seconds),
+       Maximum_Output_Items      => Default_Positive (Maximum_Output_Items),
+       Maximum_History_Items     => Default_Positive (Maximum_History_Items),
+       Maximum_Persisted_Text_Bytes => Default_Positive (Maximum_Persisted_Text_Bytes),
+       Maximum_Recovery_Operations => Default_Positive (Maximum_Recovery_Operations),
+       Task_Kind                 => To_Unbounded_String (Default_String (Workflow_Task_Kind)),
        Publication               => Candidate_Publication,
-       Require_Initialized       => True,
-       Require_Fresh_Measurement => True,
-       Require_Same_Policy       => True,
-       Require_Same_Toolchain    => False,
-       Require_No_New_Critical   => True,
-       Format                    => Terminal_Format,
-       Color                     => Color_Auto));
+       Require_Initialized       => Default_Boolean (Require_Initialized_Project),
+       Require_Fresh_Measurement => Default_Boolean (Require_Fresh_Measurement),
+       Require_Same_Policy       => Default_Boolean (Require_Same_Policy),
+       Require_Same_Toolchain    => Default_Boolean (Require_Same_Toolchain),
+       Require_No_New_Critical   => Default_Boolean (Require_No_New_Critical_Findings),
+       Format                    => Format_Of (Default_String (Output_Format_Setting)),
+       Color                     => Color_Of (Default_String (Output_Color))));
 
    function Quality_Severity (Value : Severity_Level) return Ada_Quality.Types.Severity is
      (case Value is
@@ -115,20 +217,13 @@ package body Improve.Config is
       end if;
       declare
          Text : constant String := Read_Configuration (Path);
-
-         package Entry_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-           (Key_Type        => String,
-            Element_Type    => Unbounded_String,
-            Hash            => Ada.Strings.Hash,
-            Equivalent_Keys => "=");
-
-         Entries : Entry_Maps.Map;
-
-         function Qualified (Section, Key : String) return String is
-           ((if Section = "" then Key else Section & "." & Key));
+         type Entry_Array is array (Setting_Id) of UString;
+         type Presence_Array is array (Setting_Id) of Boolean;
+         Entries : Entry_Array;
+         Present : Presence_Array := [others => False];
 
          procedure Validate_Document is
-            Current_Section : Unbounded_String;
+            Current_Section : UString;
             Start           : Natural := Text'First;
          begin
             while Start <= Text'Last loop
@@ -163,8 +258,7 @@ package body Improve.Config is
                               begin
                                  if Rest /= "" and then Rest (Rest'First) /= '#' then
                                     raise Argument_Error with "malformed configuration section";
-                                 end if;
-                                 if not Known_Section (Name) then
+                                 elsif not Known_Section (Name) then
                                     raise Argument_Error with "unknown configuration section: " & Name;
                                  end if;
                                  Current_Section := To_Unbounded_String (Name);
@@ -178,15 +272,13 @@ package body Improve.Config is
                               declare
                                  Key : constant String :=
                                    Ada.Strings.Fixed.Trim (Line (Line'First .. Equals - 1), Ada.Strings.Both);
-                                 Section : constant String := To_String (Current_Section);
-                                 Name : constant String := Qualified (Section, Key);
+                                 Id  : constant Setting_Id := Setting_Of (To_String (Current_Section), Key);
                               begin
-                                 if not Allowed_Key (Section, Key) then
-                                    raise Argument_Error with "unknown or misplaced configuration setting: " & Name;
-                                 elsif Entries.Contains (Name) then
-                                    raise Argument_Error with "duplicate configuration setting: " & Name;
+                                 if Present (Id) then
+                                    raise Argument_Error with "duplicate configuration setting: " & Qualified (Id);
                                  end if;
-                                 Entries.Insert (Name, To_Unbounded_String (Line));
+                                 Entries (Id) := To_Unbounded_String (Line);
+                                 Present (Id) := True;
                               end;
                            end;
                         end if;
@@ -197,218 +289,305 @@ package body Improve.Config is
             end loop;
          end Validate_Document;
 
-         function Line_Of (Section, Key : String) return String is
-            Name : constant String := Qualified (Section, Key);
-         begin
-            return (if Entries.Contains (Name) then To_String (Entries.Element (Name)) else "");
-         end Line_Of;
+         function Line_Of (Id : Setting_Id) return String is
+           (if Present (Id) then To_String (Entries (Id)) else "");
 
-         function String_Value (Section, Key : String; Default : String) return String is
-            Line : constant String := Line_Of (Section, Key);
-            Parsed : constant Project_Tools.TOML.String_Parse_Result :=
-              (if Line = "" then
-                  (Status => Project_Tools.TOML.Missing_String, Value => Null_Unbounded_String)
-               else Project_Tools.TOML.Parse_String_After (Line, Key, Line'First));
+         function String_Setting (Id : Setting_Id) return String is
+            Line   : constant String := Line_Of (Id);
+            Result : UString;
+
+            function Hex_Value (C : Character) return Natural is
+            begin
+               if C in '0' .. '9' then return Character'Pos (C) - Character'Pos ('0');
+               elsif C in 'a' .. 'f' then return Character'Pos (C) - Character'Pos ('a') + 10;
+               elsif C in 'A' .. 'F' then return Character'Pos (C) - Character'Pos ('A') + 10;
+               else raise Argument_Error with "malformed string setting: " & Qualified (Id);
+               end if;
+            end Hex_Value;
+
+            procedure Append_UTF8 (Code : Natural) is
+            begin
+               if Code <= 16#7F# then
+                  Append (Result, Character'Val (Code));
+               elsif Code <= 16#7FF# then
+                  Append (Result, Character'Val (16#C0# + Code / 64));
+                  Append (Result, Character'Val (16#80# + Code mod 64));
+               elsif Code in 16#D800# .. 16#DFFF# or else Code > 16#10FFFF# then
+                  raise Argument_Error with "malformed string setting: " & Qualified (Id);
+               elsif Code <= 16#FFFF# then
+                  Append (Result, Character'Val (16#E0# + Code / 4_096));
+                  Append (Result, Character'Val (16#80# + Code / 64 mod 64));
+                  Append (Result, Character'Val (16#80# + Code mod 64));
+               else
+                  Append (Result, Character'Val (16#F0# + Code / 262_144));
+                  Append (Result, Character'Val (16#80# + Code / 4_096 mod 64));
+                  Append (Result, Character'Val (16#80# + Code / 64 mod 64));
+                  Append (Result, Character'Val (16#80# + Code mod 64));
+               end if;
+            end Append_UTF8;
          begin
-            if Parsed.Status = Project_Tools.TOML.Malformed_String then
-               raise Argument_Error with "malformed string setting: " & Key;
-            elsif Parsed.Status = Project_Tools.TOML.Missing_String then
-               return Default;
+            if Line = "" then
+               return Default_String (Id);
             end if;
-            return To_String (Parsed.Value);
-         end String_Value;
+            declare
+               Equals : constant Natural := Ada.Strings.Fixed.Index (Line, "=");
+               Text   : constant String :=
+                 (if Equals = 0 then ""
+                  else Ada.Strings.Fixed.Trim (Line (Equals + 1 .. Line'Last), Ada.Strings.Both));
+            begin
+               if Text'Length < 2 or else Text (Text'First) not in '"' | ''' then
+                  raise Argument_Error with "malformed string setting: " & Qualified (Id);
+               end if;
+               declare
+                  Quote  : constant Character := Text (Text'First);
+                  Cursor : Natural := Text'First + 1;
+                  Closed : Boolean := False;
+               begin
+                  while Cursor <= Text'Last and then not Closed loop
+                     if Text (Cursor) = Quote then
+                        Closed := True;
+                        Cursor := Cursor + 1;
+                     elsif Quote = ''' or else Text (Cursor) /= '\' then
+                        Append (Result, Text (Cursor));
+                        Cursor := Cursor + 1;
+                     elsif Cursor = Text'Last then
+                        raise Argument_Error with "malformed string setting: " & Qualified (Id);
+                     else
+                        case Text (Cursor + 1) is
+                           when 'b' => Append (Result, ASCII.BS); Cursor := Cursor + 2;
+                           when 't' => Append (Result, ASCII.HT); Cursor := Cursor + 2;
+                           when 'n' => Append (Result, ASCII.LF); Cursor := Cursor + 2;
+                           when 'f' => Append (Result, ASCII.FF); Cursor := Cursor + 2;
+                           when 'r' => Append (Result, ASCII.CR); Cursor := Cursor + 2;
+                           when '"' => Append (Result, '"'); Cursor := Cursor + 2;
+                           when '\' => Append (Result, '\'); Cursor := Cursor + 2;
+                           when 'u' | 'U' =>
+                              declare
+                                 Digit_Count : constant Positive :=
+                                   (if Text (Cursor + 1) = 'u' then 4 else 8);
+                                 Code : Natural := 0;
+                              begin
+                                 if Cursor + 1 + Digit_Count > Text'Last then
+                                    raise Argument_Error with "malformed string setting: " & Qualified (Id);
+                                 end if;
+                                 for Offset in 1 .. Digit_Count loop
+                                    declare
+                                       Digit : constant Natural := Hex_Value (Text (Cursor + 1 + Offset));
+                                    begin
+                                       if Code > (16#10FFFF# - Digit) / 16 then
+                                          raise Argument_Error with
+                                            "malformed string setting: " & Qualified (Id);
+                                       end if;
+                                       Code := Code * 16 + Digit;
+                                    end;
+                                 end loop;
+                                 Append_UTF8 (Code);
+                                 Cursor := Cursor + 2 + Digit_Count;
+                              end;
+                           when others =>
+                              raise Argument_Error with "malformed string setting: " & Qualified (Id);
+                        end case;
+                     end if;
+                  end loop;
+                  if not Closed then
+                     raise Argument_Error with "malformed string setting: " & Qualified (Id);
+                  end if;
+                  declare
+                     Rest : constant String :=
+                       Ada.Strings.Fixed.Trim (Text (Cursor .. Text'Last), Ada.Strings.Both);
+                  begin
+                     if Rest /= "" and then Rest (Rest'First) /= '#' then
+                        raise Argument_Error with "malformed string setting: " & Qualified (Id);
+                     end if;
+                  end;
+               end;
+            end;
+            if Definitions (Id).Kind not in String_Value | Enum_Value then
+               raise Argument_Error with "malformed string setting: " & Qualified (Id);
+            end if;
+            return To_String (Result);
+         end String_Setting;
 
-         function Natural_Value (Section, Key : String; Default : Positive) return Positive is
-            Line : constant String := Line_Of (Section, Key);
+         function Positive_Setting (Id : Setting_Id) return Positive is
+            Line   : constant String := Line_Of (Id);
+            Name   : constant String := To_String (Definitions (Id).Name);
             Parsed : constant Project_Tools.TOML.Natural_Parse_Result :=
               (if Line = "" then (Status => Project_Tools.TOML.Missing_Natural, Value => 0)
-               else Project_Tools.TOML.Parse_Natural_After (Line, Key, Line'First));
+               else Project_Tools.TOML.Parse_Natural_After (Line, Name, Line'First));
          begin
             if Parsed.Status = Project_Tools.TOML.Malformed_Natural or else
               (Parsed.Status = Project_Tools.TOML.Parsed_Natural and then Parsed.Value = 0)
             then
-               raise Argument_Error with "setting " & Key & " must be a positive integer";
+               raise Argument_Error with "setting " & Qualified (Id) & " must be a positive integer";
             elsif Parsed.Status = Project_Tools.TOML.Missing_Natural then
-               return Default;
+               return Default_Positive (Id);
+            elsif Parsed.Value < Definitions (Id).Minimum or else Parsed.Value > Definitions (Id).Maximum then
+               raise Argument_Error with
+                 "setting " & Qualified (Id) & " must be between" &
+                 Natural'Image (Definitions (Id).Minimum) & " and" & Natural'Image (Definitions (Id).Maximum);
             end if;
             return Parsed.Value;
-         end Natural_Value;
+         end Positive_Setting;
 
-         function Boolean_Value (Section, Key : String; Default : Boolean) return Boolean is
-            Line : constant String := Line_Of (Section, Key);
+         function Boolean_Setting (Id : Setting_Id) return Boolean is
+            Line   : constant String := Line_Of (Id);
+            Name   : constant String := To_String (Definitions (Id).Name);
             Parsed : constant Project_Tools.TOML.Boolean_Parse_Result :=
               (if Line = "" then (Status => Project_Tools.TOML.Missing_Boolean, Value => False)
-               else Project_Tools.TOML.Parse_Boolean_After (Line, Key, Line'First));
+               else Project_Tools.TOML.Parse_Boolean_After (Line, Name, Line'First));
          begin
             if Parsed.Status = Project_Tools.TOML.Malformed_Boolean then
-               raise Argument_Error with "malformed boolean setting: " & Key;
+               raise Argument_Error with "malformed boolean setting: " & Qualified (Id);
             elsif Parsed.Status = Project_Tools.TOML.Missing_Boolean then
-               return Default;
+               return Default_Boolean (Id);
             end if;
             return Parsed.Value;
-         end Boolean_Value;
+         end Boolean_Setting;
 
       begin
          Validate_Document;
-         declare
-            Schema_Line : constant String := Line_Of ("", "schema_version");
-            Schema : constant Project_Tools.TOML.Natural_Parse_Result :=
-              (if Schema_Line = "" then (Status => Project_Tools.TOML.Missing_Natural, Value => 0)
-               else Project_Tools.TOML.Parse_Natural_After
-                 (Schema_Line, "schema_version", Schema_Line'First));
-            Selection : constant String := String_Value ("quality", "selection", "latest_completed");
-            Severity  : constant String := String_Value ("planning", "minimum_severity", "low");
-            Kind      : constant String := String_Value ("workflow", "task_kind", "auto");
-            Publish   : constant String := String_Value ("workflow", "publication", "candidate");
-            Format    : constant String := String_Value ("output", "format", "terminal");
-            Color     : constant String := String_Value ("output", "color", "auto");
-         begin
-         if Schema.Status /= Project_Tools.TOML.Parsed_Natural or else Schema.Value /= 1 then
+         if not Present (Schema_Version) or else Positive_Setting (Schema_Version) /= 1 then
             raise Argument_Error with "configuration schema_version must be 1";
-         elsif Selection /= "latest_completed" then
+         elsif String_Setting (Quality_Selection) /= "latest_completed" then
             raise Argument_Error with "quality.selection must be latest_completed";
-         elsif Kind = "" then
-            raise Argument_Error with "workflow.task_kind must not be empty";
-         elsif Publish /= "candidate" then
+         elsif String_Setting (Workflow_Publication) /= "candidate" then
             raise Argument_Error with "workflow.publication must be candidate";
          end if;
-         Result.Quality_Database :=
-           To_Unbounded_String (String_Value ("quality", "database", ".ada-quality.db"));
+
+         Result.Quality_Database := To_Unbounded_String (String_Setting (Quality_Database));
          if Length (Result.Quality_Database) = 0 then
             raise Argument_Error with "quality.database must not be empty";
          end if;
-         Result.Maximum_Quality_Projects := Natural_Value ("quality", "maximum_database_projects", 10_000);
-         Result.Maximum_Quality_Runs := Natural_Value ("quality", "maximum_database_runs", 1_000_000);
-         Result.Maximum_Quality_Findings := Natural_Value ("quality", "maximum_database_findings", 2_000_000);
-         Result.Maximum_Assessment_Findings :=
-           Natural_Value ("quality", "maximum_assessment_findings", 10_000);
-         Result.Maximum_Assessment_Bytes := Natural_Value ("quality", "maximum_assessment_bytes", 16_777_216);
-         if Result.Maximum_Quality_Projects > 100_000 then
-            raise Argument_Error with "quality.maximum_database_projects exceeds 100000";
-         elsif Result.Maximum_Quality_Runs > 10_000_000 then
-            raise Argument_Error with "quality.maximum_database_runs exceeds 10000000";
-         elsif Result.Maximum_Quality_Findings > 10_000_000 then
-            raise Argument_Error with "quality.maximum_database_findings exceeds 10000000";
-         end if;
-         if Result.Maximum_Assessment_Findings > 1_000_000 then
-            raise Argument_Error with "quality.maximum_assessment_findings exceeds 1000000";
-         elsif Result.Maximum_Assessment_Bytes > 268_435_456 then
-            raise Argument_Error with "quality.maximum_assessment_bytes exceeds 268435456";
-         end if;
-         if Severity = "info" then Result.Minimum_Severity := Info;
-         elsif Severity = "low" then Result.Minimum_Severity := Low;
-         elsif Severity = "medium" then Result.Minimum_Severity := Medium;
-         elsif Severity = "high" then Result.Minimum_Severity := High;
-         elsif Severity = "critical" then Result.Minimum_Severity := Critical;
-         else raise Argument_Error with "planning.minimum_severity is invalid";
-         end if;
-         Result.Maximum_Tasks_Per_Plan := Natural_Value ("planning", "maximum_tasks_per_plan", 100);
-         Result.Maximum_Findings_Per_Task := Natural_Value ("planning", "maximum_findings_per_task", 50);
-         if Result.Maximum_Tasks_Per_Plan > 10_000 then
-            raise Argument_Error with "planning.maximum_tasks_per_plan exceeds 10000";
-         elsif Result.Maximum_Findings_Per_Task > 10_000 then
-            raise Argument_Error with "planning.maximum_findings_per_task exceeds 10000";
-         end if;
-         Result.Allow_Investigation_Tasks :=
-           Boolean_Value ("planning", "allow_investigation_tasks", True);
-         Result.Require_Review := Boolean_Value ("planning", "require_review", True);
-         Result.Agent_Max_Context_Bytes := Natural_Value ("planning", "agent_max_context_bytes", 131_072);
-         Result.Agent_Max_File_Bytes := Natural_Value ("planning", "agent_max_file_bytes", 32_768);
-         Result.Agent_Max_Response_Bytes := Natural_Value ("planning", "agent_max_response_bytes", 131_072);
-         Result.Agent_Timeout_Seconds := Natural_Value ("planning", "agent_timeout_seconds", 60);
-         Result.Maximum_Output_Items := Natural_Value ("output", "maximum_output_items", 10_000);
-         Result.Maximum_History_Items := Natural_Value ("operations", "maximum_history_items", 100_000);
-         Result.Maximum_Persisted_Text_Bytes :=
-           Natural_Value ("operations", "maximum_persisted_text_bytes", 1_048_576);
-         Result.Maximum_Recovery_Operations :=
-           Natural_Value ("operations", "maximum_recovery_operations", 100);
-         if Result.Agent_Max_Context_Bytes < 1_024 or else Result.Agent_Max_Context_Bytes > 10_485_760 then
-            raise Argument_Error with "planning.agent_max_context_bytes must be between 1024 and 10485760";
-         elsif Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
+         Result.Maximum_Quality_Projects := Positive_Setting (Maximum_Quality_Projects);
+         Result.Maximum_Quality_Runs := Positive_Setting (Maximum_Quality_Runs);
+         Result.Maximum_Quality_Findings := Positive_Setting (Maximum_Quality_Findings);
+         Result.Maximum_Assessment_Findings := Positive_Setting (Maximum_Assessment_Findings);
+         Result.Maximum_Assessment_Bytes := Positive_Setting (Maximum_Assessment_Bytes);
+         Result.Minimum_Severity := Severity_Of (String_Setting (Minimum_Severity));
+         Result.Maximum_Tasks_Per_Plan := Positive_Setting (Maximum_Tasks_Per_Plan);
+         Result.Maximum_Findings_Per_Task := Positive_Setting (Maximum_Findings_Per_Task);
+         Result.Allow_Investigation_Tasks := Boolean_Setting (Allow_Investigation_Tasks);
+         Result.Require_Review := Boolean_Setting (Require_Review);
+         Result.Agent_Max_Context_Bytes := Positive_Setting (Agent_Max_Context_Bytes);
+         Result.Agent_Max_File_Bytes := Positive_Setting (Agent_Max_File_Bytes);
+         Result.Agent_Max_Response_Bytes := Positive_Setting (Agent_Max_Response_Bytes);
+         Result.Agent_Timeout_Seconds := Positive_Setting (Agent_Timeout_Seconds);
+         Result.Maximum_Recovery_Operations := Positive_Setting (Maximum_Recovery_Operations);
+         Result.Maximum_History_Items := Positive_Setting (Maximum_History_Items);
+         Result.Maximum_Persisted_Text_Bytes := Positive_Setting (Maximum_Persisted_Text_Bytes);
+         Result.Maximum_Output_Items := Positive_Setting (Maximum_Output_Items);
+         if Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
             raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
-         elsif Result.Agent_Max_Response_Bytes > 1_048_576 then
-            raise Argument_Error with "planning.agent_max_response_bytes exceeds 1048576";
-         elsif Result.Agent_Timeout_Seconds > 3_600 then
-            raise Argument_Error with "planning.agent_timeout_seconds exceeds 3600";
-         elsif Result.Maximum_Output_Items > 100_000 then
-            raise Argument_Error with "output.maximum_output_items exceeds 100000";
-         elsif Result.Maximum_History_Items > 1_000_000 then
-            raise Argument_Error with "operations.maximum_history_items exceeds 1000000";
-         elsif Result.Maximum_Persisted_Text_Bytes > 16_777_216 then
-            raise Argument_Error with "operations.maximum_persisted_text_bytes exceeds 16777216";
-         elsif Result.Maximum_Recovery_Operations > 10_000 then
-            raise Argument_Error with "operations.maximum_recovery_operations exceeds 10000";
          end if;
-         Result.Task_Kind := To_Unbounded_String (Kind);
-         Result.Require_Initialized := Boolean_Value ("workflow", "require_initialized_project", True);
+         Result.Task_Kind := To_Unbounded_String (String_Setting (Workflow_Task_Kind));
+         if Length (Result.Task_Kind) = 0 then
+            raise Argument_Error with "workflow.task_kind must not be empty";
+         end if;
+         Result.Require_Initialized := Boolean_Setting (Require_Initialized_Project);
          if not Result.Require_Initialized then
             raise Argument_Error with "workflow.require_initialized_project must be true";
          end if;
-         Result.Require_Fresh_Measurement :=
-           Boolean_Value ("verification", "require_fresh_measurement", True);
-         Result.Require_Same_Policy := Boolean_Value ("verification", "require_same_policy", True);
-         Result.Require_Same_Toolchain := Boolean_Value ("verification", "require_same_toolchain", False);
-         Result.Require_No_New_Critical :=
-           Boolean_Value ("verification", "require_no_new_critical_findings", True);
-         if Format = "terminal" then Result.Format := Terminal_Format;
-         elsif Format = "json" then Result.Format := JSON_Format;
-         else raise Argument_Error with "output.format must be terminal or json";
-         end if;
-         if Color = "auto" then Result.Color := Color_Auto;
-         elsif Color = "always" then Result.Color := Color_Always;
-         elsif Color = "never" then Result.Color := Color_Never;
-         else raise Argument_Error with "output.color must be auto, always, or never";
-         end if;
-         end;
+         Result.Require_Fresh_Measurement := Boolean_Setting (Require_Fresh_Measurement);
+         Result.Require_Same_Policy := Boolean_Setting (Require_Same_Policy);
+         Result.Require_Same_Toolchain := Boolean_Setting (Require_Same_Toolchain);
+         Result.Require_No_New_Critical := Boolean_Setting (Require_No_New_Critical_Findings);
+         Result.Format := Format_Of (String_Setting (Output_Format_Setting));
+         Result.Color := Color_Of (String_Setting (Output_Color));
       end;
       return Result;
    end Load;
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
 
-   function Image (Item : Settings) return String is
-      function Lower (Text : String) return String is (Ada.Characters.Handling.To_Lower (Text));
+   function Escape_TOML (Text : String) return String is
+      Hex    : constant String := "0123456789abcdef";
+      Result : UString;
    begin
-      return
-        "schema_version = 1" & LF &
-        "[quality]" & LF &
-        "database = """ & To_String (Item.Quality_Database) & """" & LF &
-        "selection = ""latest_completed""" & LF &
-        "maximum_database_projects =" & Positive'Image (Item.Maximum_Quality_Projects) & LF &
-        "maximum_database_runs =" & Positive'Image (Item.Maximum_Quality_Runs) & LF &
-        "maximum_database_findings =" & Positive'Image (Item.Maximum_Quality_Findings) & LF &
-        "maximum_assessment_findings =" & Positive'Image (Item.Maximum_Assessment_Findings) & LF &
-        "maximum_assessment_bytes =" & Positive'Image (Item.Maximum_Assessment_Bytes) & LF &
-        "[planning]" & LF &
-        "minimum_severity = """ & Lower (Severity_Level'Image (Item.Minimum_Severity)) & """" & LF &
-        "maximum_tasks_per_plan =" & Positive'Image (Item.Maximum_Tasks_Per_Plan) & LF &
-        "maximum_findings_per_task =" & Positive'Image (Item.Maximum_Findings_Per_Task) & LF &
-        "allow_investigation_tasks = " & Boolean_Image (Item.Allow_Investigation_Tasks) & LF &
-        "require_review = " & Boolean_Image (Item.Require_Review) & LF &
-        "agent_max_context_bytes =" & Positive'Image (Item.Agent_Max_Context_Bytes) & LF &
-        "agent_max_file_bytes =" & Positive'Image (Item.Agent_Max_File_Bytes) & LF &
-        "agent_max_response_bytes =" & Positive'Image (Item.Agent_Max_Response_Bytes) & LF &
-        "agent_timeout_seconds =" & Positive'Image (Item.Agent_Timeout_Seconds) & LF &
-        "[operations]" & LF &
-        "maximum_recovery_operations =" & Positive'Image (Item.Maximum_Recovery_Operations) & LF &
-        "maximum_history_items =" & Positive'Image (Item.Maximum_History_Items) & LF &
-        "maximum_persisted_text_bytes =" &
-          Positive'Image (Item.Maximum_Persisted_Text_Bytes) & LF &
-        "[workflow]" & LF &
-        "task_kind = """ & To_String (Item.Task_Kind) & """" & LF &
-        "publication = ""candidate""" & LF &
-        "require_initialized_project = " & Boolean_Image (Item.Require_Initialized) & LF &
-        "[verification]" & LF &
-        "require_fresh_measurement = " & Boolean_Image (Item.Require_Fresh_Measurement) & LF &
-        "require_same_policy = " & Boolean_Image (Item.Require_Same_Policy) & LF &
-        "require_same_toolchain = " & Boolean_Image (Item.Require_Same_Toolchain) & LF &
-        "require_no_new_critical_findings = " & Boolean_Image (Item.Require_No_New_Critical) & LF &
-        "[output]" & LF &
-        "maximum_output_items =" & Positive'Image (Item.Maximum_Output_Items) & LF &
-        "format = """ & (if Item.Format = Terminal_Format then "terminal" else "json") & """" & LF &
-        "color = """ &
-          (case Item.Color is when Color_Auto => "auto", when Color_Always => "always", when Color_Never => "never") &
-          """" & LF;
+      for C of Text loop
+         case C is
+            when '"' =>
+               Append (Result, '\');
+               Append (Result, '"');
+            when '\' => Append (Result, "\\");
+            when ASCII.BS => Append (Result, "\b");
+            when ASCII.HT => Append (Result, "\t");
+            when ASCII.LF => Append (Result, "\n");
+            when ASCII.FF => Append (Result, "\f");
+            when ASCII.CR => Append (Result, "\r");
+            when others =>
+               if Character'Pos (C) < 32 or else Character'Pos (C) = 127 then
+                  Append
+                    (Result,
+                     "\u00" & Hex (Character'Pos (C) / 16 + 1) & Hex (Character'Pos (C) mod 16 + 1));
+               else
+                  Append (Result, C);
+               end if;
+         end case;
+      end loop;
+      return To_String (Result);
+   end Escape_TOML;
+
+   function Raw_Value (Item : Settings; Id : Setting_Id) return String is
+   begin
+      case Id is
+         when Schema_Version => return "1";
+         when Quality_Database => return To_String (Item.Quality_Database);
+         when Quality_Selection => return "latest_completed";
+         when Maximum_Quality_Projects => return Number (Item.Maximum_Quality_Projects);
+         when Maximum_Quality_Runs => return Number (Item.Maximum_Quality_Runs);
+         when Maximum_Quality_Findings => return Number (Item.Maximum_Quality_Findings);
+         when Maximum_Assessment_Findings => return Number (Item.Maximum_Assessment_Findings);
+         when Maximum_Assessment_Bytes => return Number (Item.Maximum_Assessment_Bytes);
+         when Minimum_Severity =>
+            return Ada.Characters.Handling.To_Lower (Severity_Level'Image (Item.Minimum_Severity));
+         when Maximum_Tasks_Per_Plan => return Number (Item.Maximum_Tasks_Per_Plan);
+         when Maximum_Findings_Per_Task => return Number (Item.Maximum_Findings_Per_Task);
+         when Allow_Investigation_Tasks => return Boolean_Image (Item.Allow_Investigation_Tasks);
+         when Require_Review => return Boolean_Image (Item.Require_Review);
+         when Agent_Max_Context_Bytes => return Number (Item.Agent_Max_Context_Bytes);
+         when Agent_Max_File_Bytes => return Number (Item.Agent_Max_File_Bytes);
+         when Agent_Max_Response_Bytes => return Number (Item.Agent_Max_Response_Bytes);
+         when Agent_Timeout_Seconds => return Number (Item.Agent_Timeout_Seconds);
+         when Maximum_Recovery_Operations => return Number (Item.Maximum_Recovery_Operations);
+         when Maximum_History_Items => return Number (Item.Maximum_History_Items);
+         when Maximum_Persisted_Text_Bytes => return Number (Item.Maximum_Persisted_Text_Bytes);
+         when Workflow_Task_Kind => return To_String (Item.Task_Kind);
+         when Workflow_Publication => return "candidate";
+         when Require_Initialized_Project => return Boolean_Image (Item.Require_Initialized);
+         when Require_Fresh_Measurement => return Boolean_Image (Item.Require_Fresh_Measurement);
+         when Require_Same_Policy => return Boolean_Image (Item.Require_Same_Policy);
+         when Require_Same_Toolchain => return Boolean_Image (Item.Require_Same_Toolchain);
+         when Require_No_New_Critical_Findings => return Boolean_Image (Item.Require_No_New_Critical);
+         when Maximum_Output_Items => return Number (Item.Maximum_Output_Items);
+         when Output_Format_Setting => return (if Item.Format = Terminal_Format then "terminal" else "json");
+         when Output_Color =>
+            return
+              (case Item.Color is
+                  when Color_Auto => "auto",
+                  when Color_Always => "always",
+                  when Color_Never => "never");
+      end case;
+   end Raw_Value;
+
+   function Image (Item : Settings) return String is
+      Result       : UString;
+      Last_Section : UString;
+   begin
+      for Id in Setting_Id loop
+         declare
+            Definition : Setting_Descriptor renames Definitions (Id);
+            Section    : constant String := To_String (Definition.Section);
+            Raw        : constant String := Raw_Value (Item, Id);
+            Rendered   : constant String :=
+              (if Definition.Kind in String_Value | Enum_Value then '"' & Escape_TOML (Raw) & '"' else Raw);
+         begin
+            if Section /= To_String (Last_Section) then
+               Append (Result, "[" & Section & "]" & LF);
+               Last_Section := Definition.Section;
+            end if;
+            Append (Result, To_String (Definition.Name) & " = " & Rendered & LF);
+         end;
+      end loop;
+      return To_String (Result);
    end Image;
 end Improve.Config;
-

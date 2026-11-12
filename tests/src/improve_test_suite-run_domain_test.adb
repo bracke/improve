@@ -29,6 +29,16 @@ begin
                Improve.Stable_Digest ("improve") = Improve.Stable_Digest ("improve") and then
                Improve.Stable_Digest ("improve") /= Improve.Stable_Digest ("Improve"),
                "SHA-256 stable digest is incorrect or nondeterministic");
+            declare
+               Left  : constant Improve.Model.UString_Vectors.Vector :=
+                 [To_Unbounded_String ("a|b"), To_Unbounded_String ("c")];
+               Right : constant Improve.Model.UString_Vectors.Vector :=
+                 [To_Unbounded_String ("a"), To_Unbounded_String ("b|c")];
+            begin
+               Assert
+                 (Improve.Model.Canonical_Key (Left) /= Improve.Model.Canonical_Key (Right),
+                  "canonical component encoding lost a field boundary");
+            end;
          when Project_Discovery =>
             declare
                Data       : constant Fixture := Build_Fixture ("projects");
@@ -561,6 +571,20 @@ begin
                Values.Append (First);
                Values.Append (Second);
                Expect_Rejection (Values, "dependency cycle");
+
+               Values.Clear;
+               for Index in 1 .. 10_000 loop
+                  declare
+                     Spec : Improve.Model.Task_Specification := Make_Task ("IMP-LONG-" & Id_Image (Index));
+                  begin
+                     if Index > 1 then
+                        Spec.Dependencies.Append
+                          (To_Unbounded_String ("IMP-LONG-" & Id_Image (Index - 1)));
+                     end if;
+                     Values.Append (Spec);
+                  end;
+               end loop;
+               Improve.Dependencies.Validate (Values);
             end;
          when Dense_Contract_Fingerprints =>
             declare

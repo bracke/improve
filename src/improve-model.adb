@@ -3,6 +3,17 @@ with Ada.Strings.Hash;
 
 package body Improve.Model is
    use Ada.Strings.Unbounded;
+
+   function Canonical_Key (Values : UString_Vectors.Vector) return String is
+      Result : Unbounded_String;
+   begin
+      Append (Result, Natural'Image (Natural (Values.Length)) & ":");
+      for Value of Values loop
+         Append (Result, Natural'Image (Length (Value)) & ":" & To_String (Value));
+      end loop;
+      return To_String (Result);
+   end Canonical_Key;
+
    function Image (Item : Candidate_Kind) return String is
      (case Item is
          when Remediation_Candidate => "remediation",

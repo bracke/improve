@@ -34,8 +34,9 @@ package body Improve.Planner is
          Boolean_Image (Settings.Require_Review)));
 
    function Group_Key (Item : Improve.Model.Finding_Reference) return String is
-     (Ada_Quality.Types.Image (Item.Indicator) & "|" & Improve.Model.Image (Item.Kind) & "|" &
-      To_String (Item.Rule) & "|" & To_String (Item.Semantic_Subject));
+     (Improve.Model.Canonical_Key
+        ([To_Unbounded_String (Ada_Quality.Types.Image (Item.Indicator)),
+          To_Unbounded_String (Improve.Model.Image (Item.Kind)), Item.Rule, Item.Semantic_Subject]));
 
    function Priority_Of (Item : Improve.Model.Finding_Reference) return Improve.Model.Priority is
    begin
