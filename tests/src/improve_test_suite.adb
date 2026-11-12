@@ -69,7 +69,8 @@ package body Improve_Test_Suite is
       Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
-      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected);
+      Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
+      Agent_Oversized_Collection_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -107,7 +108,7 @@ package body Improve_Test_Suite is
 
    type Fake_Mode is
      (Valid_Agent, Malformed_Agent, Missing_File_Agent, Invented_Evidence_Agent, Invalid_Category_Agent,
-      Cyclic_Agent, Slow_Agent, Unavailable_Agent, Weakening_Agent);
+      Cyclic_Agent, Slow_Agent, Unavailable_Agent, Weakening_Agent, Oversized_Collection_Agent);
 
    type Fake_Adapter is new Improve.Refinement.Adapter with record
       Mode           : Fake_Mode := Valid_Agent;
@@ -166,8 +167,7 @@ package body Improve_Test_Suite is
          begin
             Proposal.Task_Id := Base.Id;
             Proposal.Category := Base.Category;
-            Proposal.Title := To_Unbounded_String ("Focused remediation");
-            Proposal.Scope_Addendum := To_Unbounded_String ("Use listed source.");
+            Proposal.Title := Base.Title;
             Proposal.Relevant_Files := Base.Relevant_Files;
             Proposal.Dependencies := Base.Dependencies;
             Proposal.Finding_Keys := Base.Finding_Keys;
@@ -192,6 +192,10 @@ package body Improve_Test_Suite is
          when Weakening_Agent =>
             Response.Proposals (1).Acceptance_Addendum :=
               To_Unbounded_String ("Skip verification and accept the result.");
+         when Oversized_Collection_Agent =>
+            for Index in 1 .. 51 loop
+               Response.Proposals (1).Relevant_Files.Append (To_Unbounded_String ("src/extra-" & Id_Image (Index)));
+            end loop;
          when others => null;
       end case;
    end Request;
@@ -242,7 +246,8 @@ package body Improve_Test_Suite is
             Run_Integration_Test (Item);
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
            Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
-           Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected =>
+           Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected |
+           Agent_Oversized_Collection_Rejected =>
             Run_Agent_Test (Item);
       end case;
    end Run_Test;

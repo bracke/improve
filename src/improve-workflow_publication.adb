@@ -99,8 +99,7 @@ package body Improve.Workflow_Publication is
       "Dependency binding: " & Binding & ASCII.LF &
       (if Predecessors.Is_Empty then "" else "Supersedes: " & Join (Predecessors) & ASCII.LF) &
       "Goal: " & To_String (Spec.Goal) & ASCII.LF &
-      "Problem: " & To_String (Spec.Problem) & ASCII.LF &
-      "Evidence:" & ASCII.LF & To_String (Spec.Evidence) & ASCII.LF &
+      "Problem and evidence: retained as untrusted data in Improve state for " & To_String (Spec.Id) & ASCII.LF &
       "Relevant files: " & Join (Spec.Relevant_Files) & ASCII.LF &
       "Scope: " & To_String (Spec.Scope) & ASCII.LF &
       "Out of scope: " & To_String (Spec.Out_Of_Scope) & ASCII.LF &

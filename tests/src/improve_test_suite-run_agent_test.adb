@@ -32,6 +32,19 @@ begin
                   "agent context did not include safely rooted source evidence");
             end;
             declare
+               Large : Improve.Model.Plan_Revision := Draft;
+            begin
+               Large.Findings (Large.Findings.First_Index).Evidence := To_Unbounded_String ([1 .. 8_000 => 'x']);
+               declare
+                  Context : constant Improve.Refinement.Planning_Context :=
+                    Improve.Refinement.Build_Context (Large, Settings);
+               begin
+                  Assert
+                    (not Context.Draft_Tasks.Is_Empty and then Context.Evidence_Truncated,
+                     "evidence exhausted context before a complete deterministic task was retained");
+               end;
+            end;
+            declare
                Path     : constant String := To_String (Data.Directory) & "/invalid-agent.toml";
                Rejected : Boolean := False;
             begin
@@ -70,8 +83,8 @@ begin
                Provider.Saw_Source,
                "refined plan lost provenance or bounded source context");
             Assert
-              (To_String (Result.Plan.Tasks.First_Element.Title) = "Focused remediation",
-               "agent title refinement was not applied");
+              (Result.Plan.Tasks.First_Element.Title = Draft.Tasks.First_Element.Title,
+               "agent refinement changed deterministic task text");
             Assert
               (Ada.Strings.Fixed.Index
                  (To_String (Result.Plan.Tasks.First_Element.Acceptance),
@@ -116,6 +129,9 @@ begin
          Check_Agent_Fallback (Unavailable_Agent, Improve.Refinement.Unavailable_Fallback, "unavailable");
       when Agent_Weakening_Rejected =>
          Check_Agent_Fallback (Weakening_Agent, Improve.Refinement.Rejected_Fallback, "weakening");
+      when Agent_Oversized_Collection_Rejected =>
+         Check_Agent_Fallback
+           (Oversized_Collection_Agent, Improve.Refinement.Rejected_Fallback, "oversized_collection");
       when others =>
          raise Program_Error with "non-agent case routed to the agent test subunit";
    end case;

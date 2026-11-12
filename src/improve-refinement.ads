@@ -88,15 +88,15 @@ package Improve.Refinement is
       Confidence              : Natural range 0 .. 100 := 0;
       Preserves_Quality_Policy : Boolean := False;
    end record;
-   --  Advisory additions to one deterministic task. Evidence identity,
-   --  category, and mandatory acceptance remain validator-controlled.
+   --  Structured refinement of one deterministic task. Execution text, evidence identity, category, and mandatory
+   --  acceptance remain validator-controlled; addendum fields are reserved and must be empty.
    --  @field Task_Id Target Improve task identity.
    --  @field Category Proposed category, which must remain compatible.
-   --  @field Title Refined title.
-   --  @field Goal_Addendum Additional goal detail.
-   --  @field Scope_Addendum Additional bounded scope.
-   --  @field Acceptance_Addendum Additional acceptance criteria.
-   --  @field Verification_Addendum Additional verification detail.
+   --  @field Title Deterministic title, which must remain unchanged.
+   --  @field Goal_Addendum Reserved; must be empty.
+   --  @field Scope_Addendum Reserved; must be empty.
+   --  @field Acceptance_Addendum Reserved; must be empty.
+   --  @field Verification_Addendum Reserved; must be empty.
    --  @field Relevant_Files Proposed authorized source paths.
    --  @field Dependencies Proposed task prerequisites.
    --  @field Finding_Keys Referenced evidence identities.

@@ -60,9 +60,17 @@ procedure Improve_Coverage is
                begin
                   if Closing > Text'First + Prefix'Length then
                      declare
+                        Parent : constant String :=
+                          Text (Text'First + Prefix'Length .. Closing - 1);
+                        Last_Dot : constant Natural :=
+                          Ada.Strings.Fixed.Index
+                            (Parent, ".", Going => Ada.Strings.Backward);
                         Result : String :=
                           Ada.Characters.Handling.To_Lower
-                            (Text (Text'First + Prefix'Length .. Closing - 1));
+                            (if Last_Dot > Parent'First and then
+                                Ada.Strings.Fixed.Count (Parent, ".") > 1
+                             then Parent (Parent'First .. Last_Dot - 1)
+                             else Parent);
                      begin
                         for Index in Result'Range loop
                            if Result (Index) = '.' then

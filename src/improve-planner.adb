@@ -1,6 +1,9 @@
 with Ada.Calendar;
 with Ada.Containers;
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Vectors;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Checks;
 with Ada_Quality.Types;
@@ -20,6 +23,17 @@ package body Improve.Planner is
    end record;
 
    package Group_Vectors is new Ada.Containers.Vectors (Positive, Group);
+
+   package Group_Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
 
@@ -74,8 +88,8 @@ package body Improve.Planner is
         (if Aggregate_Coverage then Improve.Model.Investigation_Candidate else First.Kind);
       Identity : constant String := "IMP-DRAFT-" & Stable_Digest (To_String (Item.Key) & Positive'Image (Sequence));
       Result   : Improve.Model.Task_Specification;
-      Evidence : Unbounded_String;
       Priority : Improve.Model.Priority := Priority_Of (First);
+      Files    : String_Sets.Set;
    begin
       Result.Id := To_Unbounded_String (Identity);
       Result.Title :=
@@ -86,7 +100,9 @@ package body Improve.Planner is
         (if Aggregate_Coverage
          then To_Unbounded_String ("Locate source-level coverage evidence before proposing focused test changes.")
          else Strategy.Goal);
-      Result.Problem := First.Message;
+      Result.Problem := To_Unbounded_String
+        ("Ada Quality reported an " & Ada_Quality.Types.Image (First.Indicator) &
+         " deficiency. Full diagnostic text remains untrusted evidence in Improve state.");
       Result.Scope :=
         (if Length (First.Relative_Path) > 0
          then To_Unbounded_String
@@ -107,21 +123,18 @@ package body Improve.Planner is
       Result.Requires_Review := Settings.Require_Review;
       Result.Kind := Kind;
       for Finding of Item.Findings loop
-         if Length (Evidence) > 0 then Append (Evidence, Character'Val (10)); end if;
-         Append
-           (Evidence,
-            Ada_Quality.Types.Image (Finding.Indicator) & " [" & To_String (Finding.Fingerprint) & "]: " &
-            To_String (Finding.Message));
          Result.Finding_Keys.Append (Finding.Fingerprint);
          if Length (Finding.Relative_Path) > 0 and then
-           (Result.Relevant_Files.Is_Empty or else
-            Result.Relevant_Files.Last_Element /= Finding.Relative_Path)
+           not Files.Contains (To_String (Finding.Relative_Path))
          then
+            Files.Insert (To_String (Finding.Relative_Path));
             Result.Relevant_Files.Append (Finding.Relative_Path);
          end if;
          Priority := Stronger (Priority, Priority_Of (Finding));
       end loop;
-      Result.Evidence := Evidence;
+      Result.Evidence := To_Unbounded_String
+        (Natural'Image (Natural (Item.Findings.Length)) &
+         " linked finding reference(s) are retained in the Improve-owned plan; diagnostic text is not executable.");
       Result.Task_Priority := Priority;
       return Result;
    end Make_Task;
@@ -132,6 +145,7 @@ package body Improve.Planner is
       Settings : Improve.Config.Settings;
       Working_Source_Id : String := "") return Improve.Model.Plan_Revision is
       Groups : Group_Vectors.Vector;
+      Group_Indexes : Group_Index_Maps.Map;
       Result : Improve.Model.Plan_Revision;
       Config_Id : constant String := Configuration_Fingerprint (Settings);
       Current_Measured_Source : constant String :=
@@ -143,30 +157,26 @@ package body Improve.Planner is
       end if;
       for Finding of Findings loop
          declare
-            Key   : constant String := Group_Key (Finding);
-            Added : Boolean := False;
+            Key : constant String := Group_Key (Finding);
          begin
-            for Index in 1 .. Natural (Groups.Length) loop
-               if To_String (Groups (Index).Key) = Key and then
-                 Groups (Index).Findings.Length < Ada.Containers.Count_Type (Settings.Maximum_Findings_Per_Task)
-               then
-                  Groups (Index).Findings.Append (Finding);
-                  Added := True;
-                  exit;
+            if Group_Indexes.Contains (Key) and then
+              Groups (Group_Indexes.Element (Key)).Findings.Length <
+                Ada.Containers.Count_Type (Settings.Maximum_Findings_Per_Task)
+            then
+               Groups (Group_Indexes.Element (Key)).Findings.Append (Finding);
+            else
+               if Groups.Length >= Ada.Containers.Count_Type (Settings.Maximum_Tasks_Per_Plan) then
+                  raise Data_Error with "planned task count exceeds planning.maximum_tasks_per_plan";
                end if;
-            end loop;
-            if not Added then
                declare New_Group : Group; begin
                   New_Group.Key := To_Unbounded_String (Key);
                   New_Group.Findings.Append (Finding);
                   Groups.Append (New_Group);
+                  Group_Indexes.Include (Key, Groups.Last_Index);
                end;
             end if;
          end;
       end loop;
-      if Groups.Length > Ada.Containers.Count_Type (Settings.Maximum_Tasks_Per_Plan) then
-         raise Data_Error with "planned task count exceeds planning.maximum_tasks_per_plan";
-      end if;
       Result.Project := Selected.Project;
       Result.Baseline := Selected.Baseline;
       Result.Working_Source_Id := To_Unbounded_String

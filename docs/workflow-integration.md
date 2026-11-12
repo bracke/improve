@@ -16,7 +16,9 @@ explicit `workflow.task_kind` must exist. `auto` succeeds only when exactly one 
 rejected without a commit.
 
 Improve maps title, selected kind, numeric priority, acceptance, translated dependencies, and bounded background notes
-to core harness fields. Ada Quality indicator IDs remain evidence in notes and are never inserted as requirement IDs.
+to core harness fields. Raw Ada Quality diagnostic text remains in Improve-owned state and is not copied into agent
+instructions. Indicator and finding identities are never inserted as harness requirement IDs.
+
 Any project-required field that cannot be supplied is rejected by the harness before the transaction commits.
 
 Priority mapping is deterministic: critical 100, high 75, normal 50, and low 25. The harness remains authoritative for
@@ -32,12 +34,13 @@ improve:<project-path-digest>:task:<improve-task-id>:contract:<task-contract-dig
 
 Before staging work, publication scans native task definitions for that exact authenticated provenance and compares the
 complete title, kind, priority, acceptance, notes, and native dependency definition. A matching task is adopted, not
-recreated. The notes preserve the goal, problem, evidence, relevant files, scope, exclusions, requirements, verification
-instructions, and canonical contract digest. This handles the non-atomic boundary where the harness commit succeeded
-but recording the mapping in Improve state failed. Improve records the contract-qualified `IMP-` to `TASK-` mapping in
-a separate database transaction after the harness commit; conflicting reuse is rejected. A logical Improve task may
-continue across revisions, but a changed execution contract receives a distinct native origin and replacement task.
-The replacement notes name every earlier native predecessor with a `Supersedes:` relationship.
+recreated. Notes preserve trusted execution fields, the canonical contract digest, and the Improve task that owns the
+full problem and evidence records; raw diagnostic messages are deliberately omitted. This handles the non-atomic
+boundary where the harness commit succeeded but recording the mapping in Improve state failed. Improve records the
+contract-qualified `IMP-` to `TASK-` mapping in a separate database transaction after the harness commit; conflicting
+reuse is rejected. A logical Improve task may continue across revisions, but a changed execution contract receives a
+distinct native origin and replacement task. Replacement notes name every earlier native predecessor with a
+`Supersedes:` relationship.
 
 Replacement is an explicit harness lifecycle operation authorized by the approved `apply`. Candidate predecessors move
 to `rejected`; accepted, blocked, and failed predecessors move to `cancelled`; cancelled and rejected predecessors stay
