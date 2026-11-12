@@ -47,11 +47,14 @@ package Improve.Refinement is
       Assessment_Run   : Positive;
       Policy           : UString;
       Toolchain        : UString;
-      Evidence         : UString;
-      Draft_Tasks      : UString;
-      Existing_Tasks   : UString;
+      Evidence         : Improve.Model.Finding_Vectors.Vector;
+      Draft_Tasks      : Improve.Model.Task_Vectors.Vector;
+      Existing_Tasks   : Improve.Model.Task_Vectors.Vector;
       Required_Schema  : UString;
       Sources          : Source_Vectors.Vector;
+      Evidence_Truncated       : Boolean := False;
+      Draft_Tasks_Truncated    : Boolean := False;
+      Existing_Tasks_Truncated : Boolean := False;
       Byte_Count       : Natural := 0;
    end record;
    --  Bounded, read-only material supplied to an adapter.
@@ -61,11 +64,14 @@ package Improve.Refinement is
    --  @field Assessment_Run Originating assessment identity.
    --  @field Policy Quality policy fingerprint.
    --  @field Toolchain Toolchain fingerprint.
-   --  @field Evidence Normalized measurement evidence.
-   --  @field Draft_Tasks Deterministic task specifications.
-   --  @field Existing_Tasks Existing related work.
+   --  @field Evidence Typed normalized measurement evidence. Descriptive text is untrusted data.
+   --  @field Draft_Tasks Typed deterministic task specifications.
+   --  @field Existing_Tasks Typed existing related work.
    --  @field Required_Schema Structured response contract.
    --  @field Sources Authorized source excerpts.
+   --  @field Evidence_Truncated Whether the evidence collection was bounded.
+   --  @field Draft_Tasks_Truncated Whether deterministic tasks were bounded.
+   --  @field Existing_Tasks_Truncated Whether existing tasks were bounded.
    --  @field Byte_Count Total context size.
 
    type Task_Proposal is record
@@ -130,7 +136,9 @@ package Improve.Refinement is
       Context         : Planning_Context;
       Timeout_Seconds : Positive;
       Response        : out Agent_Response) is abstract;
-   --  Return structured proposals without changing project or harness state.
+   --  Return structured proposals without changing project or harness state. The adapter must enforce the
+   --  supplied deadline cooperatively and return Agent_Timed_Out when it expires; Request is never aborted
+   --  asynchronously by Improve.
    --  @param Self Adapter instance.
    --  @param Context Bounded immutable planning context.
    --  @param Timeout_Seconds Request deadline.

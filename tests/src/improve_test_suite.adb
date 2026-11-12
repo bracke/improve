@@ -149,7 +149,10 @@ package body Improve_Test_Suite is
             Response.Status := Improve.Refinement.Malformed_Response;
             Response.Diagnostic := To_Unbounded_String ("fixture malformed response");
             return;
-         when Slow_Agent => delay 2.0;
+         when Slow_Agent =>
+            Response.Status := Improve.Refinement.Agent_Timed_Out;
+            Response.Diagnostic := To_Unbounded_String ("fixture adapter deadline expired");
+            return;
          when Unavailable_Agent =>
             Response.Status := Improve.Refinement.Agent_Unavailable;
             Response.Diagnostic := To_Unbounded_String ("fixture agent unavailable");
@@ -225,11 +228,21 @@ package body Improve_Test_Suite is
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
       case Item.Id is
-         when Catalog .. Dense_Contract_Fingerprints =>
+         when Catalog | Digest | Project_Discovery | Latest_Completed | Explicit_Incomplete_Rejected |
+           Normalize_Findings | Unknown_Project_Rejected | Safe_Path_Validation | Projects_CLI | Findings_CLI |
+           Complete_Strategy_Registry | Deterministic_Planner | Planner_Grouping_And_Splitting |
+           Plan_Fingerprint_Severity_Sensitive | Plan_Fingerprint_Ignores_Unrelated_Snapshot |
+           Dependency_Cycle_Rejected | Dense_Contract_Fingerprints =>
             Run_Domain_Test (Item);
-         when Plan_Dry_Run_CLI .. Publication_Policy_Change_Rejected =>
+         when Plan_Dry_Run_CLI | Persistent_Plan_Roundtrip | Repeated_Plan_Idempotent |
+           Persisted_Dependency_Translation | Read_Only_Does_Not_Initialize | Storage_Finalizes_On_Error |
+           Plan_Approval_Required | Current_Source_Staleness_Detected | Historical_Task_Lookup |
+           Measurement_Source_Mismatch_Blocks_Plan | Quality_Database_Identity_Rejected |
+           Quality_Database_Histories_Isolated | Publication_Policy_Change_Rejected =>
             Run_Integration_Test (Item);
-         when Agent_Context_Bounded .. Agent_Weakening_Rejected =>
+         when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
+           Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
+           Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected =>
             Run_Agent_Test (Item);
       end case;
    end Run_Test;

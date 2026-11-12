@@ -29,8 +29,9 @@ the registered project root so their own transactions do not invalidate authorit
 
 ## Optional refinement
 
-`Improve.Refinement.Adapter` is the only agent-planning boundary. It receives bounded `Planning_Context` and returns
-typed proposals under a deadline. The validator, not the adapter, controls evidence identity, quality policy, paths,
-dependencies, task limits, and persistence. The interactive model_runner `/work` workflow is not an automation API and
-is never invoked for planning.
+`Improve.Refinement.Adapter` is the only agent-planning boundary. It receives bounded `Planning_Context` with typed
+evidence and task collections, and returns typed proposals under a cooperative deadline. Diagnostic and source text
+remain untrusted data. The validator, not the adapter, controls evidence identity, quality policy, paths, dependencies,
+task limits, and persistence. The interactive model_runner `/work` workflow is not an automation API and is never
+invoked for planning.
 

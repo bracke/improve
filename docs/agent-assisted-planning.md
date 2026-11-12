@@ -4,10 +4,11 @@ Agent refinement is optional and advisory. `Improve.Refinement` first builds a d
 explicit noninteractive adapter bounded read-only context and accepts only typed `Task_Proposal` values. No adapter is
 required for normal planning, and every adapter failure returns the unchanged deterministic draft.
 
-The context contains project identity, assessment and policy fingerprints, normalized evidence, deterministic task
-summaries, optional existing-task summaries, the required proposal schema, and no-follow source excerpts. Source reads
+The context contains project identity, assessment and policy fingerprints, typed normalized evidence, typed
+deterministic and existing-task specifications, the required proposal schema, and no-follow source excerpts.
+Diagnostic and source text are explicitly untrusted data rather than a line-oriented instruction stream. Source reads
 use `Hostkit.Fs.Read_Beneath`; paths outside the registered project, path traversal, and symbolic links are never read.
-Context, individual file, response, and wall-clock limits come from the validated planning configuration.
+Context, individual file, response, and deadline limits come from the validated planning configuration.
 
 The validator preserves deterministic evidence and acceptance intent. A proposal is rejected if it:
 
@@ -25,6 +26,7 @@ fingerprint and records the adapter identity in planner provenance before normal
 
 The current model_runner framework does not expose a lightweight “refine this plan” call independent of model session
 and harness execution. Improve therefore does not shell out or repurpose `/work`; a future model-backed integration
-must implement the typed adapter directly and use a documented noninteractive model API. The adapter call is enclosed
-by Improve's wall-clock deadline. Unavailable, timed-out, malformed, exceptional, and rejected responses all preserve
-the deterministic draft.
+must implement the typed adapter directly and use a documented noninteractive model API. Each adapter must enforce the
+supplied deadline cooperatively and report `Agent_Timed_Out`; Improve never asynchronously aborts adapter code while it
+may own external resources. Unavailable, timed-out, malformed, exceptional, and rejected responses all preserve the
+deterministic draft.

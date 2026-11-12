@@ -37,6 +37,8 @@ package body Improve.Config is
    end record;
 
    type Descriptor_Array is array (Setting_Id) of Setting_Descriptor;
+   type Entry_Array is array (Setting_Id) of UString;
+   type Presence_Array is array (Setting_Id) of Boolean;
 
    function Define
      (Section, Name, Default : String;
@@ -77,6 +79,20 @@ package body Improve.Config is
       Define ("output", "maximum_output_items", "10000", Positive_Value, 1, 100_000),
       Define ("output", "format", "terminal", Enum_Value),
       Define ("output", "color", "auto", Enum_Value)];
+
+   package TOML_Codec is
+      procedure Parse
+        (Text    : String;
+         Entries : out Entry_Array;
+         Present : out Presence_Array);
+
+      function String_Setting
+        (Id      : Setting_Id;
+         Entries : Entry_Array;
+         Present : Presence_Array) return String;
+
+      function Escape (Text : String) return String;
+   end TOML_Codec;
 
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
@@ -121,6 +137,8 @@ package body Improve.Config is
    function Default_Boolean (Id : Setting_Id) return Boolean is
      (Default_String (Id) = "true");
 
+   package body TOML_Codec is separate;
+
    function Severity_Of (Value : String) return Severity_Level is
    begin
       if Value = "info" then return Info;
@@ -148,6 +166,23 @@ package body Improve.Config is
       else raise Argument_Error with "output.color must be auto, always, or never";
       end if;
    end Color_Of;
+
+   procedure Validate_Operational_Text
+     (Name           : String;
+      Value          : String;
+      Maximum_Length : Positive) is
+   begin
+      if Value = "" then
+         raise Argument_Error with Name & " must not be empty";
+      elsif Value'Length > Maximum_Length then
+         raise Argument_Error with Name & " exceeds its maximum length";
+      end if;
+      for Item of Value loop
+         if Character'Pos (Item) < 32 or else Character'Pos (Item) = 127 then
+            raise Argument_Error with Name & " contains a control character";
+         end if;
+      end loop;
+   end Validate_Operational_Text;
 
    function Read_Configuration (Path : String) return String is
       Full    : constant String := Ada.Directories.Full_Name (Path);
@@ -217,196 +252,14 @@ package body Improve.Config is
       end if;
       declare
          Text : constant String := Read_Configuration (Path);
-         type Entry_Array is array (Setting_Id) of UString;
-         type Presence_Array is array (Setting_Id) of Boolean;
          Entries : Entry_Array;
          Present : Presence_Array := [others => False];
-
-         procedure Validate_Document is
-            Current_Section : UString;
-            Start           : Natural := Text'First;
-         begin
-            while Start <= Text'Last loop
-               declare
-                  Stop : Natural := Start;
-               begin
-                  while Stop <= Text'Last and then Text (Stop) /= LF loop
-                     Stop := Stop + 1;
-                  end loop;
-                  declare
-                     Last : Natural := Stop - 1;
-                  begin
-                     if Last >= Start and then Text (Last) = Character'Val (13) then
-                        Last := Last - 1;
-                     end if;
-                     declare
-                        Line : constant String :=
-                          (if Last < Start then ""
-                           else Ada.Strings.Fixed.Trim (Text (Start .. Last), Ada.Strings.Both));
-                     begin
-                        if Line = "" or else Line (Line'First) = '#' then
-                           null;
-                        elsif Line (Line'First) = '[' then
-                           declare Close : constant Natural := Ada.Strings.Fixed.Index (Line, "]"); begin
-                              if Line'Length < 3 or else Close = 0 or else Line (Line'First + 1) = '[' then
-                                 raise Argument_Error with "malformed configuration section";
-                              end if;
-                              declare
-                                 Rest : constant String :=
-                                   Ada.Strings.Fixed.Trim (Line (Close + 1 .. Line'Last), Ada.Strings.Both);
-                                 Name : constant String := Line (Line'First + 1 .. Close - 1);
-                              begin
-                                 if Rest /= "" and then Rest (Rest'First) /= '#' then
-                                    raise Argument_Error with "malformed configuration section";
-                                 elsif not Known_Section (Name) then
-                                    raise Argument_Error with "unknown configuration section: " & Name;
-                                 end if;
-                                 Current_Section := To_Unbounded_String (Name);
-                              end;
-                           end;
-                        else
-                           declare Equals : constant Natural := Ada.Strings.Fixed.Index (Line, "="); begin
-                              if Equals = 0 then
-                                 raise Argument_Error with "malformed configuration entry";
-                              end if;
-                              declare
-                                 Key : constant String :=
-                                   Ada.Strings.Fixed.Trim (Line (Line'First .. Equals - 1), Ada.Strings.Both);
-                                 Id  : constant Setting_Id := Setting_Of (To_String (Current_Section), Key);
-                              begin
-                                 if Present (Id) then
-                                    raise Argument_Error with "duplicate configuration setting: " & Qualified (Id);
-                                 end if;
-                                 Entries (Id) := To_Unbounded_String (Line);
-                                 Present (Id) := True;
-                              end;
-                           end;
-                        end if;
-                     end;
-                  end;
-                  Start := Stop + 1;
-               end;
-            end loop;
-         end Validate_Document;
 
          function Line_Of (Id : Setting_Id) return String is
            (if Present (Id) then To_String (Entries (Id)) else "");
 
          function String_Setting (Id : Setting_Id) return String is
-            Line   : constant String := Line_Of (Id);
-            Result : UString;
-
-            function Hex_Value (C : Character) return Natural is
-            begin
-               if C in '0' .. '9' then return Character'Pos (C) - Character'Pos ('0');
-               elsif C in 'a' .. 'f' then return Character'Pos (C) - Character'Pos ('a') + 10;
-               elsif C in 'A' .. 'F' then return Character'Pos (C) - Character'Pos ('A') + 10;
-               else raise Argument_Error with "malformed string setting: " & Qualified (Id);
-               end if;
-            end Hex_Value;
-
-            procedure Append_UTF8 (Code : Natural) is
-            begin
-               if Code <= 16#7F# then
-                  Append (Result, Character'Val (Code));
-               elsif Code <= 16#7FF# then
-                  Append (Result, Character'Val (16#C0# + Code / 64));
-                  Append (Result, Character'Val (16#80# + Code mod 64));
-               elsif Code in 16#D800# .. 16#DFFF# or else Code > 16#10FFFF# then
-                  raise Argument_Error with "malformed string setting: " & Qualified (Id);
-               elsif Code <= 16#FFFF# then
-                  Append (Result, Character'Val (16#E0# + Code / 4_096));
-                  Append (Result, Character'Val (16#80# + Code / 64 mod 64));
-                  Append (Result, Character'Val (16#80# + Code mod 64));
-               else
-                  Append (Result, Character'Val (16#F0# + Code / 262_144));
-                  Append (Result, Character'Val (16#80# + Code / 4_096 mod 64));
-                  Append (Result, Character'Val (16#80# + Code / 64 mod 64));
-                  Append (Result, Character'Val (16#80# + Code mod 64));
-               end if;
-            end Append_UTF8;
-         begin
-            if Line = "" then
-               return Default_String (Id);
-            end if;
-            declare
-               Equals : constant Natural := Ada.Strings.Fixed.Index (Line, "=");
-               Text   : constant String :=
-                 (if Equals = 0 then ""
-                  else Ada.Strings.Fixed.Trim (Line (Equals + 1 .. Line'Last), Ada.Strings.Both));
-            begin
-               if Text'Length < 2 or else Text (Text'First) not in '"' | ''' then
-                  raise Argument_Error with "malformed string setting: " & Qualified (Id);
-               end if;
-               declare
-                  Quote  : constant Character := Text (Text'First);
-                  Cursor : Natural := Text'First + 1;
-                  Closed : Boolean := False;
-               begin
-                  while Cursor <= Text'Last and then not Closed loop
-                     if Text (Cursor) = Quote then
-                        Closed := True;
-                        Cursor := Cursor + 1;
-                     elsif Quote = ''' or else Text (Cursor) /= '\' then
-                        Append (Result, Text (Cursor));
-                        Cursor := Cursor + 1;
-                     elsif Cursor = Text'Last then
-                        raise Argument_Error with "malformed string setting: " & Qualified (Id);
-                     else
-                        case Text (Cursor + 1) is
-                           when 'b' => Append (Result, ASCII.BS); Cursor := Cursor + 2;
-                           when 't' => Append (Result, ASCII.HT); Cursor := Cursor + 2;
-                           when 'n' => Append (Result, ASCII.LF); Cursor := Cursor + 2;
-                           when 'f' => Append (Result, ASCII.FF); Cursor := Cursor + 2;
-                           when 'r' => Append (Result, ASCII.CR); Cursor := Cursor + 2;
-                           when '"' => Append (Result, '"'); Cursor := Cursor + 2;
-                           when '\' => Append (Result, '\'); Cursor := Cursor + 2;
-                           when 'u' | 'U' =>
-                              declare
-                                 Digit_Count : constant Positive :=
-                                   (if Text (Cursor + 1) = 'u' then 4 else 8);
-                                 Code : Natural := 0;
-                              begin
-                                 if Cursor + 1 + Digit_Count > Text'Last then
-                                    raise Argument_Error with "malformed string setting: " & Qualified (Id);
-                                 end if;
-                                 for Offset in 1 .. Digit_Count loop
-                                    declare
-                                       Digit : constant Natural := Hex_Value (Text (Cursor + 1 + Offset));
-                                    begin
-                                       if Code > (16#10FFFF# - Digit) / 16 then
-                                          raise Argument_Error with
-                                            "malformed string setting: " & Qualified (Id);
-                                       end if;
-                                       Code := Code * 16 + Digit;
-                                    end;
-                                 end loop;
-                                 Append_UTF8 (Code);
-                                 Cursor := Cursor + 2 + Digit_Count;
-                              end;
-                           when others =>
-                              raise Argument_Error with "malformed string setting: " & Qualified (Id);
-                        end case;
-                     end if;
-                  end loop;
-                  if not Closed then
-                     raise Argument_Error with "malformed string setting: " & Qualified (Id);
-                  end if;
-                  declare
-                     Rest : constant String :=
-                       Ada.Strings.Fixed.Trim (Text (Cursor .. Text'Last), Ada.Strings.Both);
-                  begin
-                     if Rest /= "" and then Rest (Rest'First) /= '#' then
-                        raise Argument_Error with "malformed string setting: " & Qualified (Id);
-                     end if;
-                  end;
-               end;
-            end;
-            if Definitions (Id).Kind not in String_Value | Enum_Value then
-               raise Argument_Error with "malformed string setting: " & Qualified (Id);
-            end if;
-            return To_String (Result);
-         end String_Setting;
+           (TOML_Codec.String_Setting (Id, Entries, Present));
 
          function Positive_Setting (Id : Setting_Id) return Positive is
             Line   : constant String := Line_Of (Id);
@@ -445,7 +298,7 @@ package body Improve.Config is
          end Boolean_Setting;
 
       begin
-         Validate_Document;
+         TOML_Codec.Parse (Text, Entries, Present);
          if not Present (Schema_Version) or else Positive_Setting (Schema_Version) /= 1 then
             raise Argument_Error with "configuration schema_version must be 1";
          elsif String_Setting (Quality_Selection) /= "latest_completed" then
@@ -455,9 +308,8 @@ package body Improve.Config is
          end if;
 
          Result.Quality_Database := To_Unbounded_String (String_Setting (Quality_Database));
-         if Length (Result.Quality_Database) = 0 then
-            raise Argument_Error with "quality.database must not be empty";
-         end if;
+         Validate_Operational_Text
+           ("quality.database", To_String (Result.Quality_Database), Maximum_Length => 4_096);
          Result.Maximum_Quality_Projects := Positive_Setting (Maximum_Quality_Projects);
          Result.Maximum_Quality_Runs := Positive_Setting (Maximum_Quality_Runs);
          Result.Maximum_Quality_Findings := Positive_Setting (Maximum_Quality_Findings);
@@ -480,9 +332,7 @@ package body Improve.Config is
             raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
          end if;
          Result.Task_Kind := To_Unbounded_String (String_Setting (Workflow_Task_Kind));
-         if Length (Result.Task_Kind) = 0 then
-            raise Argument_Error with "workflow.task_kind must not be empty";
-         end if;
+         Validate_Operational_Text ("workflow.task_kind", To_String (Result.Task_Kind), Maximum_Length => 128);
          Result.Require_Initialized := Boolean_Setting (Require_Initialized_Project);
          if not Result.Require_Initialized then
             raise Argument_Error with "workflow.require_initialized_project must be true";
@@ -498,34 +348,6 @@ package body Improve.Config is
    end Load;
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
-
-   function Escape_TOML (Text : String) return String is
-      Hex    : constant String := "0123456789abcdef";
-      Result : UString;
-   begin
-      for C of Text loop
-         case C is
-            when '"' =>
-               Append (Result, '\');
-               Append (Result, '"');
-            when '\' => Append (Result, "\\");
-            when ASCII.BS => Append (Result, "\b");
-            when ASCII.HT => Append (Result, "\t");
-            when ASCII.LF => Append (Result, "\n");
-            when ASCII.FF => Append (Result, "\f");
-            when ASCII.CR => Append (Result, "\r");
-            when others =>
-               if Character'Pos (C) < 32 or else Character'Pos (C) = 127 then
-                  Append
-                    (Result,
-                     "\u00" & Hex (Character'Pos (C) / 16 + 1) & Hex (Character'Pos (C) mod 16 + 1));
-               else
-                  Append (Result, C);
-               end if;
-         end case;
-      end loop;
-      return To_String (Result);
-   end Escape_TOML;
 
    function Raw_Value (Item : Settings; Id : Setting_Id) return String is
    begin
@@ -573,13 +395,16 @@ package body Improve.Config is
       Result       : UString;
       Last_Section : UString;
    begin
+      Validate_Operational_Text
+        ("quality.database", To_String (Item.Quality_Database), Maximum_Length => 4_096);
+      Validate_Operational_Text ("workflow.task_kind", To_String (Item.Task_Kind), Maximum_Length => 128);
       for Id in Setting_Id loop
          declare
             Definition : Setting_Descriptor renames Definitions (Id);
             Section    : constant String := To_String (Definition.Section);
             Raw        : constant String := Raw_Value (Item, Id);
             Rendered   : constant String :=
-              (if Definition.Kind in String_Value | Enum_Value then '"' & Escape_TOML (Raw) & '"' else Raw);
+              (if Definition.Kind in String_Value | Enum_Value then '"' & TOML_Codec.Escape (Raw) & '"' else Raw);
          begin
             if Section /= To_String (Last_Section) then
                Append (Result, "[" & Section & "]" & LF);

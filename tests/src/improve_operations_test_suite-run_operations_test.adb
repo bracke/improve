@@ -111,8 +111,7 @@ begin
                      Escaped : Improve.Config.Settings := Value;
                   begin
                      Escaped.Quality_Database := To_Unbounded_String
-                       ("quality\\quoted""name.db" & ASCII.BS & ASCII.HT & ASCII.LF & ASCII.FF & ASCII.CR &
-                        Character'Val (1) & Character'Val (127));
+                       ("quality\\quoted""name.db");
                      Escaped.Task_Kind := To_Unbounded_String ("repair\\""quoted");
                      Project_Tools.Files.Write_Text_File (Path, Improve.Config.Image (Escaped));
                      declare Roundtrip : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
@@ -158,6 +157,11 @@ begin
                Reject ("database = """"", "empty database", "quality");
                Reject ("database = bare", "unquoted string", "quality");
                Reject ("database = ""bad\q""", "unknown string escape", "quality");
+               Reject ("database = ""bad\npath""", "escaped database control", "quality");
+               Reject ("task_kind = ""repair\u0000kind""", "escaped task-kind control", "workflow");
+               Reject
+                 ("database = ""bad" & ASCII.BS & "path""",
+                  "unescaped string control", "quality");
                Reject ("database = ""\u12""", "short Unicode escape", "quality");
                Reject ("database = ""\u00xz""", "invalid Unicode escape", "quality");
                Reject ("database = ""\ud800""", "surrogate Unicode escape", "quality");
@@ -192,6 +196,10 @@ begin
                Reject
                  ("[quality]" & ASCII.LF & "database = ""a.db""" & ASCII.LF & "database = ""b.db""",
                   "duplicate setting");
+               Reject
+                 ("[quality]" & ASCII.LF & "database = ""a.db""" & ASCII.LF &
+                  "[quality]" & ASCII.LF & "selection = ""latest_completed""",
+                  "duplicate section");
                Reject ("[unknown]" & ASCII.LF & "value = 1", "unknown section");
                declare Rejected : Boolean := False; begin
                   Project_Tools.Files.Write_Text_File (Path, [1 .. 1_048_577 => '#']);

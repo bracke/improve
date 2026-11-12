@@ -19,6 +19,9 @@ Optional refinement is bounded by `planning.agent_max_context_bytes`, `agent_max
 Context is at least 1024 bytes and at most 10 MiB, a file cannot exceed its context, responses cannot exceed 1 MiB,
 and timeout cannot exceed one hour.
 
+`quality.database` is limited to 4096 bytes and `workflow.task_kind` to 128 bytes. Both must be nonempty and must not
+contain control characters. Configuration tables and settings may each be declared only once.
+
 Command-line database, state, project, format, and color values override effective configuration where applicable.
 Read-only commands do not create, migrate, recover, or repair an external database.
 
