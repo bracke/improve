@@ -1,5 +1,6 @@
 with Ada.Containers;
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Model_Runner.Errors;
@@ -24,6 +25,15 @@ package body Improve.Workflow_Publication is
       Element_Type    => Unbounded_String,
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
+
+   package String_Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package Index_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Positive);
 
    function Detail (Status : Errors.Error_Info) return String is
       Name   : constant String := Errors.Text_Of (Status, "name");

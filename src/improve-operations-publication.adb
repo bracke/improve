@@ -15,7 +15,8 @@ package body Improve.Operations.Publication is
       Selected_Task_Id : String;
       Task_Kind        : String;
       Dry_Run          : Boolean;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) return Result
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) return Result
    is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
@@ -52,7 +53,7 @@ package body Improve.Operations.Publication is
       declare
          Quality : Improve.Source.Repository;
       begin
-         Improve.Source.Open (Quality, Quality_Path);
+         Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
          declare
             Project : constant Improve.Model.Project_Reference :=
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));

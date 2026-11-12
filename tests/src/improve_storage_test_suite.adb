@@ -1,4 +1,3 @@
-with Ada.Directories;
 with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
@@ -18,6 +17,7 @@ with Database.Values;
 with Improve;
 with Improve.Model;
 with Improve.Storage;
+with Hostkit.Fs;
 with Project_Tools.Files;
 
 package body Improve_Storage_Test_Suite is
@@ -132,7 +132,7 @@ package body Improve_Storage_Test_Suite is
 
    overriding procedure Run_Test (Item : in out Storage_Case) is
       pragma Unreferenced (Item);
-      Root  : constant String := "/tmp/improve_storage_indexed_history";
+      Root  : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-storage");
       Path  : constant String := Root & "/state.db";
       Store : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;
@@ -141,8 +141,6 @@ package body Improve_Storage_Test_Suite is
       function Image (Value : Positive) return String is
         (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
    begin
-      Project_Tools.Files.Delete_Tree (Root);
-      Ada.Directories.Create_Directory (Root);
       Plan.Project :=
         (Id          => 1,
          Name        => To_Unbounded_String ("scale"),
@@ -334,6 +332,20 @@ package body Improve_Storage_Test_Suite is
          Append (Large_Text, [1 .. 384 => 'x']);
          Large_Plan.Tasks (1).Goal := Large_Text;
          Large_Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("large approved revision"));
+         Limits.Maximum_Text_Bytes := 128;
+         declare Rejected : Boolean := False; begin
+            begin
+               declare Saved : constant Improve.Storage.Save_Result :=
+                 Improve.Storage.Save (Store, Large_Plan, Limits);
+                  pragma Unreferenced (Saved);
+               begin
+                  null;
+               end;
+            exception
+               when Improve.Data_Error => Rejected := True;
+            end;
+            Assert (Rejected, "plan persistence wrote content beyond its configured read limit");
+         end;
          declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Large_Plan); begin
             Limits.Maximum_Text_Bytes := 128;
             declare

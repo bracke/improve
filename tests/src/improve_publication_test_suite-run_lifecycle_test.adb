@@ -149,7 +149,7 @@ begin
                Move_Task ("blocked");
                Workspace := Records.Create (Schemas.Workspace_Schema, 1, "WORKSPACE-TEST", 1);
                Records.Set (Workspace, "backend", "file_copy");
-               Records.Set (Workspace, "path", "/tmp/improve-unmanaged-workspace");
+               Records.Set (Workspace, "path", To_String (Data.Directory) & "/unmanaged-workspace");
                Records.Set (Workspace, "base", "baseline");
                Records.Set (Workspace, "agent", "test-agent");
                Records.Set (Workspace, "task", To_String (Task_Id));

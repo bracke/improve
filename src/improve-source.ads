@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Reporting;
 with Improve.Model;
@@ -6,7 +7,7 @@ with Improve.Model;
 package Improve.Source is
    --  Snapshot-consistent, read-only access to Ada Quality evidence.
 
-   type Repository is limited private;
+   type Repository is new Ada.Finalization.Limited_Controlled with private;
    --  One immutable Ada Quality reporting snapshot.
 
    type Selection is record
@@ -85,10 +86,14 @@ package Improve.Source is
    --  @return Stable source fingerprint used for publication staleness checks.
 
 private
-   type Repository is limited record
-      Session : Ada_Quality.Reporting.Session;
-      Opened  : Boolean := False;
+   type Repository is new Ada.Finalization.Limited_Controlled with record
+      Session     : Ada_Quality.Reporting.Session;
+      Opened      : Boolean := False;
       Database_Id : Ada.Strings.Unbounded.Unbounded_String;
    end record;
+
+   overriding procedure Finalize (Item : in out Repository);
+   --  Release the reporting snapshot when a repository leaves scope.
+   --  @param Item Repository handle being finalized.
 end Improve.Source;
 

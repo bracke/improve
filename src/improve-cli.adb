@@ -109,24 +109,28 @@ package body Improve.CLI is
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Store : Improve.Source.Repository;
    begin
-      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      Improve.Source.Open
+        (Store, Quality_Path (Item, Settings), Improve.Operations.Quality_Load_Limits (Settings));
       declare
          Values   : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Store);
          Snapshot : constant String := Improve.Source.Identity (Store);
-         Result   : constant String :=
-           (if Item.Format = JSON_Format then Improve.JSON.Projects (Values, Snapshot)
-            else Improve.Presentation.Projects (Values));
       begin
          Require_Output_Items (Values.Length, Settings.Maximum_Output_Items, "project query");
-         Improve.Source.Close (Store);
-         return Result;
+         declare Result : constant String :=
+           (if Item.Format = JSON_Format then Improve.JSON.Projects (Values, Snapshot)
+            else Improve.Presentation.Projects (Values));
+         begin
+            Improve.Source.Close (Store);
+            return Result;
+         end;
       end;
    end Projects_Output;
 
    function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Store : Improve.Source.Repository;
    begin
-      Improve.Source.Open (Store, Quality_Path (Item, Settings));
+      Improve.Source.Open
+        (Store, Quality_Path (Item, Settings), Improve.Operations.Quality_Load_Limits (Settings));
       declare
          Project  : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Store, To_String (Item.Project));
@@ -175,7 +179,7 @@ package body Improve.CLI is
             Values : constant Improve.Storage.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
-                 Settings.Maximum_Output_Items);
+                 Settings.Maximum_Output_Items, Improve.Operations.Quality_Load_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
             return Improve.Presentation.Plans (Values);
@@ -203,7 +207,8 @@ package body Improve.CLI is
            Selected_Task_Id => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
            Task_Kind        => To_String (Settings.Task_Kind),
            Dry_Run          => Item.Dry_Run,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
    begin
       Require_Output_Items
         (Executed.Published.Tasks.Length, Settings.Maximum_Output_Items, "publication output");
@@ -227,7 +232,8 @@ package body Improve.CLI is
            Revision         => Item.Revision,
            Filter           => Filter,
            Maximum_Items    => Settings.Maximum_Output_Items,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
       return Improve.Presentation.Tasks (Filtered);
@@ -241,7 +247,8 @@ package body Improve.CLI is
            Project_Selector => (if Item.All_Projects then "" else To_String (Item.Project)),
            All_Projects     => Item.All_Projects,
            Maximum_Items    => Settings.Maximum_Output_Items,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings));
+           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
       return Improve.Presentation.Status (Values);
@@ -288,7 +295,8 @@ package body Improve.CLI is
    begin
       Improve.Operations.Reconciliation.Run
         (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
-         Improve.Operations.Storage_Read_Limits (Settings));
+         Improve.Operations.Storage_Read_Limits (Settings),
+         Improve.Operations.Quality_Load_Limits (Settings));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 

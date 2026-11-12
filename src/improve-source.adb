@@ -224,6 +224,15 @@ package body Improve.Source is
       Item.Database_Id := Null_Unbounded_String;
    end Close;
 
+   overriding procedure Finalize (Item : in out Repository) is
+   begin
+      if Item.Opened then
+         Close (Item);
+      end if;
+   exception
+      when others => null;
+   end Finalize;
+
    procedure Require_Open (Item : Repository) is
    begin
       if not Item.Opened then raise Data_Error with "quality repository is not open"; end if;
@@ -294,19 +303,20 @@ package body Improve.Source is
    end Resolve_Project;
 
    procedure Validate (Value : Ada_Quality.Reporting.Assessment_Record) is
-      Index : Positive := Value.Results.First_Index;
    begin
       if Value.Results.Length /= 33 then
          raise Data_Error with "assessment does not contain exactly 33 indicator results";
       end if;
-      for Indicator in Ada_Quality.Types.Indicator_Id loop
-         if Value.Results (Index).Indicator /= Indicator or else
-           not Ada_Quality.Types.Is_Valid (Value.Results (Index))
-         then
-            raise Data_Error with "assessment indicator evidence is incomplete or out of registry order";
-         end if;
-         Index := Index + 1;
-      end loop;
+      declare Index : Positive := Value.Results.First_Index; begin
+         for Indicator in Ada_Quality.Types.Indicator_Id loop
+            if Value.Results (Index).Indicator /= Indicator or else
+              not Ada_Quality.Types.Is_Valid (Value.Results (Index))
+            then
+               raise Data_Error with "assessment indicator evidence is incomplete or out of registry order";
+            end if;
+            Index := Index + 1;
+         end loop;
+      end;
    end Validate;
 
    function Latest_Completed_Run

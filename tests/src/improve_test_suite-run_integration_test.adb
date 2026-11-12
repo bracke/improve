@@ -143,12 +143,10 @@ begin
             end;
          when Read_Only_Does_Not_Initialize =>
             declare
-               Directory : constant String := "/tmp/improve_phase4_read_only";
+               Directory : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-read-only");
                State     : constant String := Directory & "/missing.db";
                Result    : Improve.CLI.Outcome;
             begin
-               Project_Tools.Files.Delete_Tree (Directory);
-               Ada.Directories.Create_Directory (Directory);
                Result := Improve.CLI.Execute (Args ("plan|show|PLAN-000001|--state|" & State));
                Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then not Ada.Directories.Exists (State),
                        "read-only plan inspection initialized missing state");
@@ -156,12 +154,10 @@ begin
             end;
          when Storage_Finalizes_On_Error =>
             declare
-               Directory : constant String := "/tmp/improve_storage_finalize";
+               Directory : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-finalize");
                State     : constant String := Directory & "/state.db";
                Rejected  : Boolean := False;
             begin
-               Project_Tools.Files.Delete_Tree (Directory);
-               Ada.Directories.Create_Directory (Directory);
                declare Store : Improve.Storage.Store; begin
                   Improve.Storage.Open (Store, State, Writable => True);
                end;

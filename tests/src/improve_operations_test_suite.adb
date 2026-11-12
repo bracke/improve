@@ -19,6 +19,7 @@ with Improve.Recovery;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Workflow;
+with Hostkit.Fs;
 with Improve_Test_Support;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Stores;

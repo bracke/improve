@@ -33,7 +33,8 @@ package body Improve.Operations.Verification is
             Quality : Improve.Source.Repository;
             Project : Improve.Model.Project_Reference;
          begin
-            Improve.Source.Open (Quality, Quality_Path);
+            Improve.Source.Open
+              (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
             Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Improve.Source.Close (Quality);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
@@ -54,7 +55,8 @@ package body Improve.Operations.Verification is
       declare
          Quality : Improve.Source.Repository;
       begin
-         Improve.Source.Open (Quality, Quality_Path);
+         Improve.Source.Open
+           (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
          declare
             Project : constant Improve.Model.Project_Reference :=
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));

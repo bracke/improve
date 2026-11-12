@@ -33,6 +33,7 @@ with Improve.Rules;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Text;
+with Hostkit.Fs;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Stores;
 with Model_Runner.Framework.Task_Eligibility;

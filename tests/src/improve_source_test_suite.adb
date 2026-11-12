@@ -27,7 +27,7 @@ package body Improve_Source_Test_Suite is
      (AUnit.Format ("IMP_SOURCE_" & Test_Id'Image (Item.Id)));
 
    overriding procedure Run_Test (Item : in out Case_Test) is
-      Root : constant String := "/tmp/improve_source_" & Test_Id'Image (Item.Id);
+      Root : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-source");
 
       procedure Clear_Root is
          Outcome : constant Hostkit.Fs.Delete_Tree_Outcome := Hostkit.Fs.Delete_Tree_No_Follow (Root);

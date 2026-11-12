@@ -17,6 +17,39 @@ function Execute
    Selected : Improve.Model.Task_Vectors.Vector renames Prepared.Selected;
    Contracts : Improve.Model.Task_Contract_Binding_Vectors.Vector renames Prepared.Contracts;
    Native_By_Origin : Native_Origin_Maps.Map;
+   Contract_By_Task  : Native_Origin_Maps.Map;
+   Plan_Indexes      : String_Index_Maps.Map;
+   Selected_Indexes  : String_Index_Maps.Map;
+   Current_Mappings  : String_Index_Maps.Map;
+
+   procedure Build_Indexes is
+   begin
+      for Index in 1 .. Natural (Plan.Tasks.Length) loop
+         declare Identity : constant String := To_String (Plan.Tasks (Index).Id); begin
+            if Plan_Indexes.Contains (Identity) then
+               raise Data_Error with "duplicate task identity " & Identity;
+            end if;
+            Plan_Indexes.Insert (Identity, Index);
+         end;
+      end loop;
+      for Index in 1 .. Natural (Selected.Length) loop
+         Selected_Indexes.Insert (To_String (Selected (Index).Id), Index);
+      end loop;
+      for Binding of Contracts loop
+         Contract_By_Task.Insert (To_String (Binding.Task_Id), Binding.Fingerprint);
+      end loop;
+      for Index in 1 .. Natural (Existing.Length) loop
+         declare
+            Identity : constant String := To_String (Existing (Index).Improve_Task_Id);
+         begin
+            if Contract_By_Task.Contains (Identity) and then
+              Existing (Index).Contract = Contract_By_Task.Element (Identity)
+            then
+               Current_Mappings.Include (Identity, Index);
+            end if;
+         end;
+      end loop;
+   end Build_Indexes;
 
    procedure Index_Native_Tasks is
    begin
@@ -59,17 +92,15 @@ function Execute
    end Existing_By_Origin;
 
    function Is_Selected (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
-     (for some Spec of Selected => Spec.Id = Task_Id);
+     (Selected_Indexes.Contains (To_String (Task_Id)));
 
    function Is_Known (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Boolean is
-     (for some Spec of Plan.Tasks => Spec.Id = Task_Id);
+     (Plan_Indexes.Contains (To_String (Task_Id)));
 
    function Contract_Of (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return String is
-   begin
-      return Improve.Model.Effective_Task_Contract (Contracts, Task_Id);
-   exception
-      when Data_Error => return "";
-   end Contract_Of;
+     (if Contract_By_Task.Contains (To_String (Task_Id))
+      then To_String (Contract_By_Task.Element (To_String (Task_Id)))
+      else "");
 
    function Is_Predecessor
      (Mapping : Improve.Storage.Publication_Record;
@@ -91,32 +122,7 @@ function Execute
    end Predecessors_Of;
 
    function Has_Current_Mapping (Spec : Improve.Model.Task_Specification) return Boolean is
-      Binding : constant String := Improve.Model.Effective_Task_Contract (Contracts, Spec.Id);
-   begin
-      return
-        (for some Mapping of Existing =>
-           Mapping.Improve_Task_Id = Spec.Id and then To_String (Mapping.Contract) = Binding);
-   end Has_Current_Mapping;
-
-   function Depends_On_Any
-     (Spec    : Improve.Model.Task_Specification;
-      Targets : Improve.Model.UString_Vectors.Vector;
-      Trail   : Improve.Model.UString_Vectors.Vector := Improve.Model.UString_Vectors.Empty_Vector)
-      return Boolean is
-      Next_Trail : Improve.Model.UString_Vectors.Vector := Trail;
-   begin
-      if Trail.Contains (Spec.Id) then return False; end if;
-      Next_Trail.Append (Spec.Id);
-      for Dependency of Spec.Dependencies loop
-         if Targets.Contains (Dependency) then return True; end if;
-         for Candidate of Plan.Tasks loop
-            if Candidate.Id = Dependency and then Depends_On_Any (Candidate, Targets, Next_Trail) then
-               return True;
-            end if;
-         end loop;
-      end loop;
-      return False;
-   end Depends_On_Any;
+     (Current_Mappings.Contains (To_String (Spec.Id)));
 
    function Retirement_Target (Mapping : Improve.Storage.Publication_Record) return String is
       Definition : Records.Item;
@@ -158,22 +164,22 @@ function Execute
    function Published_Dependency
      (Task_Id : Ada.Strings.Unbounded.Unbounded_String) return Ada.Strings.Unbounded.Unbounded_String is
    begin
-      for Mapping of Existing loop
-         if Mapping.Improve_Task_Id = Task_Id and then
-           To_String (Mapping.Contract) = Contract_Of (Task_Id)
-         then
-            declare Definition : Records.Item; begin
-               Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
-               Require_Ok (Status, "read prerequisite harness task " & To_String (Task_Id));
-               if Records.Get (Definition, "created_by") /= "improve" or else
-                 Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
-               then
-                  raise Data_Error with "stored prerequisite mapping has invalid harness provenance";
-               end if;
-            end;
+      if Current_Mappings.Contains (To_String (Task_Id)) then
+         declare
+            Mapping : Improve.Storage.Publication_Record renames
+              Existing (Current_Mappings.Element (To_String (Task_Id)));
+            Definition : Records.Item;
+         begin
+            Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+            Require_Ok (Status, "read prerequisite harness task " & To_String (Task_Id));
+            if Records.Get (Definition, "created_by") /= "improve" or else
+              Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+            then
+               raise Data_Error with "stored prerequisite mapping has invalid harness provenance";
+            end if;
             return Mapping.Harness_Task_Id;
-         end if;
-      end loop;
+         end;
+      end if;
       return Null_Unbounded_String;
    end Published_Dependency;
 
@@ -192,11 +198,40 @@ function Execute
    end Prepare_Publication;
 
    procedure Validate_Replacement_Closure is
-      Replaced : Improve.Model.UString_Vectors.Vector;
+      Replaced : String_Index_Maps.Map;
+      Memo     : String_Index_Maps.Map;
+      Visiting : String_Index_Maps.Map;
+
+      function Depends_On_Replaced (Spec : Improve.Model.Task_Specification) return Boolean is
+         Identity : constant String := To_String (Spec.Id);
+         Result   : Boolean := False;
+      begin
+         if Memo.Contains (Identity) then
+            return Memo.Element (Identity) = 2;
+         elsif Visiting.Contains (Identity) then
+            raise Data_Error with "task dependency graph contains a cycle at " & Identity;
+         end if;
+         Visiting.Insert (Identity, 1);
+         for Dependency of Spec.Dependencies loop
+            declare Target : constant String := To_String (Dependency); begin
+               if Replaced.Contains (Target) then
+                  Result := True;
+               elsif Plan_Indexes.Contains (Target) then
+                  Result := Depends_On_Replaced (Plan.Tasks (Plan_Indexes.Element (Target)));
+               else
+                  raise Data_Error with "unknown persisted task dependency " & Target;
+               end if;
+               exit when Result;
+            end;
+         end loop;
+         Visiting.Delete (Identity);
+         Memo.Insert (Identity, (if Result then 2 else 1));
+         return Result;
+      end Depends_On_Replaced;
    begin
       for Spec of Selected loop
          if not Has_Current_Mapping (Spec) and then not Predecessors_Of (Spec).Is_Empty then
-            Replaced.Append (Spec.Id);
+            Replaced.Insert (To_String (Spec.Id), 1);
          end if;
       end loop;
       if Replaced.Is_Empty then
@@ -204,7 +239,7 @@ function Execute
       end if;
       for Spec of Plan.Tasks loop
          if not Is_Selected (Spec.Id) and then not Has_Current_Mapping (Spec) and then
-           Depends_On_Any (Spec, Replaced)
+           Depends_On_Replaced (Spec)
          then
             for Mapping of Existing loop
                if Is_Predecessor (Mapping, Spec) then
@@ -302,27 +337,26 @@ function Execute
             begin
                for Dependency of Spec.Dependencies loop
                   declare
-                     Found : Boolean := False;
+                     Identity : constant String := To_String (Dependency);
                   begin
-                     for Other of Result.Tasks loop
-                        if Other.Improve_Id = Dependency then
-                           Found := True;
+                     if Selected_Indexes.Contains (Identity) then
+                        declare
+                           Other : Published_Task renames
+                             Result.Tasks (Selected_Indexes.Element (Identity));
+                        begin
                            if Length (Other.Harness_Id) = 0 then
                               raise Data_Error with
-                                "existing native task depends on unpublished selected task " &
-                                To_String (Dependency);
+                                "existing native task depends on unpublished selected task " & Identity;
                            end if;
                            Dependencies.Append (Other.Harness_Id);
-                           exit;
-                        end if;
-                     end loop;
-                     if not Found then
+                        end;
+                     else
                         declare
                            Published : constant Unbounded_String := Published_Dependency (Dependency);
                         begin
                            if Length (Published) = 0 then
                               raise Data_Error with
-                                "existing native task has unpublished prerequisite " & To_String (Dependency);
+                                "existing native task has unpublished prerequisite " & Identity;
                            end if;
                            Dependencies.Append (Published);
                         end;
@@ -343,7 +377,6 @@ function Execute
    procedure Apply_Publication_Changes (Kind : String) is
       Change    : Stores.Transaction;
       Remaining : Natural := Natural (Selected.Length);
-      Progress  : Boolean;
    begin
       if not Dry_Run then
          for Spec of Selected loop
@@ -370,80 +403,94 @@ function Execute
             Remaining := Remaining - 1;
          end if;
       end loop;
-      while Remaining > 0 loop
-         Progress := False;
-         for Index in 1 .. Natural (Selected.Length) loop
+      declare
+         Count : constant Positive := Positive (Selected.Length);
+         type Count_Array is array (Positive range <>) of Natural;
+         type Adjacency_Array is array (Positive range <>) of Index_Vectors.Vector;
+         Pending    : Count_Array (1 .. Count) := [others => 0];
+         Dependents : Adjacency_Array (1 .. Count);
+         Ready      : Index_Vectors.Vector;
+         Head       : Positive := 1;
+      begin
+         for Index in 1 .. Count loop
             if Length (Result.Tasks (Index).Harness_Id) = 0 then
-               declare
-                  Spec                 : constant Improve.Model.Task_Specification := Selected (Index);
-                  Ready                : Boolean := True;
-                  Harness_Dependencies : Improve.Model.UString_Vectors.Vector;
-               begin
-                  for Dependency of Spec.Dependencies loop
-                     declare
-                        Found : Boolean := False;
-                     begin
-                        for Other in 1 .. Natural (Result.Tasks.Length) loop
-                           if Result.Tasks (Other).Improve_Id = Dependency then
-                              Found := True;
-                              if Length (Result.Tasks (Other).Harness_Id) = 0 then
-                                 Ready := False;
-                              else
-                                 Harness_Dependencies.Append (Result.Tasks (Other).Harness_Id);
-                              end if;
-                              exit;
+               for Dependency of Selected (Index).Dependencies loop
+                  declare Identity : constant String := To_String (Dependency); begin
+                     if Selected_Indexes.Contains (Identity) then
+                        declare Target : constant Positive := Selected_Indexes.Element (Identity); begin
+                           if Length (Result.Tasks (Target).Harness_Id) = 0 then
+                              Pending (Index) := Pending (Index) + 1;
+                              Dependents (Target).Append (Index);
                            end if;
-                        end loop;
-                        if not Found then
-                           if not Is_Known (Dependency) then
-                              raise Data_Error with
-                                "unknown persisted task dependency " & To_String (Dependency);
-                           end if;
-                           declare
-                              Published : constant Unbounded_String := Published_Dependency (Dependency);
-                           begin
-                              if Length (Published) = 0 then
-                                 raise Data_Error with
-                                   "task " & To_String (Spec.Id) & " requires unpublished prerequisite " &
-                                   To_String (Dependency) & "; publish prerequisite first";
-                              end if;
-                              Harness_Dependencies.Append (Published);
-                           end;
-                        end if;
-                     end;
-                  end loop;
-                  if Ready then
-                     declare
-                        Fields : Tasks.Field_Map;
-                        Id     : Unbounded_String;
-                        Notes  : constant String := Native_Notes
-                          (Spec, Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
-                           Predecessors_Of (Spec));
-                     begin
-                        Fields.Include ("title", To_String (Spec.Title));
-                        Fields.Include ("kind", Kind);
-                        Fields.Include ("priority", Harness_Priority (Spec.Task_Priority));
-                        Fields.Include ("acceptance", To_String (Spec.Acceptance));
-                        Fields.Include ("notes", Notes);
-                        if not Harness_Dependencies.Is_Empty then
-                           Fields.Include ("depends_on", Join (Harness_Dependencies));
-                        end if;
-                        Tasks.Create
-                          (Store, Change, Fields, "improve", To_String (Result.Tasks (Index).Origin), Id, Status);
-                        Require_Ok (Status, "create native harness task " & To_String (Spec.Id));
-                        Result.Tasks (Index).Harness_Id := Id;
-                        Result.Tasks (Index).State := To_Unbounded_String ("candidate");
-                        Remaining := Remaining - 1;
-                        Progress := True;
-                     end;
-                  end if;
-               end;
+                        end;
+                     elsif not Is_Known (Dependency) then
+                        raise Data_Error with "unknown persisted task dependency " & Identity;
+                     end if;
+                  end;
+               end loop;
+               if Pending (Index) = 0 then
+                  Ready.Append (Index);
+               end if;
             end if;
          end loop;
-         if not Progress and then Remaining > 0 then
-            raise Data_Error with "task dependency order cannot be resolved for publication";
-         end if;
-      end loop;
+         while Head <= Natural (Ready.Length) loop
+            declare
+               Index                : constant Positive := Ready (Head);
+               Spec                 : constant Improve.Model.Task_Specification := Selected (Index);
+               Harness_Dependencies : Improve.Model.UString_Vectors.Vector;
+               Fields               : Tasks.Field_Map;
+               Id                   : Unbounded_String;
+               Notes                : constant String := Native_Notes
+                 (Spec, Contract_Of (Spec.Id), Predecessors_Of (Spec));
+            begin
+               Head := Head + 1;
+               for Dependency of Spec.Dependencies loop
+                  declare Identity : constant String := To_String (Dependency); begin
+                     if Selected_Indexes.Contains (Identity) then
+                        declare Target : constant Positive := Selected_Indexes.Element (Identity); begin
+                           if Length (Result.Tasks (Target).Harness_Id) = 0 then
+                              raise Data_Error with "task dependency order cannot be resolved for publication";
+                           end if;
+                           Harness_Dependencies.Append (Result.Tasks (Target).Harness_Id);
+                        end;
+                     else
+                        declare Published : constant Unbounded_String := Published_Dependency (Dependency); begin
+                           if Length (Published) = 0 then
+                              raise Data_Error with
+                                "task " & To_String (Spec.Id) & " requires unpublished prerequisite " &
+                                Identity & "; publish prerequisite first";
+                           end if;
+                           Harness_Dependencies.Append (Published);
+                        end;
+                     end if;
+                  end;
+               end loop;
+               Fields.Include ("title", To_String (Spec.Title));
+               Fields.Include ("kind", Kind);
+               Fields.Include ("priority", Harness_Priority (Spec.Task_Priority));
+               Fields.Include ("acceptance", To_String (Spec.Acceptance));
+               Fields.Include ("notes", Notes);
+               if not Harness_Dependencies.Is_Empty then
+                  Fields.Include ("depends_on", Join (Harness_Dependencies));
+               end if;
+               Tasks.Create
+                 (Store, Change, Fields, "improve", To_String (Result.Tasks (Index).Origin), Id, Status);
+               Require_Ok (Status, "create native harness task " & To_String (Spec.Id));
+               Result.Tasks (Index).Harness_Id := Id;
+               Result.Tasks (Index).State := To_Unbounded_String ("candidate");
+               Remaining := Remaining - 1;
+               for Dependent of Dependents (Index) loop
+                  Pending (Dependent) := Pending (Dependent) - 1;
+                  if Pending (Dependent) = 0 then
+                     Ready.Append (Dependent);
+                  end if;
+               end loop;
+            end;
+         end loop;
+      end;
+      if Remaining > 0 then
+         raise Data_Error with "task dependency order cannot be resolved for publication";
+      end if;
       if Stores.Change_Count (Change) > 0 and then not Dry_Run then
          Stores.Commit (Store, Change, Status);
          Require_Ok (Status, "commit native harness tasks");
@@ -456,6 +503,7 @@ function Execute
       end if;
    end Apply_Publication_Changes;
 begin
+   Build_Indexes;
    Prepare_Publication;
    declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin
       Result.Task_Kind := To_Unbounded_String (Kind);

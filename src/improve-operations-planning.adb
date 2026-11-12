@@ -17,7 +17,7 @@ package body Improve.Operations.Planning is
       Dry_Run          : Boolean) return Generation_Result is
       Quality : Improve.Source.Repository;
    begin
-      Improve.Source.Open (Quality, Quality_Path);
+      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
       declare
          Project  : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
@@ -47,7 +47,8 @@ package body Improve.Operations.Planning is
             Saved : Improve.Storage.Save_Result;
          begin
             Improve.Storage.Open (State, State_Path, Writable => True);
-            Saved := Improve.Storage.Save (State, Draft);
+            Saved := Improve.Storage.Save
+              (State, Draft, Improve.Operations.Storage_Read_Limits (Settings));
             Improve.Storage.Close (State);
             return (Plan => Saved.Plan, Existing => Saved.Existing);
          exception
@@ -89,12 +90,13 @@ package body Improve.Operations.Planning is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum)
+      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Storage.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
-      Improve.Source.Open (Quality, Quality_Path);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);

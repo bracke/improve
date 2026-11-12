@@ -243,7 +243,8 @@ begin
             end;
          when Recover_Missing_State =>
             declare
-               Path   : constant String := "/tmp/improve_phase8_missing_state.db";
+               Root   : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-missing-state");
+               Path   : constant String := Root & "/missing.db";
                Result : Improve.CLI.Outcome;
             begin
                Project_Tools.Files.Delete_File_If_Present (Path);
@@ -251,6 +252,7 @@ begin
                Assert (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0 and then
                          not Project_Tools.Files.File_Exists (Path),
                        "recover initialized missing state or returned the wrong exit code");
+               Project_Tools.Files.Delete_Tree (Root);
             end;
       when others =>
          raise Program_Error with "case routed to the wrong operations test group";

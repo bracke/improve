@@ -1,4 +1,3 @@
-with Ada.Directories;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
@@ -7,6 +6,7 @@ with Improve.Config;
 with Improve.Model;
 with Improve.Operations.Planning;
 with Improve.Storage;
+with Hostkit.Fs;
 with Project_Tools.Files;
 
 package body Improve_Planning_Test_Suite is
@@ -22,13 +22,11 @@ package body Improve_Planning_Test_Suite is
 
    overriding procedure Run_Test (Item : in out Planning_Case) is
       pragma Unreferenced (Item);
-      Root    : constant String := "/tmp/improve_planning_error_boundaries";
+      Root    : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-planning");
       Missing : constant String := Root & "/missing.db";
       State   : constant String := Root & "/state.db";
       Rejected : Natural := 0;
    begin
-      Project_Tools.Files.Delete_Tree (Root);
-      Ada.Directories.Create_Directory (Root);
       begin
          declare
             Value : constant Improve.Operations.Planning.Generation_Result :=

@@ -1,5 +1,6 @@
 with Improve.Storage;
 with Improve.Tasks;
+with Ada_Quality.Reporting;
 
 --  Read-only task and project status use cases.
 package Improve.Operations.Inspection is
@@ -13,7 +14,8 @@ package Improve.Operations.Inspection is
       Revision         : Natural;
       Filter           : String;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Tasks.View_Vectors.Vector;
    --  Return filtered task views for an optional database-qualified project or task.
    --  @param State_Path Existing Improve state database.
@@ -24,6 +26,7 @@ package Improve.Operations.Inspection is
    --  @param Filter Valid operational status filter.
    --  @param Maximum_Items Hard result-size limit.
    --  @param Limits Hard persistence and history limits.
+   --  @param Quality_Limits Hard quality snapshot load limits.
    --  @return Stable, filtered, assessment-aware task views.
 
    function Status
@@ -32,7 +35,8 @@ package Improve.Operations.Inspection is
       Project_Selector : String;
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Tasks.Status_Vectors.Vector;
    --  Return assessment-aware remediation status for one or every registered project.
    --  @param State_Path Existing Improve state database.
@@ -41,6 +45,7 @@ package Improve.Operations.Inspection is
    --  @param All_Projects Whether to inspect every registered project.
    --  @param Maximum_Items Hard project and task result-size limit.
    --  @param Limits Hard persistence and history limits.
+   --  @param Quality_Limits Hard quality snapshot load limits.
    --  @return Stable project status models with freshness-qualified evidence.
 
 end Improve.Operations.Inspection;

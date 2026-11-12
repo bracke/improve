@@ -125,7 +125,9 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                Selected.Append (Second.Plan.Tasks (1).Id);
-               declare Blocked : Boolean := False; begin
+               declare
+                  Blocked : Boolean := False;
+               begin
                   begin
                      Republished := Improve.Workflow.Publish
                        (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings,
@@ -195,16 +197,22 @@ begin
                      Improve.Storage.Close (Improve_State);
                   end;
                end;
-               declare Blocked : Boolean := False; begin
+               declare
+                  Blocked : Boolean := False;
+                  Detail  : Unbounded_String;
+               begin
                   begin
                      Republished := Improve.Workflow.Publish
                        (To_String (Data.Target), Third.Plan, "auto", Existing => Mappings);
                   exception
                      when Error : Improve.Data_Error =>
+                        Detail := To_Unbounded_String (Ada.Exceptions.Exception_Message (Error));
                         Blocked := Ada.Strings.Fixed.Index
                           (Ada.Exceptions.Exception_Message (Error), "while native predecessor") > 0;
                   end;
-                  Assert (Blocked, "running dependent did not block prerequisite contract replacement");
+                  Assert
+                    (Blocked,
+                     "running dependent did not block prerequisite contract replacement: " & To_String (Detail));
                end;
                Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
                Assert

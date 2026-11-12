@@ -8,6 +8,7 @@ with Improve.Config;
 with Improve.Findings;
 with Improve.Planner;
 with Improve.Source;
+with Hostkit.Fs;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Configuration_Records;
 with Model_Runner.Framework.Records;
@@ -58,7 +59,7 @@ package body Improve_Test_Support is
       Multiple_Structure        : Boolean := False;
       Second_Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High) return Fixture is
       use Ada_Quality.Types;
-      Directory : constant String := "/tmp/improve_phase2_" & Label;
+      Directory : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-phase2-" & Label);
       DB_Path   : constant String := Directory & "/quality.db";
       Store     : Ada_Quality.Storage.Store;
       Project   : Positive;
@@ -67,8 +68,6 @@ package body Improve_Test_Support is
       Value     : Assessment;
       Target    : constant String := Directory & "/project";
    begin
-      Project_Tools.Files.Delete_Tree (Directory);
-      Ada.Directories.Create_Directory (Directory);
       Ada.Directories.Create_Directory (Target);
       Project_Tools.Files.Write_Text_File
         (Target & "/alire.toml",

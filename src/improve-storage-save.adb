@@ -1,58 +1,72 @@
 separate (Improve.Storage)
-function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result is
+function Save
+  (Item   : in out Store;
+   Value  : Improve.Model.Plan_Revision;
+   Limits : Read_Limits := Default_Read_Limits) return Save_Result is
       Tx : Database.Transactions.Transaction;
       Stored : Improve.Model.Plan_Revision := Value;
       Existing_Revision : Natural;
+
+      procedure Require_Text (Text, Context : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes then
+            raise Data_Error with Context & " exceeds configured persisted-text limit";
+         end if;
+      end Require_Text;
+
+      procedure Validate_Write is
+         Detail_Count : Natural := 0;
+         Link_Count   : Natural := 0;
+
+         procedure Add_Count (Count, Maximum : Natural; Total : in out Natural; Context : String) is
+         begin
+            if Count > Maximum - Total then
+               raise Data_Error with Context;
+            end if;
+            Total := Total + Count;
+         end Add_Count;
+      begin
+         if Value.Findings.Length > Ada.Containers.Count_Type (Limits.Maximum_Findings) then
+            raise Data_Error with "plan exceeds configured finding write limit";
+         elsif Value.Tasks.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
+            raise Data_Error with "plan exceeds configured task write limit";
+         end if;
+         Require_Text (Revision_Payload (Value, 1, 1), "plan revision payload");
+         for Finding of Value.Findings loop
+            Require_Text (Finding_Payload (Finding), "finding payload");
+         end loop;
+         for Spec of Value.Tasks loop
+            Add_Count (7, Limits.Maximum_Task_Details, Detail_Count,
+                       "plan exceeds configured task-detail write limit");
+            Add_Count
+              (Natural (Spec.Relevant_Files.Length) + Natural (Spec.Finding_Keys.Length) +
+               Natural (Spec.Dependencies.Length),
+               Limits.Maximum_Task_Links, Link_Count,
+               "plan exceeds configured task-link write limit");
+            Require_Text (Task_Payload (Spec), "task payload");
+            Require_Text (Pack (Spec.Finding_Keys), "task finding links");
+            Require_Text (Pack (Spec.Dependencies), "task dependency links");
+            Require_Text (To_String (Spec.Goal), "task goal");
+            Require_Text (To_String (Spec.Problem), "task problem");
+            Require_Text (To_String (Spec.Evidence), "task evidence");
+            Require_Text (To_String (Spec.Out_Of_Scope), "task exclusions");
+            Require_Text (To_String (Spec.Requirements), "task requirements");
+            Require_Text (To_String (Spec.Acceptance), "task acceptance");
+            Require_Text (To_String (Spec.Verification), "task verification");
+         end loop;
+      end Validate_Write;
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for writing";
       end if;
+      Validate_Write;
       Database.Transactions.Begin_Write (Item.DB, Tx);
       Existing_Revision := Find_Revision (Item, Tx, To_String (Value.Fingerprint));
       if Existing_Revision > 0 then
          Database.Transactions.Rollback (Tx);
-         declare
-            Task_Count : constant Positive := Positive'Max (1, Natural (Value.Tasks.Length));
-            Link_Count : Natural := 0;
-            Text_Count : Natural :=
-              Natural'Max
-                (Default_Read_Limits.Maximum_Text_Bytes,
-                 Revision_Payload (Value, 1, 1)'Length);
-
-            procedure Include_Text (Text : String) is
-            begin
-               Text_Count := Natural'Max (Text_Count, Text'Length);
-            end Include_Text;
-         begin
-            for Finding of Value.Findings loop
-               Include_Text (Finding_Payload (Finding));
-            end loop;
-            for Spec of Value.Tasks loop
-               Link_Count :=
-                 Link_Count + Natural (Spec.Relevant_Files.Length) +
-                 Natural (Spec.Finding_Keys.Length) + Natural (Spec.Dependencies.Length);
-               Include_Text (Task_Payload (Spec));
-               Include_Text (To_String (Spec.Goal));
-               Include_Text (To_String (Spec.Problem));
-               Include_Text (To_String (Spec.Evidence));
-               Include_Text (To_String (Spec.Out_Of_Scope));
-               Include_Text (To_String (Spec.Requirements));
-               Include_Text (To_String (Spec.Acceptance));
-               Include_Text (To_String (Spec.Verification));
-            end loop;
-            return
-              (Plan =>
-                 Load
-                   (Item, "@revision:" & Number (Existing_Revision),
-                    Limits =>
-                      (Maximum_Findings     => Positive'Max (1, Natural (Value.Findings.Length)),
-                       Maximum_Tasks        => Task_Count,
-                       Maximum_Task_Details => 7 * Task_Count,
-                       Maximum_Task_Links   => Positive'Max (1, Link_Count),
-                       Maximum_History      => Default_Read_Limits.Maximum_History,
-                       Maximum_Text_Bytes   => Positive'Max (1, Text_Count))),
-               Existing => True);
-         end;
+         return
+           (Plan => Load (Item, "@revision:" & Number (Existing_Revision), Limits),
+            Existing => True);
       end if;
       Stored.Created_At := Ada.Calendar.Clock;
       declare

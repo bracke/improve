@@ -145,11 +145,15 @@ package Improve.Storage is
    --  Close a store; closing an already closed store is harmless.
    --  @param Item Store handle.
 
-   function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result;
+   function Save
+     (Item   : in out Store;
+      Value  : Improve.Model.Plan_Revision;
+      Limits : Read_Limits := Default_Read_Limits) return Save_Result;
    --  Atomically persist a plan revision and its evidence graph. Repeating an
    --  identical fingerprint returns the existing revision.
    --  @param Item Writable store.
    --  @param Value Plan revision to persist.
+   --  @param Limits Hard limits enforced before any state is written.
    --  @return Assigned plan and idempotency result.
 
    function Load

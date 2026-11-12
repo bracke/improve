@@ -10,13 +10,14 @@ package body Improve.Operations.Reconciliation is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) is
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
       Publications : Improve.Storage.Publication_Vectors.Vector;
    begin
       declare Quality : Improve.Source.Repository; begin
-         Improve.Source.Open (Quality, Quality_Path);
+         Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
          declare Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
          begin

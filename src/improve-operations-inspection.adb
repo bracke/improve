@@ -1,7 +1,6 @@
 with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
-with Ada_Quality.Reporting;
 with Improve.Source;
 
 package body Improve.Operations.Inspection is
@@ -43,7 +42,8 @@ package body Improve.Operations.Inspection is
       Revision         : Natural;
       Filter           : String;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Tasks.View_Vectors.Vector is
       State              : Improve.Storage.Store;
       Selected_Project   : Improve.Model.Project_Reference :=
@@ -58,7 +58,7 @@ package body Improve.Operations.Inspection is
       end if;
       if Has_Project then
          declare Quality : Improve.Source.Repository; begin
-            Improve.Source.Open (Quality, Quality_Path);
+            Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
             Selected_Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Current_Assessment :=
               Improve.Source.Select_Assessment (Quality, Selected_Project).Baseline.Run_Id;
@@ -139,7 +139,8 @@ package body Improve.Operations.Inspection is
       Project_Selector : String;
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Tasks.Status_Vectors.Vector is
       State       : Improve.Storage.Store;
       Quality     : Improve.Source.Repository;
@@ -218,7 +219,7 @@ package body Improve.Operations.Inspection is
          Add_Project (Project, Latest);
       end Add_Resolved_Project;
    begin
-      Improve.Source.Open (Quality, Quality_Path);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
       Improve.Storage.Open (State, State_Path, Writable => False);
       if All_Projects then
          declare Projects : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);

@@ -1,6 +1,7 @@
 with Improve.Config;
 with Improve.Model;
 with Improve.Storage;
+with Ada_Quality.Reporting;
 
 --  Application use cases shared by the CLI and other adapters.
 package Improve.Operations is
@@ -17,4 +18,10 @@ package Improve.Operations is
    --  Derive hard persistence reconstruction limits from validated configuration.
    --  @param Settings Validated Improve configuration.
    --  @return Limits for one immutable plan revision.
+
+   function Quality_Load_Limits
+     (Settings : Improve.Config.Settings) return Ada_Quality.Reporting.Load_Limits;
+   --  Derive hard Ada Quality snapshot load limits from validated configuration.
+   --  @param Settings Validated Improve configuration.
+   --  @return Limits applied before the reporting snapshot is materialized.
 end Improve.Operations;

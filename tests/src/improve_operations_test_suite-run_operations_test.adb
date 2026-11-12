@@ -4,7 +4,8 @@ begin
    case Item.Id is
          when Configuration_Bounds =>
             declare
-               Path : constant String := "/tmp/improve_phase9_configuration.toml";
+               Root : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-config");
+               Path : constant String := Root & "/improve.toml";
 
                procedure Write (Text : String) is
                begin
@@ -12,10 +13,10 @@ begin
                     (Path, "schema_version = 1" & ASCII.LF & Text & ASCII.LF);
                end Write;
 
-               procedure Reject (Text, Label : String) is
+               procedure Reject (Text, Label : String; Section : String := "") is
                   Rejected : Boolean := False;
                begin
-                  Write (Text);
+                  Write ((if Section = "" then Text else "[" & Section & "]" & ASCII.LF & Text));
                   begin
                      declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
                         pragma Unreferenced (Value);
@@ -30,16 +31,21 @@ begin
 
                procedure Accept_Severity (Text : String; Expected : Improve.Config.Severity_Level) is
                begin
-                  Write ("minimum_severity = """ & Text & """");
+                  Write ("[planning]" & ASCII.LF & "minimum_severity = """ & Text & """");
                   Assert (Improve.Config.Load (Path).Minimum_Severity = Expected,
                           "configuration did not preserve severity " & Text);
                end Accept_Severity;
             begin
                Write
-                 ("database = ""quality.db""" & ASCII.LF &
+                 ("[quality]" & ASCII.LF &
+                  "database = ""quality.db""" & ASCII.LF &
                   "selection = ""latest_completed""" & ASCII.LF &
+                  "maximum_database_projects = 70" & ASCII.LF &
+                  "maximum_database_runs = 700" & ASCII.LF &
+                  "maximum_database_findings = 7000" & ASCII.LF &
                   "maximum_assessment_findings = 77" & ASCII.LF &
                   "maximum_assessment_bytes = 65536" & ASCII.LF &
+                  "[planning]" & ASCII.LF &
                   "minimum_severity = ""critical""" & ASCII.LF &
                   "maximum_tasks_per_plan = 7" & ASCII.LF &
                   "maximum_findings_per_task = 6" & ASCII.LF &
@@ -49,22 +55,29 @@ begin
                   "agent_max_file_bytes = 2048" & ASCII.LF &
                   "agent_max_response_bytes = 1024" & ASCII.LF &
                   "agent_timeout_seconds = 2" & ASCII.LF &
-                  "maximum_output_items = 8" & ASCII.LF &
+                  "[operations]" & ASCII.LF &
                   "maximum_history_items = 12" & ASCII.LF &
                   "maximum_persisted_text_bytes = 16384" & ASCII.LF &
                   "maximum_recovery_operations = 9" & ASCII.LF &
+                  "[workflow]" & ASCII.LF &
                   "task_kind = ""remediation""" & ASCII.LF &
                   "publication = ""candidate""" & ASCII.LF &
                   "require_initialized_project = true" & ASCII.LF &
+                  "[verification]" & ASCII.LF &
                   "require_fresh_measurement = false" & ASCII.LF &
                   "require_same_policy = false" & ASCII.LF &
                   "require_same_toolchain = true" & ASCII.LF &
                   "require_no_new_critical_findings = false" & ASCII.LF &
+                  "[output]" & ASCII.LF &
+                  "maximum_output_items = 8" & ASCII.LF &
                   "format = ""json""" & ASCII.LF &
                   "color = ""never""");
                declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
                   Assert
                     (Value.Minimum_Severity = Improve.Config.Critical and then
+                     Value.Maximum_Quality_Projects = 70 and then
+                     Value.Maximum_Quality_Runs = 700 and then
+                     Value.Maximum_Quality_Findings = 7_000 and then
                      Value.Maximum_Assessment_Findings = 77 and then
                      Value.Maximum_Assessment_Bytes = 65_536 and then
                      Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
@@ -74,18 +87,26 @@ begin
                      Value.Maximum_Persisted_Text_Bytes = 16_384 and then
                      Value.Maximum_Recovery_Operations = 9 and then Value.Format = Improve.Config.JSON_Format and then
                      Value.Color = Improve.Config.Color_Never and then Value.Require_Initialized and then
-                     Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "quality.maximum_assessment") > 0 and then
-                     Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "operations.maximum") > 0,
+                     Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "[quality]") > 0 and then
+                     Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "[operations]") > 0,
                      "valid nondefault configuration was not preserved");
                   declare
                      Limits : constant Improve.Storage.Read_Limits :=
                        Improve.Operations.Storage_Read_Limits (Value);
+                     Quality_Limits : constant Ada_Quality.Reporting.Load_Limits :=
+                       Improve.Operations.Quality_Load_Limits (Value);
                   begin
                      Assert
                        (Limits.Maximum_History = 12 and then Limits.Maximum_Text_Bytes = 16_384 and then
-                        Limits.Maximum_History /= Value.Maximum_Output_Items,
+                        Limits.Maximum_History /= Value.Maximum_Output_Items and then
+                        Quality_Limits.Max_Projects = 70 and then Quality_Limits.Max_Runs = 700 and then
+                        Quality_Limits.Max_Findings = 7_000,
                         "storage history and payload limits were coupled to presentation output");
                   end;
+                  Project_Tools.Files.Write_Text_File (Path, Improve.Config.Image (Value));
+                  Assert
+                    (Improve.Config.Load (Path).Maximum_Quality_Findings = 7_000,
+                     "rendered configuration was not parseable");
                end;
                Project_Tools.Files.Write_Text_File (Path, "schema_version = 2" & ASCII.LF);
                begin
@@ -100,31 +121,53 @@ begin
                Accept_Severity ("info", Improve.Config.Info);
                Accept_Severity ("medium", Improve.Config.Medium);
                Accept_Severity ("high", Improve.Config.High);
-               Reject ("selection = ""newest""", "selection");
-               Reject ("database = """"", "empty database");
-               Reject ("maximum_assessment_findings = 1000001", "assessment finding limit");
-               Reject ("maximum_assessment_bytes = 268435457", "assessment byte limit");
-               Reject ("minimum_severity = ""urgent""", "severity");
-               Reject ("task_kind = """"", "task kind");
-               Reject ("publication = ""accepted""", "publication mode");
-               Reject ("require_initialized_project = false", "initialized project policy");
-               Reject ("format = ""yaml""", "output format");
-               Reject ("color = ""sometimes""", "color policy");
-               Reject ("maximum_tasks_per_plan = 0", "zero task limit");
-               Reject ("maximum_tasks_per_plan = 10001", "task limit");
-               Reject ("maximum_findings_per_task = 10001", "finding limit");
-               Reject ("agent_max_context_bytes = 1000", "small agent context");
+               Reject ("selection = ""newest""", "selection", "quality");
+               Reject ("database = """"", "empty database", "quality");
+               Reject ("maximum_database_projects = 100001", "quality project limit", "quality");
+               Reject ("maximum_database_runs = 10000001", "quality run limit", "quality");
+               Reject ("maximum_database_findings = 10000001", "quality finding load limit", "quality");
+               Reject ("maximum_assessment_findings = 1000001", "assessment finding limit", "quality");
+               Reject ("maximum_assessment_bytes = 268435457", "assessment byte limit", "quality");
+               Reject ("minimum_severity = ""urgent""", "severity", "planning");
+               Reject ("task_kind = """"", "task kind", "workflow");
+               Reject ("publication = ""accepted""", "publication mode", "workflow");
+               Reject ("require_initialized_project = false", "initialized project policy", "workflow");
+               Reject ("format = ""yaml""", "output format", "output");
+               Reject ("color = ""sometimes""", "color policy", "output");
+               Reject ("maximum_tasks_per_plan = 0", "zero task limit", "planning");
+               Reject ("maximum_tasks_per_plan = 10001", "task limit", "planning");
+               Reject ("maximum_findings_per_task = 10001", "finding limit", "planning");
+               Reject ("agent_max_context_bytes = 1000", "small agent context", "planning");
                Reject
                  ("agent_max_context_bytes = 1024" & ASCII.LF & "agent_max_file_bytes = 2048",
-                  "agent file limit");
-               Reject ("agent_max_response_bytes = 1048577", "agent response limit");
-               Reject ("agent_timeout_seconds = 3601", "agent timeout");
-               Reject ("maximum_output_items = 100001", "output item limit");
-               Reject ("maximum_history_items = 1000001", "history item limit");
-               Reject ("maximum_persisted_text_bytes = 16777217", "persisted text limit");
-               Reject ("maximum_recovery_operations = 10001", "recovery limit");
-               Reject ("require_review = maybe", "boolean");
+                  "agent file limit", "planning");
+               Reject ("agent_max_response_bytes = 1048577", "agent response limit", "planning");
+               Reject ("agent_timeout_seconds = 3601", "agent timeout", "planning");
+               Reject ("maximum_output_items = 100001", "output item limit", "output");
+               Reject ("maximum_history_items = 1000001", "history item limit", "operations");
+               Reject ("maximum_persisted_text_bytes = 16777217", "persisted text limit", "operations");
+               Reject ("maximum_recovery_operations = 10001", "recovery limit", "operations");
+               Reject ("require_review = maybe", "boolean", "planning");
+               Reject ("database = ""wrong.db""", "misplaced setting", "output");
+               Reject
+                 ("[quality]" & ASCII.LF & "database = ""a.db""" & ASCII.LF & "database = ""b.db""",
+                  "duplicate setting");
+               Reject ("[unknown]" & ASCII.LF & "value = 1", "unknown section");
+               declare Rejected : Boolean := False; begin
+                  Project_Tools.Files.Write_Text_File (Path, [1 .. 1_048_577 => '#']);
+                  begin
+                     declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "oversized configuration was accepted");
+               end;
                Project_Tools.Files.Delete_File_If_Present (Path);
+               Project_Tools.Files.Delete_Tree (Root);
             end;
          when Operational_Terminal_Paths =>
             declare
@@ -204,7 +247,7 @@ begin
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
                package Tasks renames Model_Runner.Framework.Tasks;
-               Work      : constant String := "/tmp/improve_phase9_end_to_end";
+               Work      : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-e2e");
                Root      : constant String := Work & "/project";
                Database  : constant String := Work & "/quality.db";
                State     : constant String := Work & "/improve.db";

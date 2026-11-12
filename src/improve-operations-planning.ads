@@ -1,6 +1,7 @@
 with Improve.Config;
 with Improve.Model;
 with Improve.Storage;
+with Ada_Quality.Reporting;
 
 --  Deterministic planning and immutable plan-history use cases.
 package Improve.Operations.Planning is
@@ -47,13 +48,15 @@ package Improve.Operations.Planning is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum)
+      Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Storage.Summary_Vectors.Vector;
    --  List stored plans for one database-qualified project.
    --  @param State_Path Existing Improve state database path.
    --  @param Quality_Path Read-only Ada Quality database path.
    --  @param Project_Selector Project identity or unique name.
    --  @param Maximum_Items Maximum plan summaries to materialize.
+   --  @param Quality_Limits Hard quality snapshot load limits.
    --  @return Latest stored plan summaries for the exact project identity.
 
    function Approve

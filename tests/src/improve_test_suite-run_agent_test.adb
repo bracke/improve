@@ -32,6 +32,7 @@ begin
             begin
                Project_Tools.Files.Write_Text_File
                  (Path, "schema_version = 1" & Character'Val (10) &
+                    "[planning]" & Character'Val (10) &
                     "agent_max_context_bytes = 512" & Character'Val (10));
                begin
                   declare

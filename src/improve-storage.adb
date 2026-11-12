@@ -530,7 +530,10 @@ package body Improve.Storage is
       return Result;
    end Legacy_Project_Key;
 
-function Save (Item : in out Store; Value : Improve.Model.Plan_Revision) return Save_Result is separate;
+function Save
+  (Item   : in out Store;
+   Value  : Improve.Model.Plan_Revision;
+   Limits : Read_Limits := Default_Read_Limits) return Save_Result is separate;
 
    function Priority_Value (Text : String) return Improve.Model.Priority is
    begin

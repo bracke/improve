@@ -1,4 +1,5 @@
 with Improve.Storage;
+with Ada_Quality.Reporting;
 
 --  Native task-state reconciliation use case.
 package Improve.Operations.Reconciliation is
@@ -8,10 +9,12 @@ package Improve.Operations.Reconciliation is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits);
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>));
    --  Reconcile the latest plan for one database-qualified project.
    --  @param State_Path Existing Improve state database.
    --  @param Quality_Path Existing read-only Ada Quality database.
    --  @param Project_Selector Project identity or unique project name.
    --  @param Limits Hard persistence and history limits.
+   --  @param Quality_Limits Hard quality snapshot load limits.
 end Improve.Operations.Reconciliation;

@@ -25,4 +25,10 @@ package body Improve.Operations is
          Maximum_History      => Settings.Maximum_History_Items,
          Maximum_Text_Bytes   => Settings.Maximum_Persisted_Text_Bytes);
    end Storage_Read_Limits;
+
+   function Quality_Load_Limits
+     (Settings : Improve.Config.Settings) return Ada_Quality.Reporting.Load_Limits is
+     ((Max_Projects => Settings.Maximum_Quality_Projects,
+       Max_Runs     => Settings.Maximum_Quality_Runs,
+       Max_Findings => Settings.Maximum_Quality_Findings));
 end Improve.Operations;

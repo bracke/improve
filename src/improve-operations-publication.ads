@@ -1,6 +1,7 @@
 with Improve.Model;
 with Improve.Storage;
 with Improve.Workflow;
+with Ada_Quality.Reporting;
 
 --  Publication authorization, journaling, and native task creation.
 package Improve.Operations.Publication is
@@ -21,7 +22,8 @@ package Improve.Operations.Publication is
       Selected_Task_Id : String;
       Task_Kind        : String;
       Dry_Run          : Boolean;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) return Result;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) return Result;
    --  Validate approval and source/evidence identity, journal the operation,
    --  publish through one native harness transaction, and persist mappings.
    --  @param State_Path Existing Improve state database.
@@ -31,5 +33,6 @@ package Improve.Operations.Publication is
    --  @param Task_Kind Configured harness task kind or `auto`.
    --  @param Dry_Run Whether to validate without changing either writable store.
    --  @param Limits Hard persistence and history limits.
+   --  @param Quality_Limits Hard quality snapshot load limits.
    --  @return Exact plan and resulting native publication mappings.
 end Improve.Operations.Publication;
