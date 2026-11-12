@@ -215,6 +215,9 @@ function Load_Revision
       Database.Transactions.Rollback (Tx);
       return Result;
    exception
+      when Constraint_Error | Ada.Calendar.Time_Error =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise Data_Error with "stored plan revision is malformed";
       when others =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;

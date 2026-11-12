@@ -189,6 +189,8 @@ package body Improve.Storage_Codec is
    begin
       if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
          raise Argument_Error with "invalid plan identity " & Plan_Id;
+      elsif (for some Value of Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last) => Value not in '0' .. '9') then
+         raise Argument_Error with "invalid plan identity " & Plan_Id;
       end if;
       return Positive'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
    exception

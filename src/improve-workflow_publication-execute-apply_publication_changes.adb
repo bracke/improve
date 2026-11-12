@@ -5,21 +5,19 @@ procedure Apply_Publication_Changes (Kind : String) is
 begin
    if not Dry_Run then
       for Spec of Selected loop
-         for Mapping of Existing loop
-            if Is_Predecessor (Mapping, Spec) then
-               declare
-                  Target : constant String := Retirement_Target (Mapping);
-               begin
-                  if Target /= "" then
-                     Tasks.Move
-                       (Store, Change, To_String (Mapping.Harness_Task_Id), Target,
-                        "superseded by " & To_String (Spec.Id) & " contract " &
-                          Improve.Model.Effective_Task_Contract (Contracts, Spec.Id),
-                        Status => Status, Actor => Transitions.User);
-                     Require_Ok (Status, "retire superseded native task");
-                  end if;
-               end;
-            end if;
+         for Index of Predecessor_Indexes_Of (Spec) loop
+            declare
+               Mapping : Improve.Storage.Publication_Record renames Existing (Index);
+               Target  : constant String := Retirement_Target (Mapping);
+            begin
+               if Target /= "" then
+                  Tasks.Move
+                    (Store, Change, To_String (Mapping.Harness_Task_Id), Target,
+                     "superseded by " & To_String (Spec.Id) & " contract " & Contract_Of (Spec.Id),
+                     Status => Status, Actor => Transitions.User);
+                  Require_Ok (Status, "retire superseded native task");
+               end if;
+            end;
          end loop;
       end loop;
    end if;

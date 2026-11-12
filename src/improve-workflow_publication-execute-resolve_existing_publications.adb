@@ -4,24 +4,25 @@ begin
    for Spec of Selected loop
       declare
          Contract     : constant Unbounded_String :=
-           To_Unbounded_String (Improve.Model.Effective_Task_Contract (Contracts, Spec.Id));
+           To_Unbounded_String (Contract_Of (Spec.Id));
          Origin       : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec, To_String (Contract)));
          Harness_Id   : Unbounded_String;
          Was_Mapped   : Boolean := False;
          Predecessors : constant Improve.Model.UString_Vectors.Vector := Predecessors_Of (Spec);
       begin
-         for Mapping of Existing loop
-            if Is_Predecessor (Mapping, Spec) then
-               declare
-                  Target : constant String := Retirement_Target (Mapping);
-                  pragma Unreferenced (Target);
-               begin
-                  null;
-               end;
-            end if;
+         for Index of Predecessor_Indexes_Of (Spec) loop
+            declare
+               Target : constant String := Retirement_Target (Existing (Index));
+               pragma Unreferenced (Target);
+            begin
+               null;
+            end;
          end loop;
-         for Mapping of Existing loop
-            if Mapping.Improve_Task_Id = Spec.Id and then Mapping.Contract = Contract then
+         if Current_Mappings.Contains (To_String (Spec.Id)) then
+            declare
+               Mapping : Improve.Storage.Publication_Record renames
+                 Existing (Current_Mappings.Element (To_String (Spec.Id)));
+            begin
                declare
                   Definition : Records.Item;
                begin
@@ -36,9 +37,8 @@ begin
                Origin := Mapping.Origin;
                Harness_Id := Mapping.Harness_Task_Id;
                Was_Mapped := True;
-               exit;
-            end if;
-         end loop;
+            end;
+         end if;
          if not Was_Mapped then
             Harness_Id := To_Unbounded_String
               (Existing_By_Origin (To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));

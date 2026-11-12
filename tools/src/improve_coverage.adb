@@ -44,47 +44,60 @@ procedure Improve_Coverage is
    function Compilation_Stem
      (Unit : Ada_Quality.Coverage.Production_Unit) return String is
       Prefix : constant String := "separate (";
-   begin
-      if Length (Unit.Body_Path) > 0 then
+      function Stem_Of (Name : String) return String is
+         Result : String := Ada.Characters.Handling.To_Lower (Name);
+      begin
+         for Index in Result'Range loop
+            if Result (Index) = '.' then Result (Index) := '-'; end if;
+         end loop;
+         return Result;
+      end Stem_Of;
+
+      function Separate_Parent (Path : String) return String is
+         Text : constant String := Project_Tools.Files.Read_Raw_File (Path);
+      begin
+         if Text'Length <= Prefix'Length or else
+           Text (Text'First .. Text'First + Prefix'Length - 1) /= Prefix
+         then
+            return "";
+         end if;
          declare
-            Text : constant String :=
-              Project_Tools.Files.Read_Raw_File (To_String (Unit.Body_Path));
+            Closing : constant Natural :=
+              Ada.Strings.Fixed.Index (Text, ")", From => Text'First + Prefix'Length);
          begin
-            if Text'Length > Prefix'Length and then
-              Text (Text'First .. Text'First + Prefix'Length - 1) = Prefix
-            then
-               declare
-                  Closing : constant Natural :=
-                    Ada.Strings.Fixed.Index
-                      (Text, ")", From => Text'First + Prefix'Length);
-               begin
-                  if Closing > Text'First + Prefix'Length then
-                     declare
-                        Parent : constant String :=
-                          Text (Text'First + Prefix'Length .. Closing - 1);
-                        Last_Dot : constant Natural :=
-                          Ada.Strings.Fixed.Index
-                            (Parent, ".", Going => Ada.Strings.Backward);
-                        Result : String :=
-                          Ada.Characters.Handling.To_Lower
-                            (if Last_Dot > Parent'First and then
-                                Ada.Strings.Fixed.Count (Parent, ".") > 1
-                             then Parent (Parent'First .. Last_Dot - 1)
-                             else Parent);
-                     begin
-                        for Index in Result'Range loop
-                           if Result (Index) = '.' then
-                              Result (Index) := '-';
-                           end if;
-                        end loop;
-                        return Result;
-                     end;
-                  end if;
-               end;
+            if Closing <= Text'First + Prefix'Length then
+               raise Program_Error with "malformed Ada separate parent in " & Path;
             end if;
+            return Text (Text'First + Prefix'Length .. Closing - 1);
          end;
-      end if;
-      return To_String (Unit.Stem);
+      end Separate_Parent;
+   begin
+      if Length (Unit.Body_Path) = 0 then return To_String (Unit.Stem); end if;
+      declare
+         Parent : Unbounded_String := To_Unbounded_String (Separate_Parent (To_String (Unit.Body_Path)));
+      begin
+         if Length (Parent) = 0 then return To_String (Unit.Stem); end if;
+         for Depth in 1 .. 32 loop
+            declare
+               Parent_Source : constant String :=
+                 Project_Tools.Files.Join
+                   (Project_Tools.Files.Join (Root, "src"), Stem_Of (To_String (Parent)) & ".adb");
+            begin
+               exit when not Project_Tools.Files.File_Exists (Parent_Source);
+               declare Next_Parent : constant String := Separate_Parent (Parent_Source); begin
+                  exit when Next_Parent = "";
+                  if Depth = 32 then
+                     raise Program_Error with "Ada separate parent nesting exceeds coverage limit";
+                  end if;
+                  if Next_Parent = To_String (Parent) then
+                     raise Program_Error with "cyclic Ada separate parent " & Next_Parent;
+                  end if;
+                  Parent := To_Unbounded_String (Next_Parent);
+               end;
+            end;
+         end loop;
+         return Stem_Of (To_String (Parent));
+      end;
    end Compilation_Stem;
 
    procedure Fail (Message : String) is

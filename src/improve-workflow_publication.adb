@@ -1,5 +1,6 @@
 with Ada.Containers;
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
@@ -31,6 +32,11 @@ package body Improve.Workflow_Publication is
       Element_Type    => Positive,
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
 
    package Index_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Positive);

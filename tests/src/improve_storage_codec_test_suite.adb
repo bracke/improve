@@ -106,6 +106,18 @@ package body Improve_Storage_Codec_Test_Suite is
       Invalid := False;
       begin
          declare
+            Ignored : constant Positive := Improve.Storage_Codec.Plan_Row_Id ("PLAN-+00001");
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Argument_Error => Invalid := True;
+      end;
+      Assert (Invalid, "storage codec accepted a noncanonical plan identity");
+      Invalid := False;
+      begin
+         declare
             Ignored : constant String := Improve.Storage_Codec.Field ("present=value", "missing");
             pragma Unreferenced (Ignored);
          begin

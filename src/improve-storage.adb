@@ -583,13 +583,18 @@ function Save
       Plan_Row : Natural := 0;
    begin
       if Plan_Id'Length > 10 and then Plan_Id (Plan_Id'First .. Plan_Id'First + 9) = "@revision:" then
-         return Load_Revision
-           (Item, Positive'Value (Plan_Id (Plan_Id'First + 10 .. Plan_Id'Last)), Limits);
-      elsif Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
-         raise Argument_Error with "invalid plan identity " & Plan_Id;
+         declare
+            Revision_Id : Positive;
+         begin
+            begin
+               Revision_Id := Positive'Value (Plan_Id (Plan_Id'First + 10 .. Plan_Id'Last));
+            exception
+               when Constraint_Error => raise Argument_Error with "invalid internal plan revision identity";
+            end;
+            return Load_Revision (Item, Revision_Id, Limits);
+         end;
       end if;
-      Plan_Row := Natural'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
-      if Plan_Row = 0 then raise Constraint_Error; end if;
+      Plan_Row := Plan_Row_Id (Plan_Id);
       Database.Transactions.Begin_Read (Item.DB, Tx);
       declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
@@ -604,7 +609,9 @@ function Save
       if Revision_Id = 0 then raise Argument_Error with "unknown plan " & Plan_Id; end if;
       return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
-      when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
+      when Constraint_Error =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise Data_Error with "stored plan revision index is malformed";
       when others =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;
@@ -619,11 +626,7 @@ function Save
       Plan_Row    : Natural := 0;
       Revision_Id : Natural := 0;
    begin
-      if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
-         raise Argument_Error with "invalid plan identity " & Plan_Id;
-      end if;
-      Plan_Row := Natural'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
-      if Plan_Row = 0 then raise Constraint_Error; end if;
+      Plan_Row := Plan_Row_Id (Plan_Id);
       Database.Transactions.Begin_Read (Item.DB, Tx);
       declare Cursor : Entity_Tables.Cursor :=
         Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
@@ -646,7 +649,9 @@ function Save
       end if;
       return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
-      when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
+      when Constraint_Error =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         raise Data_Error with "stored plan revision index is malformed";
       when others =>
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise;

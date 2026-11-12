@@ -21,6 +21,9 @@ function Execute
    Plan_Indexes      : String_Index_Maps.Map;
    Selected_Indexes  : String_Index_Maps.Map;
    Current_Mappings  : String_Index_Maps.Map;
+   Existing_Heads    : String_Index_Maps.Map;
+   type Natural_Array is array (Natural range <>) of Natural;
+   Existing_Next     : Natural_Array (1 .. Natural (Existing.Length)) := [others => 0];
 
    procedure Build_Indexes is
    begin
@@ -42,10 +45,30 @@ function Execute
          declare
             Identity : constant String := To_String (Existing (Index).Improve_Task_Id);
          begin
+            Existing_Next (Index) :=
+              (if Existing_Heads.Contains (Identity) then Existing_Heads.Element (Identity) else 0);
+            Existing_Heads.Include (Identity, Index);
             if Contract_By_Task.Contains (Identity) and then
               Existing (Index).Contract = Contract_By_Task.Element (Identity)
             then
-               Current_Mappings.Include (Identity, Index);
+               if Current_Mappings.Contains (Identity) then
+                  declare
+                     Current : Improve.Storage.Publication_Record renames
+                       Existing (Current_Mappings.Element (Identity));
+                  begin
+                     if Existing (Index).Plan_Revision > Current.Plan_Revision then
+                        Current_Mappings.Replace (Identity, Index);
+                     elsif Existing (Index).Plan_Revision = Current.Plan_Revision and then
+                       (Existing (Index).Harness_Task_Id /= Current.Harness_Task_Id or else
+                        Existing (Index).Origin /= Current.Origin)
+                     then
+                        raise Data_Error with
+                          "conflicting publication mappings for current task contract " & Identity;
+                     end if;
+                  end;
+               else
+                  Current_Mappings.Insert (Identity, Index);
+               end if;
             end if;
          end;
       end loop;
@@ -106,16 +129,35 @@ function Execute
      (Mapping : Improve.Storage.Publication_Record;
       Spec    : Improve.Model.Task_Specification) return Boolean is
       (Mapping.Improve_Task_Id = Spec.Id and then
-      To_String (Mapping.Contract) /= Improve.Model.Effective_Task_Contract (Contracts, Spec.Id) and then
+      To_String (Mapping.Contract) /= Contract_Of (Spec.Id) and then
       Mapping.Plan_Revision < Plan.Revision);
+
+   function Predecessor_Indexes_Of
+     (Spec : Improve.Model.Task_Specification) return Index_Vectors.Vector is
+      Values : Index_Vectors.Vector;
+      Index  : Natural :=
+        (if Existing_Heads.Contains (To_String (Spec.Id))
+         then Existing_Heads.Element (To_String (Spec.Id))
+         else 0);
+   begin
+      while Index > 0 loop
+         if Is_Predecessor (Existing (Index), Spec) then
+            Values.Append (Positive (Index));
+         end if;
+         Index := Existing_Next (Index);
+      end loop;
+      return Values;
+   end Predecessor_Indexes_Of;
 
    function Predecessors_Of
      (Spec : Improve.Model.Task_Specification) return Improve.Model.UString_Vectors.Vector is
       Values : Improve.Model.UString_Vectors.Vector;
+      Seen   : String_Sets.Set;
    begin
-      for Mapping of Existing loop
-         if Is_Predecessor (Mapping, Spec) and then not Values.Contains (Mapping.Harness_Task_Id) then
-            Values.Append (Mapping.Harness_Task_Id);
+      for Index of Predecessor_Indexes_Of (Spec) loop
+         if not Seen.Contains (To_String (Existing (Index).Harness_Task_Id)) then
+            Seen.Insert (To_String (Existing (Index).Harness_Task_Id));
+            Values.Append (Existing (Index).Harness_Task_Id);
          end if;
       end loop;
       return Values;

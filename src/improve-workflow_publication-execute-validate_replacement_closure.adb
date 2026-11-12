@@ -45,28 +45,27 @@ begin
       if not Is_Selected (Spec.Id) and then not Has_Current_Mapping (Spec) and then
         Depends_On_Replaced (Spec)
       then
-         for Mapping of Existing loop
-            if Is_Predecessor (Mapping, Spec) then
-               declare
-                  Definition   : Records.Item;
-                  Native_State : constant String := Tasks.State_Of
-                    (Store, To_String (Mapping.Harness_Task_Id));
-                  Core_State   : constant String := Tasks.Counts_As (Store, Native_State);
-               begin
-                  Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
-                  Require_Ok (Status, "read downstream native task " & To_String (Mapping.Harness_Task_Id));
-                  if Records.Get (Definition, "created_by") /= "improve" or else
-                    Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
-                  then
-                     raise Data_Error with "downstream native task has invalid Improve provenance";
-                  elsif Core_State not in "complete" | "cancelled" | "rejected" then
-                     raise Data_Error with
-                       "selective replacement would strand published dependent " & To_String (Spec.Id) &
-                       " (" & To_String (Mapping.Harness_Task_Id) & " is " & Native_State &
-                       "); publish the complete plan so its dependency can be replaced atomically";
-                  end if;
-               end;
-            end if;
+         for Index of Predecessor_Indexes_Of (Spec) loop
+            declare
+               Mapping      : Improve.Storage.Publication_Record renames Existing (Index);
+               Definition   : Records.Item;
+               Native_State : constant String := Tasks.State_Of
+                 (Store, To_String (Mapping.Harness_Task_Id));
+               Core_State   : constant String := Tasks.Counts_As (Store, Native_State);
+            begin
+               Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
+               Require_Ok (Status, "read downstream native task " & To_String (Mapping.Harness_Task_Id));
+               if Records.Get (Definition, "created_by") /= "improve" or else
+                 Records.Get (Definition, "origin") /= To_String (Mapping.Origin)
+               then
+                  raise Data_Error with "downstream native task has invalid Improve provenance";
+               elsif Core_State not in "complete" | "cancelled" | "rejected" then
+                  raise Data_Error with
+                    "selective replacement would strand published dependent " & To_String (Spec.Id) &
+                    " (" & To_String (Mapping.Harness_Task_Id) & " is " & Native_State &
+                    "); publish the complete plan so its dependency can be replaced atomically";
+               end if;
+            end;
          end loop;
       end if;
    end loop;

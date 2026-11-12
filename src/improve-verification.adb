@@ -1,3 +1,6 @@
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Strings.Hash;
 with Improve.Findings;
 with Ada_Quality.Types;
 
@@ -8,48 +11,69 @@ package body Improve.Verification is
 
    type Evidence_State is (Resolved_Evidence, Outstanding_Evidence, Inconclusive_Evidence);
 
+   package Finding_Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package Count_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Natural,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   function Exact_Key
+     (Indicator   : Indicator_Id;
+      Fingerprint : Ada.Strings.Unbounded.Unbounded_String) return String is
+     (Improve.Model.Canonical_Key
+        ([To_Unbounded_String (Image (Indicator)), Fingerprint]));
+
+   function Semantic_Key (Finding : Improve.Model.Finding_Reference) return String is
+     (Improve.Model.Canonical_Key
+        ([To_Unbounded_String (Image (Finding.Indicator)), Finding.Rule, Finding.Semantic_Subject]));
+
+   function Semantic_Pair
+     (Semantic    : String;
+      Fingerprint : Ada.Strings.Unbounded.Unbounded_String) return String is
+     (Improve.Model.Canonical_Key
+        ([To_Unbounded_String (Semantic), Fingerprint]));
+
    function Contract_Fingerprint (Item : Improve.Model.Task_Specification) return String is
    begin
       return Improve.Model.Task_Contract_Fingerprint (Item);
    end Contract_Fingerprint;
 
-   function Was_Verified
-     (Task_Id : Ada.Strings.Unbounded.Unbounded_String;
-      Values  : Improve.Model.UString_Vectors.Vector) return Boolean is
-   begin
-      for Value of Values loop
-         if Value = Task_Id then return True; end if;
-      end loop;
-      return False;
-   end Was_Verified;
-
    function Baseline_Finding
-     (Plan : Improve.Model.Plan_Revision;
-      Key  : Ada.Strings.Unbounded.Unbounded_String) return Improve.Model.Finding_Reference is
-      Found : Natural := 0;
-      Value : Improve.Model.Finding_Reference;
+     (Plan      : Improve.Model.Plan_Revision;
+      Indexes   : Finding_Index_Maps.Map;
+      Ambiguous : String_Sets.Set;
+      Key       : Ada.Strings.Unbounded.Unbounded_String) return Improve.Model.Finding_Reference is
+      Identity : constant String := To_String (Key);
    begin
-      for Finding of Plan.Findings loop
-         if Finding.Fingerprint = Key then
-            Found := Found + 1;
-            Value := Finding;
-         end if;
-      end loop;
-      if Found = 0 then
-         raise Data_Error with "task references an unknown baseline finding";
-      elsif Found > 1 then
+      if Ambiguous.Contains (Identity) then
          raise Data_Error with "task finding identity is ambiguous within its plan";
+      elsif not Indexes.Contains (Identity) then
+         raise Data_Error with "task references an unknown baseline finding";
       end if;
-      return Value;
+      return Plan.Findings (Indexes.Element (Identity));
    end Baseline_Finding;
 
    function State_Of
      (Original : Improve.Model.Finding_Reference;
       Current  : Improve.Source.Selection;
-      Findings : Improve.Model.Finding_Vectors.Vector;
-      Task_Keys : Improve.Model.UString_Vectors.Vector) return Evidence_State is
+      Current_Exact : String_Sets.Set;
+      Current_Raw_Exact : String_Sets.Set;
+      Semantic_Counts : Count_Maps.Map;
+      Task_Semantic_Matches : Count_Maps.Map) return Evidence_State is
       Result : constant Indicator_Result := Current.Assessment.Results
         (Current.Assessment.Results.First_Index + Indicator_Id'Pos (Original.Indicator));
+      Semantic : constant String := Semantic_Key (Original);
    begin
       if Result.Indicator /= Original.Indicator then
          raise Data_Error with "verification indicator registry order is inconsistent";
@@ -58,24 +82,22 @@ package body Improve.Verification is
          return Resolved_Evidence;
       elsif Result.Execution = Succeeded and then Result.Compliance = Violation then
          if Original.Indicator_Level then return Outstanding_Evidence; end if;
-         for Finding of Findings loop
-            if Finding.Indicator = Original.Indicator and then Finding.Fingerprint = Original.Fingerprint then
-               return Outstanding_Evidence;
-            end if;
-         end loop;
-         for Finding of Findings loop
-            if Finding.Indicator = Original.Indicator and then Finding.Rule = Original.Rule and then
-              Finding.Semantic_Subject = Original.Semantic_Subject
-            then
-               if not Task_Keys.Contains (Finding.Fingerprint) then return Inconclusive_Evidence; end if;
-            end if;
-         end loop;
+         if Current_Exact.Contains (Exact_Key (Original.Indicator, Original.Fingerprint)) then
+            return Outstanding_Evidence;
+         elsif Semantic_Counts.Contains (Semantic) and then
+           Semantic_Counts.Element (Semantic) >
+             (if Task_Semantic_Matches.Contains (Semantic)
+              then Task_Semantic_Matches.Element (Semantic)
+              else 0)
+         then
+            return Inconclusive_Evidence;
+         end if;
          return Resolved_Evidence;
       elsif Result.Execution = Failed and then Result.Compliance = Violation then
          if Original.Indicator_Level then return Outstanding_Evidence; end if;
-         for Finding of Result.Findings loop
-            if Finding.Fingerprint = Original.Fingerprint then return Outstanding_Evidence; end if;
-         end loop;
+         if Current_Raw_Exact.Contains (Exact_Key (Original.Indicator, Original.Fingerprint)) then
+            return Outstanding_Evidence;
+         end if;
          return Inconclusive_Evidence;
       else
          return Inconclusive_Evidence;
@@ -124,6 +146,14 @@ package body Improve.Verification is
           (Current, Minimum_Severity => Ada_Quality.Types.Info, Allow_Investigation => True,
            Maximum_Findings => Settings.Maximum_Assessment_Findings,
            Maximum_Bytes => Settings.Maximum_Assessment_Bytes);
+      Baseline_Indexes       : Finding_Index_Maps.Map;
+      Ambiguous_Baselines    : String_Sets.Set;
+      Baseline_Exact         : String_Sets.Set;
+      Current_Exact          : String_Sets.Set;
+      Current_Raw_Exact      : String_Sets.Set;
+      Current_Semantic_Pairs : String_Sets.Set;
+      Semantic_Counts        : Count_Maps.Map;
+      Previously_Verified_Ids : String_Sets.Set;
 
       function Complete_Project_Outcome return Improve.Model.Quality_Outcome is
          Inconclusive : Boolean := False;
@@ -153,6 +183,43 @@ package body Improve.Verification is
       Result.Plan_Id := Plan.Plan_Id;
       Result.Baseline_Run := Plan.Baseline.Run_Id;
       Result.Verification_Run := Current.Baseline.Run_Id;
+      for Index in 1 .. Natural (Plan.Findings.Length) loop
+         declare
+            Finding    : Improve.Model.Finding_Reference renames Plan.Findings (Index);
+            Fingerprint : constant String := To_String (Finding.Fingerprint);
+         begin
+            if Baseline_Indexes.Contains (Fingerprint) then
+               Ambiguous_Baselines.Include (Fingerprint);
+            else
+               Baseline_Indexes.Insert (Fingerprint, Index);
+            end if;
+            Baseline_Exact.Include (Exact_Key (Finding.Indicator, Finding.Fingerprint));
+         end;
+      end loop;
+      for Finding of Current_Findings loop
+         declare
+            Semantic : constant String := Semantic_Key (Finding);
+            Pair     : constant String := Semantic_Pair (Semantic, Finding.Fingerprint);
+         begin
+            Current_Exact.Include (Exact_Key (Finding.Indicator, Finding.Fingerprint));
+            if not Current_Semantic_Pairs.Contains (Pair) then
+               Current_Semantic_Pairs.Insert (Pair);
+               Semantic_Counts.Include
+                 (Semantic,
+                  (if Semantic_Counts.Contains (Semantic)
+                   then Semantic_Counts.Element (Semantic) + 1
+                   else 1));
+            end if;
+         end;
+      end loop;
+      for Evidence of Current.Assessment.Results loop
+         for Finding of Evidence.Findings loop
+            Current_Raw_Exact.Include (Exact_Key (Finding.Indicator, Finding.Fingerprint));
+         end loop;
+      end loop;
+      for Identity of Previously_Verified loop
+         Previously_Verified_Ids.Include (To_String (Identity));
+      end loop;
       if Current.Project.Id /= Plan.Project.Id then
          raise Data_Error with "verification assessment belongs to another project";
       elsif Settings.Require_Fresh_Measurement and then Current.Baseline.Run_Id <= Plan.Baseline.Run_Id then
@@ -192,11 +259,30 @@ package body Improve.Verification is
                Item         : Task_Result;
                Outstanding  : Natural := 0;
                Inconclusive : Natural := 0;
+               Task_Semantic_Matches : Count_Maps.Map;
             begin
                Item.Task_Id := Spec.Id;
                Item.Total := Natural (Spec.Finding_Keys.Length);
                for Key of Spec.Finding_Keys loop
-                  case State_Of (Baseline_Finding (Plan, Key), Current, Current_Findings, Spec.Finding_Keys) is
+                  declare
+                     Original : constant Improve.Model.Finding_Reference :=
+                       Baseline_Finding (Plan, Baseline_Indexes, Ambiguous_Baselines, Key);
+                     Semantic : constant String := Semantic_Key (Original);
+                  begin
+                     if Current_Semantic_Pairs.Contains (Semantic_Pair (Semantic, Key)) then
+                        Task_Semantic_Matches.Include
+                          (Semantic,
+                           (if Task_Semantic_Matches.Contains (Semantic)
+                            then Task_Semantic_Matches.Element (Semantic) + 1
+                            else 1));
+                     end if;
+                  end;
+               end loop;
+               for Key of Spec.Finding_Keys loop
+                  case State_Of
+                    (Baseline_Finding (Plan, Baseline_Indexes, Ambiguous_Baselines, Key), Current,
+                     Current_Exact, Current_Raw_Exact, Semantic_Counts, Task_Semantic_Matches)
+                  is
                      when Outstanding_Evidence => Outstanding := Outstanding + 1;
                      when Inconclusive_Evidence => Inconclusive := Inconclusive + 1;
                      when Resolved_Evidence => null;
@@ -222,7 +308,7 @@ package body Improve.Verification is
                   Item.Explanation := To_Unbounded_String ("all linked deficiencies remain in the assessment");
                end if;
                if Item.Outcome in Improve.Model.Still_Failing | Improve.Model.Partially_Resolved and then
-                 Was_Verified (Spec.Id, Previously_Verified)
+                 Previously_Verified_Ids.Contains (To_String (Spec.Id))
                then
                   Item.Outcome := Improve.Model.Regressed;
                   Item.Explanation := To_Unbounded_String
@@ -239,15 +325,9 @@ package body Improve.Verification is
       if Settings.Require_No_New_Critical then
          for Finding of Current_Findings loop
             if Finding.Level = Critical then
-               declare Known : Boolean := False; begin
-                  for Original of Plan.Findings loop
-                     if Original.Indicator = Finding.Indicator and then Original.Fingerprint = Finding.Fingerprint then
-                        Known := True;
-                        exit;
-                     end if;
-                  end loop;
-                  if not Known then Result.New_Critical := Result.New_Critical + 1; end if;
-               end;
+               if not Baseline_Exact.Contains (Exact_Key (Finding.Indicator, Finding.Fingerprint)) then
+                  Result.New_Critical := Result.New_Critical + 1;
+               end if;
             end if;
          end loop;
       end if;

@@ -227,6 +227,7 @@ package body Improve_Test_Suite is
    procedure Run_Agent_Test (Item : in out Case_Test) is separate;
 
    procedure Run_Domain_Test (Item : in out Case_Test) is separate;
+   procedure Run_Planner_Test (Item : in out Case_Test) is separate;
    procedure Run_Integration_Test (Item : in out Case_Test) is separate;
 
    overriding procedure Run_Test (Item : in out Case_Test) is
@@ -234,10 +235,12 @@ package body Improve_Test_Suite is
       case Item.Id is
          when Catalog | Digest | Project_Discovery | Latest_Completed | Explicit_Incomplete_Rejected |
            Normalize_Findings | Unknown_Project_Rejected | Safe_Path_Validation | Projects_CLI | Findings_CLI |
-           Complete_Strategy_Registry | Deterministic_Planner | Planner_Grouping_And_Splitting |
+           Complete_Strategy_Registry =>
+            Run_Domain_Test (Item);
+         when Deterministic_Planner | Planner_Grouping_And_Splitting |
            Plan_Fingerprint_Severity_Sensitive | Plan_Fingerprint_Ignores_Unrelated_Snapshot |
            Dependency_Cycle_Rejected | Dense_Contract_Fingerprints =>
-            Run_Domain_Test (Item);
+            Run_Planner_Test (Item);
          when Plan_Dry_Run_CLI | Persistent_Plan_Roundtrip | Repeated_Plan_Idempotent |
            Persisted_Dependency_Translation | Read_Only_Does_Not_Initialize | Storage_Finalizes_On_Error |
            Plan_Approval_Required | Current_Source_Staleness_Detected | Historical_Task_Lookup |

@@ -124,6 +124,31 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Downgrade_To_Version_2;
 
+   procedure Corrupt_Revision (Path : String; Revision_Id : Positive) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Raw_Entity;
+      Status : Database.Status.Result;
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be reopened for corruption fixture");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (6, Revision_Id), Row);
+      Assert (Status.Code = Database.Status.Ok, "revision fixture is missing");
+      Row.Payload := To_Unbounded_Wide_Wide_String ("revision=broken");
+      Assert
+        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "revision fixture could not be corrupted");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Corrupt_Revision;
+
    type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
 
@@ -378,6 +403,23 @@ package body Improve_Storage_Test_Suite is
                   "configured read limits were lost during publication journaling");
             end;
          end;
+      end;
+      Improve.Storage.Close (Store);
+      Corrupt_Revision (Path, 5);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      declare
+         Integrity_Rejected : Boolean := False;
+         Misclassified      : Boolean := False;
+      begin
+         begin
+            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
+         exception
+            when Improve.Data_Error     => Integrity_Rejected := True;
+            when Improve.Argument_Error => Misclassified := True;
+         end;
+         Assert
+           (Integrity_Rejected and then not Misclassified,
+            "corrupt persisted revision was not classified as an integrity failure");
       end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);

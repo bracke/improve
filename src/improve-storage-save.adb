@@ -136,9 +136,9 @@ function Save
          declare
             First_Task_Row : constant Positive :=
               Reserve_Ids (Item, Tx, Tasks_Table, Natural (Stored.Tasks.Length));
-            Original_Ids : Improve.Model.UString_Vectors.Vector;
-            Assigned_Ids : Improve.Model.UString_Vectors.Vector;
+            Assigned_Ids : String_Id_Maps.Map;
             Previous_Tasks : String_Value_Maps.Map;
+            Assigned_By_Original : String_Value_Maps.Map;
 
             function Identity_Key
               (Category, Title, Acceptance, Finding_Set : String) return String is
@@ -195,16 +195,20 @@ function Save
          begin
             Index_Previous_Tasks;
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
-               Original_Ids.Append (Stored.Tasks (Index).Id);
                declare
+                  Original : constant Ada.Strings.Unbounded.Unbounded_String := Stored.Tasks (Index).Id;
                   Prior : constant Ada.Strings.Unbounded.Unbounded_String :=
                     Previous_Task_Id (Stored.Tasks (Index));
                   Identity : constant Ada.Strings.Unbounded.Unbounded_String :=
-                    (if Length (Prior) > 0 and then not Assigned_Ids.Contains (Prior) then Prior
+                    (if Length (Prior) > 0 and then not Assigned_Ids.Contains (To_String (Prior)) then Prior
                      else To_Unbounded_String (Id_Image ("IMP-", First_Task_Row + Index - 1)));
                begin
+                  if Assigned_By_Original.Contains (To_String (Original)) then
+                     raise Data_Error with "plan contains a duplicate task identity";
+                  end if;
                   Stored.Tasks (Index).Id := Identity;
-                  Assigned_Ids.Append (Identity);
+                  Assigned_Ids.Insert (To_String (Identity), Index);
+                  Assigned_By_Original.Insert (To_String (Original), Identity);
                end;
             end loop;
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
@@ -214,17 +218,11 @@ function Save
                   Translated : Improve.Model.UString_Vectors.Vector;
                begin
                   for Dependency of Persisted.Dependencies loop
-                     declare Found : Boolean := False; begin
-                        for Target in 1 .. Natural (Original_Ids.Length) loop
-                           if Original_Ids (Target) = Dependency then
-                              Translated.Append (Stored.Tasks (Target).Id);
-                              Found := True;
-                              exit;
-                           end if;
-                        end loop;
-                        if not Found then
+                     declare Identity : constant String := To_String (Dependency); begin
+                        if not Assigned_By_Original.Contains (Identity) then
                            raise Data_Error with "task dependency is absent from the persisted plan";
                         end if;
+                        Translated.Append (Assigned_By_Original.Element (Identity));
                      end;
                   end loop;
                   Persisted.Dependencies := Translated;
