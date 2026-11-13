@@ -164,6 +164,10 @@ package Improve.Model is
      (Index_Type => Positive, Element_Type => Task_Specification);
    --  Proposed remediation tasks in dependency order.
 
+   procedure Validate_Task_Graph (Tasks : Task_Vectors.Vector);
+   --  Validate unique task identities, dependency references, duplicate edges, and acyclicity.
+   --  @param Tasks Task graph to validate.
+
    function Task_Contract_Fingerprint (Item : Task_Specification) return String;
    --  Identify every execution-relevant and provenance field of a task through canonical length-delimited encoding.
    --  @param Item Complete task specification.
@@ -194,6 +198,10 @@ package Improve.Model is
    --  @field Tasks Proposed remediation tasks.
    --  @field Fingerprint Deterministic revision identity.
    --  @field Review_Status Review state.
+
+   procedure Validate (Plan : Plan_Revision);
+   --  Validate the complete remediation graph and every task-to-finding relationship.
+   --  @param Plan Plan revision to validate at a trust boundary.
 
    type Task_Contract_Binding is record
       Task_Id     : UString;

@@ -7,7 +7,6 @@ with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Checks;
 with Ada_Quality.Types;
-with Improve.Dependencies;
 with Improve.Rules;
 
 package body Improve.Planner is
@@ -190,7 +189,6 @@ package body Improve.Planner is
       for Index in 1 .. Natural (Groups.Length) loop
          Result.Tasks.Append (Make_Task (Groups (Index), Index, Settings));
       end loop;
-      Improve.Dependencies.Validate (Result.Tasks);
       declare
          Material : Unbounded_String;
 
@@ -271,6 +269,7 @@ package body Improve.Planner is
          Result.Fingerprint := To_Unbounded_String (Stable_Digest (To_String (Material)));
          Result.Plan_Id := To_Unbounded_String ("PLAN-DRAFT-" & To_String (Result.Fingerprint));
       end;
+      Improve.Model.Validate (Result);
       return Result;
    end Generate;
 end Improve.Planner;

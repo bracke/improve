@@ -4,7 +4,6 @@ with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Exceptions;
 with Ada.Strings.Hash;
 with Hostkit.Fs;
-with Improve.Dependencies;
 with Improve.Findings;
 
 package body Improve.Refinement is
@@ -408,7 +407,6 @@ package body Improve.Refinement is
             end;
          end;
       end loop;
-      Improve.Dependencies.Validate (Result.Tasks);
       declare
          Components : Improve.Model.UString_Vectors.Vector :=
            [Draft.Fingerprint, To_Unbounded_String (Adapter_Name)];
@@ -423,6 +421,7 @@ package body Improve.Refinement is
          Result.Plan_Id := To_Unbounded_String ("PLAN-DRAFT-" & To_String (Result.Fingerprint));
          Result.Planner_Id := Result.Planner_Id & To_Unbounded_String ("+agent:" & Adapter_Name);
       end;
+      Improve.Model.Validate (Result);
       return Result;
    end Validate;
 

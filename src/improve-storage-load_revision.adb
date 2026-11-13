@@ -213,6 +213,7 @@ function Load_Revision
          end loop;
       end;
       Database.Transactions.Rollback (Tx);
+      Improve.Model.Validate (Result);
       return Result;
    exception
       when Constraint_Error | Ada.Calendar.Time_Error =>

@@ -27,7 +27,7 @@ package body Improve_Publication_Test_Suite is
      (Native_Publication_And_Recovery, Native_Task_Contract_Fidelity, Changed_Task_Contract_Replaced,
       Replacement_Running_And_Completed, Workspace_Lifecycle_Fails_Closed,
       Selective_Publication_Resolves_Dependency, Prerequisite_Replacement_Migrates_Dependents,
-      Refresh_Reconciles_State);
+      Refresh_Reconciles_State, Refresh_Rejects_Definition_Drift);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -51,7 +51,7 @@ package body Improve_Publication_Test_Suite is
             Run_Lifecycle_Test (Item);
          when Selective_Publication_Resolves_Dependency .. Prerequisite_Replacement_Migrates_Dependents =>
             Run_Dependencies_Test (Item);
-         when Refresh_Reconciles_State =>
+         when Refresh_Reconciles_State | Refresh_Rejects_Definition_Drift =>
             Run_Refresh_Test (Item);
       end case;
    end Run_Test;

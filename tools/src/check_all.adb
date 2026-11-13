@@ -91,7 +91,7 @@ begin
       Project_Tools.Release_Checks.Fail ("cannot locate Improve project root");
    end if;
    for Path of Project_Tools.Files.List_Tree ("src", "*.ad?") loop
-      Check_File (To_String (Path), Maximum_Lines => 900);
+      Check_File (To_String (Path), Maximum_Lines => 700);
    end loop;
    for Path of Project_Tools.Files.List_Tree ("tests/src", "*.ad?") loop
       Check_File (To_String (Path), Maximum_Lines => 650);

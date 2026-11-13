@@ -60,6 +60,7 @@ function Save
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for writing";
       end if;
+      Improve.Model.Validate (Value);
       Validate_Write;
       Database.Transactions.Begin_Write (Item.DB, Tx);
       Existing_Revision := Find_Revision (Item, Tx, To_String (Value.Fingerprint));

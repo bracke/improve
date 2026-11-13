@@ -1,10 +1,17 @@
 with Ada.Characters.Handling;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Directories;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Project_Tools.Files;
 
 package body Improve_Coverage_Units is
    use Ada.Strings.Unbounded;
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
 
    function Stem_Of (Name : String) return String is
       Result : String := Ada.Characters.Handling.To_Lower (Name);
@@ -102,8 +109,10 @@ package body Improve_Coverage_Units is
       declare
          Current : Unbounded_String := Unit.Body_Path;
          Parent  : Unbounded_String := To_Unbounded_String (Separate_Parent (To_String (Unit.Body_Path)));
+         Visited : String_Sets.Set;
       begin
          if Length (Parent) = 0 then return To_String (Unit.Stem); end if;
+         Visited.Insert (To_String (Current));
          for Depth in 1 .. 32 loop
             declare
                Stem : constant String := Stem_Of (To_String (Parent));
@@ -116,9 +125,10 @@ package body Improve_Coverage_Units is
                   if Next_Parent = "" then return Stem; end if;
                   if Depth = 32 then
                      raise Program_Error with "Ada separate parent nesting exceeds coverage limit";
-                  elsif Parent_Source = To_String (Current) then
+                  elsif Visited.Contains (Parent_Source) then
                      raise Program_Error with "cyclic Ada separate parent " & Next_Parent;
                   end if;
+                  Visited.Insert (Parent_Source);
                   Current := To_Unbounded_String (Parent_Source);
                   Parent := To_Unbounded_String (Next_Parent);
                end;

@@ -37,9 +37,9 @@ begin
                   Rejected := False;
                   begin
                      declare
-                        Value : constant Improve.Workflow.Published_Vectors.Vector :=
-                          Improve.Workflow.Reconcile
-                            (To_String (Data.Target), Improve.Workflow.Published_Vectors.Empty_Vector);
+                        Value : constant Improve.Workflow.Publication_Result :=
+                          Improve.Workflow.Publish
+                            (To_String (Data.Target), Draft, "auto", Existing_Only => True);
                         pragma Unreferenced (Value);
                      begin
                         null;

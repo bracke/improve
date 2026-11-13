@@ -11,6 +11,7 @@ with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
 with Improve_CLI_Test_Suite;
+with Improve_Coverage_Units_Test_Suite;
 with Improve_Planning_Test_Suite;
 with Improve_Operations_Test_Suite;
 with Improve_Publication_Test_Suite;
@@ -259,6 +260,7 @@ package body Improve_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
+      Result.Add_Test (Improve_Coverage_Units_Test_Suite.Suite);
       Result.Add_Test (Improve_Operations_Test_Suite.Suite);
       Result.Add_Test (Improve_Planning_Test_Suite.Suite);
       Result.Add_Test (Improve_Publication_Test_Suite.Suite);

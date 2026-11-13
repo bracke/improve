@@ -60,12 +60,4 @@ package Improve.Workflow is
    --  @param Dry_Run Whether to validate without changing harness state.
    --  @return Resolved task kind and native mappings.
 
-   function Reconcile
-     (Project_Directory : String;
-      Published         : Published_Vectors.Vector) return Published_Vectors.Vector;
-   --  Read current harness-owned task states after validating each persisted
-   --  mapping's identity and Improve provenance. No harness state is changed.
-   --  @param Project_Directory Initialized model_runner project directory.
-   --  @param Published Persisted publication mappings.
-   --  @return Mappings with reconciled harness-owned states.
 end Improve.Workflow;

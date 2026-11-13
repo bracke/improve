@@ -1,8 +1,94 @@
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Hash;
 
 package body Improve.Model is
    use Ada.Strings.Unbounded;
+
+   package Task_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   package Index_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Positive);
+
+   type Count_Array is array (Natural range <>) of Natural;
+   type Adjacency_Array is array (Natural range <>) of Index_Vectors.Vector;
+   type Digest_Array is array (Natural range <>) of UString;
+
+   procedure Analyze_Task_Graph
+     (Tasks   : Task_Vectors.Vector;
+      Indexes : out Task_Maps.Map;
+      Order   : out Index_Vectors.Vector) is
+      Count      : constant Natural := Natural (Tasks.Length);
+      Remaining  : Count_Array (1 .. Count) := [others => 0];
+      Dependents : Adjacency_Array (1 .. Count);
+      Ready      : Index_Vectors.Vector;
+      Head       : Natural := 1;
+   begin
+      Indexes.Clear;
+      Order.Clear;
+      for Index in 1 .. Count loop
+         declare Identity : constant String := To_String (Tasks (Index).Id); begin
+            if Identity = "" then
+               raise Data_Error with "task identity must not be empty";
+            elsif Indexes.Contains (Identity) then
+               raise Data_Error with "duplicate task identity " & Identity;
+            end if;
+            Indexes.Insert (Identity, Index);
+         end;
+      end loop;
+      for Index in 1 .. Count loop
+         declare Seen : String_Sets.Set; begin
+            for Dependency of Tasks (Index).Dependencies loop
+               declare Name : constant String := To_String (Dependency); begin
+                  if Seen.Contains (Name) then
+                     raise Data_Error with "duplicate dependency edge on " & To_String (Tasks (Index).Id);
+                  elsif not Indexes.Contains (Name) then
+                     raise Data_Error with "unknown task dependency " & Name;
+                  elsif Indexes.Element (Name) = Index then
+                     raise Data_Error with "task cannot depend on itself: " & To_String (Tasks (Index).Id);
+                  end if;
+                  Seen.Insert (Name);
+                  Remaining (Index) := Remaining (Index) + 1;
+                  Dependents (Indexes.Element (Name)).Append (Index);
+               end;
+            end loop;
+         end;
+         if Remaining (Index) = 0 then Ready.Append (Index); end if;
+      end loop;
+      while Head <= Natural (Ready.Length) loop
+         declare Current : constant Positive := Ready (Head); begin
+            Head := Head + 1;
+            Order.Append (Current);
+            for Dependent of Dependents (Current) loop
+               Remaining (Dependent) := Remaining (Dependent) - 1;
+               if Remaining (Dependent) = 0 then Ready.Append (Dependent); end if;
+            end loop;
+         end;
+      end loop;
+      if Natural (Order.Length) /= Count then
+         for Index in 1 .. Count loop
+            if Remaining (Index) > 0 then
+               raise Data_Error with "task dependency graph contains a cycle at " & To_String (Tasks (Index).Id);
+            end if;
+         end loop;
+      end if;
+   end Analyze_Task_Graph;
+
+   procedure Validate_Task_Graph (Tasks : Task_Vectors.Vector) is
+      Indexes : Task_Maps.Map;
+      Order   : Index_Vectors.Vector;
+   begin
+      Analyze_Task_Graph (Tasks, Indexes, Order);
+   end Validate_Task_Graph;
 
    function Canonical_Key (Values : UString_Vectors.Vector) return String is
       Result : Unbounded_String;
@@ -72,63 +158,50 @@ package body Improve.Model is
       return Stable_Digest (To_String (Material));
    end Task_Contract_Fingerprint;
 
-   function Effective_Task_Contracts
-     (Plan : Plan_Revision) return Task_Contract_Binding_Vectors.Vector is
-      package Task_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-        (Key_Type        => String,
-         Element_Type    => Positive,
-         Hash            => Ada.Strings.Hash,
-         Equivalent_Keys => "=");
-
-      package Index_Vectors is new Ada.Containers.Vectors
-        (Index_Type => Positive, Element_Type => Positive);
-
-      type Count_Array is array (Natural range <>) of Natural;
-      type Adjacency_Array is array (Natural range <>) of Index_Vectors.Vector;
-      type Digest_Array is array (Natural range <>) of UString;
-
-      Count      : constant Natural := Natural (Plan.Tasks.Length);
-      Indexes    : Task_Maps.Map;
-      Remaining  : Count_Array (1 .. Count) := [others => 0];
-      Dependents : Adjacency_Array (1 .. Count);
-      Digests    : Digest_Array (1 .. Count);
-      Ready      : Index_Vectors.Vector;
-      Head       : Natural := 1;
-      Visited    : Natural := 0;
-      Result     : Task_Contract_Binding_Vectors.Vector;
+   procedure Validate (Plan : Plan_Revision) is
+      Findings : String_Sets.Set;
    begin
-      for Index in 1 .. Count loop
-         declare
-            Identity : constant String := To_String (Plan.Tasks (Index).Id);
-         begin
+      Validate_Task_Graph (Plan.Tasks);
+      for Finding of Plan.Findings loop
+         declare Identity : constant String := To_String (Finding.Fingerprint); begin
             if Identity = "" then
-               raise Data_Error with "task identity must not be empty while fingerprinting";
-            elsif Indexes.Contains (Identity) then
-               raise Data_Error with "duplicate task identity while fingerprinting " & Identity;
+               raise Data_Error with "finding identity must not be empty";
+            elsif Findings.Contains (Identity) then
+               raise Data_Error with "duplicate plan finding " & Identity;
             end if;
-            Indexes.Insert (Identity, Index);
+            Findings.Insert (Identity);
          end;
       end loop;
-      for Index in 1 .. Count loop
-         for Dependency of Plan.Tasks (Index).Dependencies loop
-            declare Name : constant String := To_String (Dependency); begin
-               if not Indexes.Contains (Name) then
-                  raise Data_Error with "unknown task dependency while fingerprinting " & Name;
-               end if;
-               Remaining (Index) := Remaining (Index) + 1;
-               Dependents (Indexes.Element (Name)).Append (Index);
-            end;
-         end loop;
-         if Remaining (Index) = 0 then Ready.Append (Index); end if;
+      for Spec of Plan.Tasks loop
+         declare Linked : String_Sets.Set; begin
+            for Key of Spec.Finding_Keys loop
+               declare Identity : constant String := To_String (Key); begin
+                  if Linked.Contains (Identity) then
+                     raise Data_Error with "duplicate task finding link on " & To_String (Spec.Id);
+                  elsif not Findings.Contains (Identity) then
+                     raise Data_Error with "task references unknown finding " & Identity;
+                  end if;
+                  Linked.Insert (Identity);
+               end;
+            end loop;
+         end;
       end loop;
-      while Head <= Natural (Ready.Length) loop
+   end Validate;
+
+   function Effective_Task_Contracts
+     (Plan : Plan_Revision) return Task_Contract_Binding_Vectors.Vector is
+      Count      : constant Natural := Natural (Plan.Tasks.Length);
+      Indexes    : Task_Maps.Map;
+      Order      : Index_Vectors.Vector;
+      Digests    : Digest_Array (1 .. Count);
+      Result     : Task_Contract_Binding_Vectors.Vector;
+   begin
+      Analyze_Task_Graph (Plan.Tasks, Indexes, Order);
+      for Index of Order loop
          declare
-            Index    : constant Positive := Ready (Head);
             Spec     : Task_Specification renames Plan.Tasks (Index);
             Material : Unbounded_String;
          begin
-            Head := Head + 1;
-            Visited := Visited + 1;
             if Spec.Dependencies.Is_Empty then
                Digests (Index) := To_Unbounded_String (Task_Contract_Fingerprint (Spec));
             else
@@ -144,15 +217,8 @@ package body Improve.Model is
                end loop;
                Digests (Index) := To_Unbounded_String (Stable_Digest (To_String (Material)));
             end if;
-            for Dependent of Dependents (Index) loop
-               Remaining (Dependent) := Remaining (Dependent) - 1;
-               if Remaining (Dependent) = 0 then Ready.Append (Dependent); end if;
-            end loop;
          end;
       end loop;
-      if Visited /= Count then
-         raise Data_Error with "task dependency graph contains a cycle while fingerprinting";
-      end if;
       for Index in 1 .. Count loop
          Result.Append
            (Task_Contract_Binding'

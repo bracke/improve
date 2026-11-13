@@ -10,6 +10,7 @@ package body Improve.Operations.Reconciliation is
      (State_Path       : String;
       Quality_Path     : String;
       Project_Selector : String;
+      Requested_Kind   : String;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) is
       State        : Improve.Storage.Store;
@@ -41,34 +42,43 @@ package body Improve.Operations.Reconciliation is
       end;
       if not Publications.Is_Empty then
          declare
-            Published  : Improve.Workflow.Published_Vectors.Vector;
-            Reconciled : Improve.Workflow.Published_Vectors.Vector;
-            Updates    : Improve.Storage.Publication_Vectors.Vector;
+            Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
+              Improve.Model.Effective_Task_Contracts (Plan);
+            Selected  : Improve.Model.UString_Vectors.Vector;
          begin
-            for Value of Publications loop
-               Published.Append
-                 (Improve.Workflow.Published_Task'
-                    (Improve_Id => Value.Improve_Task_Id,
-                     Harness_Id => Value.Harness_Task_Id,
-                     Origin     => Value.Origin,
-                     Contract   => Value.Contract,
-                     State      => Value.State,
-                     Recovered  => True));
+            for Binding of Contracts loop
+               for Mapping of Publications loop
+                  if Mapping.Improve_Task_Id = Binding.Task_Id and then
+                    Mapping.Contract = Binding.Fingerprint
+                  then
+                     Selected.Append (Binding.Task_Id);
+                     exit;
+                  end if;
+               end loop;
             end loop;
-            Reconciled := Improve.Workflow.Reconcile (To_String (Plan.Project.Path), Published);
-            for Value of Reconciled loop
-               Updates.Append
-                 (Improve.Storage.Publication_Record'
-                    (Improve_Task_Id => Value.Improve_Id,
-                     Harness_Task_Id => Value.Harness_Id,
-                     Origin          => Value.Origin,
-                     Contract        => Value.Contract,
-                     State           => Value.State,
-                     Plan_Revision   => Plan.Revision));
-            end loop;
-            Improve.Storage.Open (State, State_Path, Writable => True);
-            Improve.Storage.Update_Publication_States (State, To_String (Plan.Plan_Id), Updates);
-            Improve.Storage.Close (State);
+            if not Selected.Is_Empty then
+               declare
+                  Reconciled : constant Improve.Workflow.Publication_Result :=
+                    Improve.Workflow.Publish
+                      (To_String (Plan.Project.Path), Plan, Requested_Kind, Existing => Publications,
+                       Selected_Task_Ids => Selected, Existing_Only => True);
+                  Updates : Improve.Storage.Publication_Vectors.Vector;
+               begin
+                  for Value of Reconciled.Tasks loop
+                     Updates.Append
+                       (Improve.Storage.Publication_Record'
+                          (Improve_Task_Id => Value.Improve_Id,
+                           Harness_Task_Id => Value.Harness_Id,
+                           Origin          => Value.Origin,
+                           Contract        => Value.Contract,
+                           State           => Value.State,
+                           Plan_Revision   => Plan.Revision));
+                  end loop;
+                  Improve.Storage.Open (State, State_Path, Writable => True);
+                  Improve.Storage.Update_Publication_States (State, To_String (Plan.Plan_Id), Updates);
+                  Improve.Storage.Close (State);
+               end;
+            end if;
          end;
       end if;
    end Run;

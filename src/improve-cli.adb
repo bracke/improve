@@ -269,6 +269,7 @@ package body Improve.CLI is
    begin
       Improve.Operations.Reconciliation.Run
         (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
+         To_String (Settings.Task_Kind),
          Improve.Operations.Storage_Read_Limits (Settings),
          Improve.Operations.Quality_Load_Limits (Settings));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");

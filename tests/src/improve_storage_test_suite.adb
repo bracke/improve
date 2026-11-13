@@ -177,6 +177,34 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Exhaust_Project_Identities;
 
+   procedure Insert_Unknown_Finding_Link (Path : String; Task_Row : Positive) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : constant Raw_Entity :=
+        (Id        => 1,
+         Parent_Id => Task_Row,
+         Kind      => To_Unbounded_Wide_Wide_String ("unknown-finding"),
+         State     => To_Unbounded_Wide_Wide_String ("linked"),
+         Payload   => Null_Unbounded_Wide_Wide_String,
+         Active    => True,
+         Table_Id  => 8);
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for link corruption");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Assert
+        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "unknown finding-link fixture could not be inserted");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Insert_Unknown_Finding_Link;
+
    type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
 
@@ -227,6 +255,33 @@ package body Improve_Storage_Test_Suite is
                others          => <>));
       end loop;
       Improve.Storage.Open (Store, Path, Writable => True);
+      declare
+         Invalid_Graph : Improve.Model.Plan_Revision := Plan;
+         Invalid_Link  : Improve.Model.Plan_Revision := Plan;
+         Graph_Rejected : Boolean := False;
+         Link_Rejected  : Boolean := False;
+      begin
+         Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
+         Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
+         begin
+            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Invalid_Graph); begin
+               pragma Unreferenced (Saved);
+            end;
+         exception
+            when Improve.Data_Error => Graph_Rejected := True;
+         end;
+         Invalid_Link.Tasks (1).Finding_Keys.Append (To_Unbounded_String ("unknown-finding"));
+         begin
+            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Invalid_Link); begin
+               pragma Unreferenced (Saved);
+            end;
+         exception
+            when Improve.Data_Error => Link_Rejected := True;
+         end;
+         Assert
+           (Graph_Rejected and then Link_Rejected,
+            "storage persisted a plan that violated graph or finding-link invariants");
+      end;
       for Revision in 1 .. 4 loop
          Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("scale revision " & Image (Revision)));
          declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Plan); begin
@@ -454,6 +509,19 @@ package body Improve_Storage_Test_Suite is
             when Improve.Data_Error => Rejected := True;
          end;
          Assert (Rejected, "storage accepted a logical identity beyond its namespace boundary");
+      end;
+      Improve.Storage.Close (Store);
+      Insert_Unknown_Finding_Link (Path, Task_Row => 21);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      declare
+         Rejected : Boolean := False;
+      begin
+         begin
+            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "storage loaded a persisted task link to an unknown finding");
       end;
       Improve.Storage.Close (Store);
       Corrupt_Revision (Path, 5);
