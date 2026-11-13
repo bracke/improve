@@ -133,13 +133,13 @@ package body Improve.Model is
       end if;
       for Index in Path'Range loop
          if Path (Index) in '/' | '\' then
-            if Index = Start or else Path (Start .. Index - 1) = ".." then
+            if Index = Start or else Path (Start .. Index - 1) in "." | ".." then
                return False;
             end if;
             Start := Index + 1;
          end if;
       end loop;
-      return Start <= Path'Last and then Path (Start .. Path'Last) /= "..";
+      return Start <= Path'Last and then Path (Start .. Path'Last) not in "." | "..";
    exception
       when Ada.Strings.UTF_Encoding.Encoding_Error =>
          return False;

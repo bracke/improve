@@ -6,6 +6,7 @@ procedure Record_Verification
    Tx     : Database.Transactions.Transaction;
    Row_Id : Positive;
    Stored : String_Value_Maps.Map;
+   Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
 
    function Scope_Image (Value : Verification_Scope) return String is
@@ -37,15 +38,15 @@ begin
       elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
          raise Data_Error with "aggregate verification must not name a task";
       end if;
+      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Contracts);
       declare
-         Plan : constant Improve.Model.Plan_Revision :=
-           Load (Item, Plan_Id, Value.Plan_Revision);
-         Expected : constant String :=
-           (if Value.Scope = Task_Evaluation then
-               Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Value.Task_Id)
-            else To_String (Plan.Fingerprint));
+         Key : constant String := Contract_Key
+           (Value.Plan_Revision,
+            (if Value.Scope = Task_Evaluation then To_String (Value.Task_Id) else "@plan"));
       begin
-         if To_String (Value.Contract_Fingerprint) /= Expected then
+         if not Contracts.Contains (Key) then
+            raise Data_Error with "verification references an unknown persisted task";
+         elsif Value.Contract_Fingerprint /= Contracts.Element (Key) then
             raise Data_Error with "verification does not match the persisted evaluation contract";
          end if;
       end;

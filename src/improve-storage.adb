@@ -464,6 +464,26 @@ function Save
       end if;
    end Require_Payload_Limit;
 
+   type Stored_Provenance is record
+      Project  : Improve.Model.Project_Reference;
+      Baseline : Improve.Model.Assessment_Baseline;
+   end record;
+
+   function Provenance_Of
+     (Item     : in out Store;
+      Tx       : in out Database.Transactions.Transaction;
+      Revision : Entity;
+      Payload  : String) return Stored_Provenance is separate;
+
+   function Contract_Key (Revision : Positive; Task_Id : String) return String is
+     (Number (Revision) & Character'Val (0) & Task_Id);
+
+   procedure Cache_Contracts
+     (Item      : in out Store;
+      Plan_Id   : String;
+      Revision  : Positive;
+      Contracts : in out String_Value_Maps.Map) is separate;
+
    function Load_Revision
      (Item        : in out Store;
       Revision_Id : Positive;
@@ -575,46 +595,7 @@ function Save
    function Summary_Of
      (Item        : in out Store;
       Tx          : in out Database.Transactions.Transaction;
-      Revision_Id : Positive) return Plan_Summary is
-      Revision : Entity;
-      Status   : Database.Status.Result;
-      Tasks    : Natural := 0;
-   begin
-      Status := Entity_Tables.Find
-        (Tx, Item.DB, Item.Schemas (Revisions_Table),
-         Physical_Key (Revisions_Table, Revision_Id), Revision);
-      Check (Status, "read plan revision summary");
-      declare
-         Payload : constant String := S (Revision.Payload);
-      begin
-         if Has_Field (Payload, "task_count") then
-            Tasks := Natural'Value (Field (Payload, "task_count"));
-         else
-            declare Cursor : Entity_Tables.Cursor :=
-              Scan_Children (Item, Tx, Tasks_Table, Revision_Id);
-            begin
-               while Entity_Tables.Has_Element (Cursor) loop
-                  if Tasks >= Default_Read_Limits.Maximum_Tasks then
-                     raise Data_Error with "plan summary exceeds configured task read limit";
-                  end if;
-                  Tasks := Tasks + 1;
-                  Advance_Children (Item, Tx, Tasks_Table, Revision_Id, Cursor);
-               end loop;
-            end;
-         end if;
-         return
-           (Plan_Id     => To_Unbounded_String (Id_Image ("PLAN-", Positive (Revision.Parent_Id))),
-            Revision    => Positive'Value (Field (Payload, "revision")),
-            Project_Id  => Positive'Value (Field (Payload, "project_id")),
-            Project     => To_Unbounded_String (Field (Payload, "project")),
-            Run_Id      => Positive'Value (Field (Payload, "run_id")),
-            Task_Count  => Tasks,
-            Fingerprint => To_Unbounded_String (S (Revision.Kind)));
-      end;
-   exception
-      when Constraint_Error =>
-         raise Data_Error with "stored plan summary is malformed";
-   end Summary_Of;
+      Revision_Id : Positive) return Plan_Summary is separate;
 
    function List_All
      (Item    : in out Store;

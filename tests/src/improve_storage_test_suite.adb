@@ -160,40 +160,43 @@ package body Improve_Storage_Test_Suite is
    procedure Insert_Duplicate_Task_Detail
      (Path : String; Task_Row : Positive) is separate;
 
-   type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
+   type Test_Id is
+     (Invariant_Validation, Indexed_History, Schema_Migration, Operational_Limits,
+      Identity_Exhaustion, Corrupt_Links, Corrupt_Revision_Data,
+      Corrupt_Task_Detail, Corrupt_Provenance);
+
+   type Storage_Case (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
 
-   overriding function Name (Item : Storage_Case) return AUnit.Message_String is
-     (AUnit.Format ("IMP_STORAGE_INDEXED_HISTORY"));
+   overriding procedure Run_Test (Item : in out Storage_Case);
+   overriding function Name (Item : Storage_Case) return AUnit.Message_String;
 
-   overriding procedure Run_Test (Item : in out Storage_Case) is
-      pragma Unreferenced (Item);
-      Root  : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-storage");
-      Path  : constant String := Root & "/state.db";
-      Store : Improve.Storage.Store;
-      Plan  : Improve.Model.Plan_Revision;
-      Stored_Plan : Improve.Model.Plan_Revision;
+   function Name (Item : Storage_Case) return AUnit.Message_String is
+     (AUnit.Format ("IMP_STORAGE_" & Test_Id'Image (Item.Id)));
 
-      function Image (Value : Positive) return String is
-        (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
+   function Image (Value : Positive) return String is
+     (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
+
+   function Fixture (Root : String) return Improve.Model.Plan_Revision is
+      Result : Improve.Model.Plan_Revision;
    begin
-      Plan.Project :=
+      Result.Project :=
         (Id          => 1,
          Name        => To_Unbounded_String ("scale"),
          Path        => To_Unbounded_String (Root),
          Database_Id => To_Unbounded_String (Root & "/quality.db"));
-      Plan.Baseline :=
+      Result.Baseline :=
         (Project_Id   => 1,
          Run_Id       => 1,
          Source_Id    => To_Unbounded_String ("source"),
          Policy_Id    => To_Unbounded_String ("policy"),
          Toolchain_Id => To_Unbounded_String ("toolchain"),
          Snapshot_Id  => To_Unbounded_String ("snapshot"));
-      Plan.Working_Source_Id := To_Unbounded_String ("working");
-      Plan.Planner_Id := To_Unbounded_String ("planner");
-      Plan.Review_Status := To_Unbounded_String ("not-required");
+      Result.Working_Source_Id := To_Unbounded_String ("working");
+      Result.Planner_Id := To_Unbounded_String ("planner");
+      Result.Review_Status := To_Unbounded_String ("not-required");
       for Index in 1 .. 5 loop
-         Plan.Tasks.Append
+         Result.Tasks.Append
            (Improve.Model.Task_Specification'
               (Id              => To_Unbounded_String ("DRAFT-" & Image (Index)),
                Title           => To_Unbounded_String ("Indexed task " & Image (Index)),
@@ -209,421 +212,90 @@ package body Improve_Storage_Test_Suite is
                Requires_Review => False,
                others          => <>));
       end loop;
-      Improve.Storage.Open (Store, Path, Writable => True);
-      declare
-         Invalid_Graph : Improve.Model.Plan_Revision := Plan;
-         Invalid_Link  : Improve.Model.Plan_Revision := Plan;
-         Invalid_Baseline : Improve.Model.Plan_Revision := Plan;
-         Invalid_Finding  : Improve.Model.Plan_Revision := Plan;
-         Invalid_Path     : Improve.Model.Plan_Revision := Plan;
-         Graph_Rejected : Boolean := False;
-         Link_Rejected  : Boolean := False;
-         Baseline_Rejected : Boolean := False;
-         Finding_Rejected  : Boolean := False;
-         Path_Rejected     : Boolean := False;
-      begin
-         Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
-         Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
-         begin
-            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Invalid_Graph); begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Graph_Rejected := True;
-         end;
-         Invalid_Link.Tasks (1).Finding_Keys.Append (To_Unbounded_String ("unknown-finding"));
-         begin
-            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Invalid_Link); begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Link_Rejected := True;
-         end;
-         Invalid_Baseline.Baseline.Project_Id := 2;
-         begin
-            declare Saved : constant Improve.Storage.Save_Result :=
-              Improve.Storage.Save (Store, Invalid_Baseline);
-            begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Baseline_Rejected := True;
-         end;
-         Invalid_Finding.Findings.Append
-           (Improve.Model.Finding_Reference'
-              (Project_Id  => 2,
-               Run_Id      => Invalid_Finding.Baseline.Run_Id,
-               Fingerprint => To_Unbounded_String ("foreign-finding"),
-               others      => <>));
-         Invalid_Finding.Tasks (1).Finding_Keys.Append (To_Unbounded_String ("foreign-finding"));
-         begin
-            declare Saved : constant Improve.Storage.Save_Result :=
-              Improve.Storage.Save (Store, Invalid_Finding);
-            begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Finding_Rejected := True;
-         end;
-         Invalid_Path.Tasks (1).Relevant_Files.Append
-           (To_Unbounded_String ("src/unsafe" & Character'Val (10) & "instruction.adb"));
-         begin
-            declare Saved : constant Improve.Storage.Save_Result :=
-              Improve.Storage.Save (Store, Invalid_Path);
-            begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Path_Rejected := True;
-         end;
-         Assert
-           (Graph_Rejected and then Link_Rejected and then Baseline_Rejected and then
-            Finding_Rejected and then Path_Rejected,
-            "storage persisted a plan that violated graph, path, finding-link, or provenance invariants");
-      end;
-      for Revision in 1 .. 4 loop
-         Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("scale revision " & Image (Revision)));
+      return Result;
+   end Fixture;
+
+   procedure Seed
+     (Store     : in out Improve.Storage.Store;
+      Plan      : in out Improve.Model.Plan_Revision;
+      Revisions : Positive;
+      Stored    : out Improve.Model.Plan_Revision) is
+   begin
+      for Revision in 1 .. Revisions loop
+         Plan.Fingerprint := To_Unbounded_String
+           (Improve.Stable_Digest ("scale revision " & Image (Revision)));
          declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Plan); begin
             Assert
               (not Saved.Existing and then Saved.Plan.Revision = Revision,
-               "indexed scale history did not create the expected revision");
+               "indexed history did not create the expected revision");
          end;
       end loop;
-      declare Summaries : constant Improve.Storage.Summary_Vectors.Vector := Improve.Storage.List (Store, Plan.Project);
-      begin
-         Assert
-           (Summaries.Length = 1 and then Summaries.First_Element.Revision = 4 and then
-            Summaries.First_Element.Task_Count = 5,
-            "indexed plan listing did not select the latest large revision");
-      end;
-      Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
-      declare
-         Task_Ids : Improve.Model.UString_Vectors.Vector;
-         Limits   : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-         Rejected : Boolean := False;
-      begin
-         Task_Ids.Append (Stored_Plan.Tasks (1).Id);
-         Task_Ids.Append (Stored_Plan.Tasks (2).Id);
-         Limits.Maximum_Tasks := 1;
+      Stored := Improve.Storage.Load (Store, "PLAN-000001");
+   end Seed;
+
+   procedure History_Records
+     (Stored   : Improve.Model.Plan_Revision;
+      Mappings : out Improve.Storage.Publication_Vectors.Vector;
+      Evidence : out Improve.Storage.Verification_Vectors.Vector) is
+   begin
+      for Index in 1 .. 2 loop
+         declare Contract : constant String :=
+           Improve.Model.Effective_Task_Contract_Fingerprint
+             (Stored, Stored.Tasks (Index).Id);
          begin
-            declare
-               Operation : constant Positive :=
-                 Improve.Storage.Begin_Publication (Store, Stored_Plan, Task_Ids, Limits);
-               pragma Unreferenced (Operation);
-            begin
-               null;
-            end;
-         exception
-            when Improve.Data_Error => Rejected := True;
-         end;
-         Assert (Rejected, "publication journal packed tasks before enforcing its configured limit");
-      end;
-      declare
-         Mappings : Improve.Storage.Publication_Vectors.Vector;
-         Evidence : Improve.Storage.Verification_Vectors.Vector;
-         Limit_Rejected : Boolean := False;
-         Read_Limit_Rejected : Boolean := False;
-      begin
-         begin
-            declare
-               Value : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load
-                   (Store, "PLAN-000001",
-                    (Maximum_Findings     => 10,
-                     Maximum_Tasks        => 1,
-                     Maximum_Task_Details => 10,
-                     Maximum_Task_Links   => 10,
-                     Maximum_History      => 10,
-                     Maximum_Text_Bytes   => 1_024));
-               pragma Unreferenced (Value);
-            begin
-               null;
-            end;
-         exception
-            when Improve.Data_Error => Read_Limit_Rejected := True;
-         end;
-         Assert (Read_Limit_Rejected, "plan reconstruction ignored its configured task limit");
-         for Index in 1 .. 2 loop
             Mappings.Append
               (Improve.Storage.Publication_Record'
-                 (Improve_Task_Id => Stored_Plan.Tasks (Index).Id,
+                 (Improve_Task_Id => Stored.Tasks (Index).Id,
                   Harness_Task_Id => To_Unbounded_String ("TASK-SCALE-" & Image (Index)),
                   Origin          => To_Unbounded_String ("improve:scale:" & Image (Index)),
-                  Contract        => To_Unbounded_String
-                    (Improve.Model.Effective_Task_Contract_Fingerprint
-                       (Stored_Plan, Stored_Plan.Tasks (Index).Id)),
+                  Contract        => To_Unbounded_String (Contract),
                   State           => To_Unbounded_String ("candidate"),
-                  Plan_Revision   => Stored_Plan.Revision));
+                  Plan_Revision   => Stored.Revision));
             Evidence.Append
               (Improve.Storage.Verification_Record'
                  (Scope                => Improve.Storage.Task_Evaluation,
-                  Task_Id              => Stored_Plan.Tasks (Index).Id,
-                  Plan_Revision        => Stored_Plan.Revision,
-                  Contract_Fingerprint => To_Unbounded_String
-                    (Improve.Model.Effective_Task_Contract_Fingerprint
-                       (Stored_Plan, Stored_Plan.Tasks (Index).Id)),
+                  Task_Id              => Stored.Tasks (Index).Id,
+                  Plan_Revision        => Stored.Revision,
+                  Contract_Fingerprint => To_Unbounded_String (Contract),
                   Assessment_Id        => 1,
                   Outcome              => Improve.Model.Still_Failing,
                   Comparable           => True,
                   Explanation          => To_Unbounded_String ("indexed evidence")));
-         end loop;
-         Improve.Storage.Record_Publications (Store, To_String (Stored_Plan.Plan_Id), Mappings);
-         Improve.Storage.Record_Verification (Store, To_String (Stored_Plan.Plan_Id), Evidence);
-         declare
-            Invalid_Mapping : Improve.Storage.Publication_Vectors.Vector := Mappings;
-            Invalid_Evidence : Improve.Storage.Verification_Vectors.Vector := Evidence;
-            Mapping_Rejected : Boolean := False;
-            Evidence_Rejected : Boolean := False;
-            Revision_Rejected : Boolean := False;
-            Task_Rejected     : Boolean := False;
-         begin
-            Invalid_Mapping (1).Contract := To_Unbounded_String ("unrelated-contract");
-            begin
-               Improve.Storage.Record_Publications
-                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Mapping);
-            exception
-               when Improve.Data_Error => Mapping_Rejected := True;
-            end;
-            Invalid_Mapping := Mappings;
-            Invalid_Mapping (1).Plan_Revision := Stored_Plan.Revision + 1;
-            begin
-               Improve.Storage.Record_Publications
-                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Mapping);
-            exception
-               when Improve.Argument_Error | Improve.Data_Error => Revision_Rejected := True;
-            end;
-            Invalid_Evidence (1).Contract_Fingerprint := To_Unbounded_String ("unrelated-contract");
-            begin
-               Improve.Storage.Record_Verification
-                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Evidence);
-            exception
-               when Improve.Data_Error => Evidence_Rejected := True;
-            end;
-            Invalid_Evidence := Evidence;
-            Invalid_Evidence (1).Task_Id := To_Unbounded_String ("IMP-UNKNOWN");
-            begin
-               Improve.Storage.Record_Verification
-                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Evidence);
-            exception
-               when Improve.Data_Error => Task_Rejected := True;
-            end;
-            Assert
-              (Mapping_Rejected and then Evidence_Rejected and then Revision_Rejected and then Task_Rejected,
-               "storage accepted history unrelated to the persisted task contract");
          end;
-         Assert
-           (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
-            Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
-            "indexed publication or verification history was not plan-scoped");
-         declare
-            Limits : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-            Publication_Rejected : Boolean := False;
-            Verification_Rejected : Boolean := False;
-         begin
-            Limits.Maximum_Text_Bytes := 16;
-            begin
-               declare
-                  Values : constant Improve.Storage.Publication_Vectors.Vector :=
-                    Improve.Storage.Publications
-                      (Store, To_String (Stored_Plan.Plan_Id), Limits => Limits);
-                  pragma Unreferenced (Values);
-               begin
-                  null;
-               end;
-            exception
-               when Improve.Data_Error => Publication_Rejected := True;
-            end;
-            begin
-               declare
-                  Values : constant Improve.Storage.Verification_Vectors.Vector :=
-                    Improve.Storage.Verifications
-                      (Store, To_String (Stored_Plan.Plan_Id), Limits => Limits);
-                  pragma Unreferenced (Values);
-               begin
-                  null;
-               end;
-            exception
-               when Improve.Data_Error => Verification_Rejected := True;
-            end;
-            Assert
-              (Publication_Rejected and then Verification_Rejected,
-               "history payload reads ignored configured byte limits");
-         end;
-         begin
-            declare
-               Values : constant Improve.Storage.Publication_Vectors.Vector :=
-                 Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id), Maximum => 1);
-               pragma Unreferenced (Values);
-            begin
-               null;
-            end;
-         exception
-            when Improve.Data_Error => Limit_Rejected := True;
-         end;
-         Assert (Limit_Rejected, "indexed publication reads ignored their materialization limit");
-      end;
-      Improve.Storage.Close (Store);
-      Downgrade_To_Version_2 (Path);
-      Improve.Storage.Open (Store, Path, Writable => True);
-      Assert
-        (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
-         Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
-         "schema migration did not preserve indexed plan history");
-      declare
-         Migrated : constant Improve.Model.Plan_Revision :=
-           Improve.Storage.Load_Task (Store, To_String (Stored_Plan.Tasks.First_Element.Id));
-      begin
-         Assert
-           (Migrated.Revision = Stored_Plan.Revision,
-            "schema migration did not build the historical task identity index");
-      end;
-      declare
-         Large_Plan : Improve.Model.Plan_Revision := Plan;
-         Large_Text : Unbounded_String;
-         Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      begin
-         Append (Large_Text, [1 .. 384 => 'x']);
-         Large_Plan.Tasks (1).Goal := Large_Text;
-         Large_Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("large approved revision"));
-         Limits.Maximum_Text_Bytes := 128;
-         declare Rejected : Boolean := False; begin
-            begin
-               declare Saved : constant Improve.Storage.Save_Result :=
-                 Improve.Storage.Save (Store, Large_Plan, Limits);
-                  pragma Unreferenced (Saved);
-               begin
-                  null;
-               end;
-            exception
-               when Improve.Data_Error => Rejected := True;
-            end;
-            Assert (Rejected, "plan persistence wrote content beyond its configured read limit");
-         end;
-         declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Large_Plan); begin
-            Limits.Maximum_Text_Bytes := 128;
-            declare
-               Rejected : Boolean := False;
-            begin
-               begin
-                  Improve.Storage.Approve
-                    (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits);
-               exception
-                  when Improve.Data_Error => Rejected := True;
-               end;
-               Assert (Rejected, "approval ignored its configured payload limit");
-            end;
-            Limits.Maximum_Text_Bytes := 1_024;
-            Improve.Storage.Approve
-              (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits);
-            Assert
-              (Improve.Storage.Is_Approved
-                 (Store, To_String (Saved.Plan.Plan_Id), Saved.Plan.Revision, Limits),
-               "configured read limits were lost during approval validation");
-            declare
-               Task_Ids : Improve.Model.UString_Vectors.Vector;
-               Operation : Positive;
-            begin
-               Task_Ids.Append (Saved.Plan.Tasks.First_Element.Id);
-               Operation := Improve.Storage.Begin_Publication (Store, Saved.Plan, Task_Ids, Limits);
-               Improve.Storage.Complete_Publication (Store, Operation);
-               Assert
-                 (Improve.Storage.Pending_Publications (Store, Limits => Limits).Is_Empty,
-                  "configured read limits were lost during publication journaling");
-            end;
-         end;
-      end;
-      Improve.Storage.Close (Store);
-      Exhaust_Project_Identities (Path);
-      Improve.Storage.Open (Store, Path, Writable => True);
-      declare
-         Exhausted : Improve.Model.Plan_Revision := Plan;
-         Rejected  : Boolean := False;
-      begin
-         Exhausted.Project :=
-           (Id          => 2,
-            Name        => To_Unbounded_String ("identity-limit"),
-            Path        => To_Unbounded_String (Root & "/identity-limit"),
-            Database_Id => To_Unbounded_String (Root & "/other-quality.db"));
-         Exhausted.Baseline.Project_Id := 2;
-         Exhausted.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("identity limit revision"));
-         begin
-            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Exhausted); begin
-               pragma Unreferenced (Saved);
-            end;
-         exception
-            when Improve.Data_Error => Rejected := True;
-         end;
-         Assert (Rejected, "storage accepted a logical identity beyond its namespace boundary");
-      end;
-      Improve.Storage.Close (Store);
-      Insert_Unknown_Finding_Link (Path, Task_Row => 21);
-      Improve.Storage.Open (Store, Path, Writable => False);
-      declare
-         Rejected : Boolean := False;
-      begin
-         begin
-            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
-         exception
-            when Improve.Data_Error => Rejected := True;
-         end;
-         Assert (Rejected, "storage loaded a persisted task link to an unknown finding");
-      end;
-      Improve.Storage.Close (Store);
-      Corrupt_Revision (Path, 5);
-      Improve.Storage.Open (Store, Path, Writable => False);
-      declare
-         Integrity_Rejected : Boolean := False;
-         Misclassified      : Boolean := False;
-      begin
-         begin
-            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001");
-         exception
-            when Improve.Data_Error     => Integrity_Rejected := True;
-            when Improve.Argument_Error => Misclassified := True;
-         end;
-         Assert
-           (Integrity_Rejected and then not Misclassified,
-            "corrupt persisted revision was not classified as an integrity failure");
-      end;
-      Improve.Storage.Close (Store);
-      Insert_Duplicate_Task_Detail (Path, Task_Row => 1);
-      Improve.Storage.Open (Store, Path, Writable => False);
-      declare
-         Rejected : Boolean := False;
-      begin
-         begin
-            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001", 1);
-         exception
-            when Improve.Data_Error => Rejected := True;
-         end;
-         Assert (Rejected, "storage silently accepted duplicate persisted task details");
-      end;
-      Improve.Storage.Close (Store);
-      Corrupt_Baseline_Parent (Path, Baseline_Id => 4);
-      Improve.Storage.Open (Store, Path, Writable => False);
-      declare
-         Rejected : Boolean := False;
-      begin
-         begin
-            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001", 4);
-         exception
-            when Improve.Data_Error => Rejected := True;
-         end;
-         Assert (Rejected, "storage ignored a broken project-to-baseline relationship");
-      end;
-      Improve.Storage.Close (Store);
-      Project_Tools.Files.Delete_Tree (Root);
-   exception
-      when others =>
-         Improve.Storage.Close (Store);
-         Project_Tools.Files.Delete_Tree (Root);
-         raise;
+      end loop;
+   end History_Records;
+
+   procedure Run_Invariant_Validation is separate;
+   procedure Run_Indexed_History is separate;
+   procedure Run_Schema_Migration is separate;
+   procedure Run_Operational_Limits is separate;
+   procedure Run_Identity_Exhaustion is separate;
+   procedure Run_Corrupt_Links is separate;
+   procedure Run_Corrupt_Revision_Data is separate;
+   procedure Run_Corrupt_Task_Detail is separate;
+   procedure Run_Corrupt_Provenance is separate;
+
+   procedure Run_Test (Item : in out Storage_Case) is
+   begin
+      case Item.Id is
+         when Invariant_Validation => Run_Invariant_Validation;
+         when Indexed_History => Run_Indexed_History;
+         when Schema_Migration => Run_Schema_Migration;
+         when Operational_Limits => Run_Operational_Limits;
+         when Identity_Exhaustion => Run_Identity_Exhaustion;
+         when Corrupt_Links => Run_Corrupt_Links;
+         when Corrupt_Revision_Data => Run_Corrupt_Revision_Data;
+         when Corrupt_Task_Detail => Run_Corrupt_Task_Detail;
+         when Corrupt_Provenance => Run_Corrupt_Provenance;
+      end case;
    end Run_Test;
 
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
-      Result.Add_Test (Case_Access'(new Storage_Case));
+      for Id in Test_Id loop
+         Result.Add_Test (Case_Access'(new Storage_Case (Id)));
+      end loop;
       return Result;
    end Suite;
 end Improve_Storage_Test_Suite;

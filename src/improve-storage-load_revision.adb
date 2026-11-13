@@ -36,18 +36,6 @@ function Load_Revision
          end if;
       end Loaded_Detail;
 
-      function Load_Entity (Table, Id : Positive; Context : String) return Entity is
-         Result : Entity;
-         Status : constant Database.Status.Result :=
-           Entity_Tables.Find
-             (Tx, Item.DB, Item.Schemas (Table), Physical_Key (Table, Id), Result);
-      begin
-         if Status.Code = Database.Status.Not_Found then
-            raise Data_Error with Context & " relationship is missing";
-         end if;
-         Check (Status, "read " & Context);
-         return Result;
-      end Load_Entity;
    begin
       Database.Transactions.Begin_Read (Item.DB, Tx);
       declare
@@ -65,55 +53,12 @@ function Load_Revision
          Require_Payload_Limit (Payload, Limits, "plan revision payload");
          Result.Plan_Id := To_Unbounded_String (Id_Image ("PLAN-", Positive (Revision.Parent_Id)));
          Result.Revision := Positive'Value (Field (Payload, "revision"));
-         if Item.Schema_Version >= 5 then
-            declare
-               Plan_Row : constant Entity :=
-                 Load_Entity (Plans_Table, Positive (Revision.Parent_Id), "plan");
-               Project_Row : constant Entity :=
-                 Load_Entity (Projects_Table, Positive (Plan_Row.Parent_Id), "project");
-               Baseline_Row : constant Entity :=
-                 Load_Entity
-                   (Baselines_Table, Positive'Value (Field (Payload, "baseline_id")), "assessment baseline");
-               Project_Data : constant String := S (Project_Row.Payload);
-               Baseline_Data : constant String := S (Baseline_Row.Payload);
-            begin
-               Result.Project :=
-                 (Positive'Value (Field (Project_Data, "quality_project_id")),
-                  To_Unbounded_String (Field (Project_Data, "name")),
-                  To_Unbounded_String (Field (Project_Data, "path")),
-                  To_Unbounded_String (Field (Project_Data, "quality_database")));
-               Result.Baseline :=
-                 (Result.Project.Id, Positive'Value (S (Baseline_Row.Kind)),
-                  To_Unbounded_String (Field (Baseline_Data, "source")),
-                  To_Unbounded_String (Field (Baseline_Data, "policy")),
-                  To_Unbounded_String (Field (Baseline_Data, "toolchain")),
-                  To_Unbounded_String (Field (Baseline_Data, "snapshot")));
-               if Baseline_Row.Parent_Id /= Project_Row.Id or else
-                 S (Plan_Row.Kind) /= S (Project_Row.Kind) or else
-                 S (Baseline_Row.State) /= "completed" or else
-                 Positive'Value (Field (Payload, "project_id")) /= Result.Project.Id or else
-                 Field (Payload, "project") /= To_String (Result.Project.Name) or else
-                 Field (Payload, "project_path") /= To_String (Result.Project.Path) or else
-                 Field_Or (Payload, "quality_database", "") /= To_String (Result.Project.Database_Id) or else
-                 Positive'Value (Field (Payload, "run_id")) /= Result.Baseline.Run_Id or else
-                 Field (Payload, "source") /= To_String (Result.Baseline.Source_Id) or else
-                 Field (Payload, "policy") /= To_String (Result.Baseline.Policy_Id) or else
-                 Field (Payload, "toolchain") /= To_String (Result.Baseline.Toolchain_Id) or else
-                 Field (Payload, "snapshot") /= To_String (Result.Baseline.Snapshot_Id)
-               then
-                  raise Data_Error with "stored plan provenance relationships are inconsistent";
-               end if;
-            end;
-         else
-            Result.Project :=
-              (Positive'Value (Field (Payload, "project_id")), To_Unbounded_String (Field (Payload, "project")),
-               To_Unbounded_String (Field (Payload, "project_path")),
-               To_Unbounded_String (Field_Or (Payload, "quality_database", "")));
-            Result.Baseline :=
-              (Result.Project.Id, Positive'Value (Field (Payload, "run_id")),
-               To_Unbounded_String (Field (Payload, "source")), To_Unbounded_String (Field (Payload, "policy")),
-               To_Unbounded_String (Field (Payload, "toolchain")), To_Unbounded_String (Field (Payload, "snapshot")));
-         end if;
+         declare
+            Provenance : constant Stored_Provenance := Provenance_Of (Item, Tx, Revision, Payload);
+         begin
+            Result.Project := Provenance.Project;
+            Result.Baseline := Provenance.Baseline;
+         end;
          Result.Working_Source_Id :=
            To_Unbounded_String (Field_Or (Payload, "working_source", Field (Payload, "source")));
          Result.Planner_Id := To_Unbounded_String (Field (Payload, "planner"));

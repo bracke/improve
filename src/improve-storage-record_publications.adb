@@ -6,6 +6,7 @@ procedure Record_Publications
    Tx     : Database.Transactions.Transaction;
    Row_Id : Positive;
    Stored : String_Value_Maps.Map;
+   Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
 
    function Mapping_Key (Task_Id, Contract : String) return String is
@@ -15,13 +16,14 @@ begin
       raise Data_Error with "Improve state is not open for publication recording";
    end if;
    for Value of Values loop
+      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Contracts);
       declare
-         Plan : constant Improve.Model.Plan_Revision :=
-           Load (Item, Plan_Id, Value.Plan_Revision);
-         Expected : constant String := Improve.Model.Effective_Task_Contract_Fingerprint
-           (Plan, Value.Improve_Task_Id);
+         Key : constant String :=
+           Contract_Key (Value.Plan_Revision, To_String (Value.Improve_Task_Id));
       begin
-         if To_String (Value.Contract) /= Expected then
+         if not Contracts.Contains (Key) then
+            raise Data_Error with "publication references an unknown persisted task";
+         elsif Value.Contract /= Contracts.Element (Key) then
             raise Data_Error with "publication does not match the persisted task contract";
          elsif Length (Value.Harness_Task_Id) = 0 or else Length (Value.Origin) = 0 then
             raise Data_Error with "publication mapping is incomplete";

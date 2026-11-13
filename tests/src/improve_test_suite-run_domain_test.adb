@@ -280,6 +280,10 @@ begin
          Assert (not Improve.Findings.Safe_Relative_Path ("/absolute/path"), "absolute path was accepted");
          Assert (not Improve.Findings.Safe_Relative_Path ("C:\outside"), "drive path was accepted");
          Assert (not Improve.Findings.Safe_Relative_Path (".."), "terminal parent traversal was accepted");
+         Assert (not Improve.Findings.Safe_Relative_Path ("."), "terminal current-directory alias was accepted");
+         Assert
+           (not Improve.Findings.Safe_Relative_Path ("src/./unit.adb"),
+            "current-directory path alias was accepted");
          Assert
            (not Improve.Findings.Safe_Relative_Path ("src/unsafe" & Character'Val (10) & "instruction.adb"),
             "control character in path was accepted");

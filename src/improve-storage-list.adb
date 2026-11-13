@@ -30,11 +30,13 @@ function List
                begin
                   Check (Status, "read plan identity summary");
                   declare
-                     Payload : constant String := S (Revision.Payload);
+                     Payload    : constant String := S (Revision.Payload);
+                     Provenance : constant Stored_Provenance :=
+                       Provenance_Of (Item, Tx, Revision, Payload);
                   begin
-                     if Positive'Value (Field (Payload, "project_id")) = Project.Id and then
-                       Field (Payload, "project_path") = To_String (Project.Path) and then
-                       Field_Or (Payload, "quality_database", "") = To_String (Project.Database_Id)
+                     if Provenance.Project.Id = Project.Id and then
+                       Provenance.Project.Path = Project.Path and then
+                       Provenance.Project.Database_Id = Project.Database_Id
                      then
                         Result.Append (Summary_Of (Item, Tx, Positive (Latest)));
                      end if;

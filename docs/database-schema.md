@@ -69,6 +69,10 @@ project references and validates duplicated provenance so
 normal plan-scoped access does not scan their complete history. Read-only access remains compatible with older state
 without migrating it. Missing or unknown schema metadata is rejected rather than guessed.
 
+Version-5 migration bounds plan count, revision count, and payload size before updating data. Summary and full-plan
+reads use the same normalized project and baseline relationships; duplicated revision provenance remains an audited
+consistency check rather than a second authority.
+
 Verification evidence is append-only by evaluation scope and completed assessment. Task, complete-plan, and
 complete-project records use distinct identities. Repeating an evaluation at the same scope is idempotent; a
 conflicting outcome at that exact scope is rejected without preventing another valid scope from evaluating the same
