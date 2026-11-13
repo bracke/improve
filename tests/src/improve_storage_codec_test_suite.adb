@@ -4,12 +4,14 @@ with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.Model;
+with Improve.Persistence_Records;
 with Improve.Storage_Codec;
 
 package body Improve_Storage_Codec_Test_Suite is
    use Ada.Strings.Unbounded;
    use AUnit.Assertions;
    use type Improve.Model.UString_Vectors.Vector;
+   use type Improve.Persistence_Records.Publication_Data;
 
    type Codec_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Codec_Access is access all Codec_Case;
@@ -67,6 +69,21 @@ package body Improve_Storage_Codec_Test_Suite is
          Assert
            (Improve.Storage_Codec.Field (With_CR, "value") = "left" & Character'Val (13) & "right",
             "storage field codec did not round-trip a carriage return");
+      end;
+      declare
+         Publication : constant Improve.Persistence_Records.Publication_Data :=
+           (Plan_Id       => To_Unbounded_String ("PLAN-000001"),
+            Harness_Id    => To_Unbounded_String ("TASK-001"),
+            Origin        => To_Unbounded_String ("improve:test"),
+            Contract      => To_Unbounded_String ("contract"),
+            Plan_Revision => 2);
+         Decoded : constant Improve.Persistence_Records.Publication_Data :=
+           Improve.Persistence_Records.Decode_Publication
+             (Improve.Persistence_Records.Encode_Publication (Publication));
+      begin
+         Assert
+           (Decoded = Publication,
+            "typed publication payload codec did not round-trip");
       end;
       begin
          declare

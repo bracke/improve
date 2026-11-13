@@ -7,6 +7,7 @@ function Save
       Tx : Database.Transactions.Transaction;
       Stored : Improve.Model.Plan_Revision := Value;
       Existing_Revision : Natural;
+      History_Count : Natural := 0;
 
       procedure Require_Text (Text, Context : String) is
       begin
@@ -111,7 +112,13 @@ function Save
             declare Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
             begin
                while Entity_Tables.Has_Element (Revisions) loop
+                  if History_Count >= Limits.Maximum_History then
+                     raise Data_Error with "plan revision history exceeds configured item limit";
+                  end if;
+                  History_Count := History_Count + 1;
                   if Entity_Tables.Element (Revisions).Parent_Id = Plan_Row then
+                     Require_Text
+                       (S (Entity_Tables.Element (Revisions).Payload), "plan revision payload");
                      Previous_Revision := Natural'Max
                        (Previous_Revision, Entity_Tables.Element (Revisions).Id);
                      Revision_No := Positive'Max
@@ -176,12 +183,18 @@ function Save
 
             procedure Index_Previous_Tasks is
                Tasks : Entity_Tables.Cursor;
+               Task_Count   : Natural := 0;
+               Detail_Count : Natural := 0;
             begin
                if Previous_Revision = 0 then
                   return;
                end if;
                Tasks := Scan_Children (Item, Tx, Tasks_Table, Positive (Previous_Revision));
                while Entity_Tables.Has_Element (Tasks) loop
+                  if Task_Count >= Limits.Maximum_Tasks then
+                     raise Data_Error with "previous plan revision exceeds configured task limit";
+                  end if;
+                  Task_Count := Task_Count + 1;
                   declare
                      Row        : constant Entity := Entity_Tables.Element (Tasks);
                      Payload    : constant String := S (Row.Payload);
@@ -191,11 +204,17 @@ function Save
                        Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
                      Seen_Details : String_Id_Maps.Map;
                   begin
+                     Require_Text (Payload, "previous task payload");
                      while Entity_Tables.Has_Element (Details) loop
+                        if Detail_Count >= Limits.Maximum_Task_Details then
+                           raise Data_Error with "previous plan revision exceeds configured task-detail limit";
+                        end if;
+                        Detail_Count := Detail_Count + 1;
                         declare
                            Detail : constant Entity := Entity_Tables.Element (Details);
                            Name   : constant String := S (Detail.Kind);
                         begin
+                           Require_Text (S (Detail.Payload), "previous task detail");
                            if Seen_Details.Contains (Name) then
                               raise Data_Error with "duplicate persisted task detail " & Name;
                            end if;

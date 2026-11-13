@@ -1,16 +1,11 @@
-with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Improve.Model;
-with Improve.Operations;
-with Improve.Source;
+with Improve.Publication_Authorization;
 with Improve.Workflow;
 with Project_Tools.Files;
 
 package body Improve.Recovery is
    use Ada.Strings.Unbounded;
-
-   function Number (Value : Positive) return String is
-     (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
 
    function Recover
      (State_Path      : String;
@@ -24,36 +19,6 @@ package body Improve.Recovery is
       Pending : Improve.Storage.Operation_Vectors.Vector;
       Result  : Recovery_Report;
 
-      procedure Require_Current_Authorization
-        (Plan : Improve.Model.Plan_Revision) is
-         Quality : Improve.Source.Repository;
-      begin
-         Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
-         declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
-            Latest : constant Improve.Source.Selection :=
-              Improve.Source.Select_Assessment (Quality, Project);
-         begin
-            Improve.Operations.Require_Project_Identity (Plan.Project, Project);
-            if Latest.Baseline.Run_Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
-            then
-               raise Data_Error with
-                 "pending publication assessment source changed; operation retained without creating native tasks";
-            elsif Latest.Baseline.Run_Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Policy_Id /= Plan.Baseline.Policy_Id
-            then
-               raise Data_Error with
-                 "pending publication quality policy changed; operation retained without creating native tasks";
-            end if;
-         end;
-         Improve.Source.Close (Quality);
-      exception
-         when others =>
-            Improve.Source.Close (Quality);
-            raise;
-      end Require_Current_Authorization;
    begin
       if not Project_Tools.Files.File_Exists (State_Path) then
          raise Dependency_Error with "Improve state database is unavailable: " & State_Path;
@@ -104,13 +69,9 @@ package body Improve.Recovery is
                   elsif not Approved then
                      raise Data_Error with
                        "pending publication requires renewed approval before creating missing native tasks";
-                  elsif Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path), State_Path) /=
-                    To_String (Plan.Working_Source_Id)
-                  then
-                     raise Data_Error with
-                       "pending publication source is stale; operation retained without creating native tasks";
                   end if;
-                  Require_Current_Authorization (Plan);
+                  Improve.Publication_Authorization.Validate
+                    (Plan, State_Path, Quality_Path, Quality_Limits, Retain_On_Failure => True);
                   Published := Improve.Workflow.Publish
                     (To_String (Plan.Project.Path), Plan, Kind, Existing => Existing,
                      Selected_Task_Ids => Operation.Task_Ids);
@@ -128,7 +89,7 @@ package body Improve.Recovery is
                Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
                Improve.Storage.Record_Publications
                  (State, To_String (Plan.Plan_Id), Mappings, Limits);
-               Improve.Storage.Complete_Publication (State, Operation.Id);
+               Improve.Storage.Complete_Publication (State, Operation.Id, Limits);
                Improve.Storage.Close (State);
                Result.Operations_Recovered := Result.Operations_Recovered + 1;
                Result.Tasks_Recovered := Result.Tasks_Recovered + Natural (Published.Tasks.Length);

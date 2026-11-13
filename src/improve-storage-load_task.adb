@@ -6,6 +6,7 @@ function Load_Task
    Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
    Tx               : Database.Transactions.Transaction;
    Revision_Id      : Natural := 0;
+   History_Count    : Natural := 0;
 
    procedure Consider (Candidate : Positive) is
       Row    : Entity;
@@ -19,6 +20,7 @@ function Load_Task
         (Tx, Item.DB, Item.Schemas (Revisions_Table),
          Physical_Key (Revisions_Table, Candidate), Row);
       Check (Status, "read task plan revision");
+      Require_Payload_Limit (S (Row.Payload), Limits, "task revision payload");
       if Positive'Value (Field (S (Row.Payload), "revision")) = Revision then
          Revision_Id := Candidate;
       end if;
@@ -30,6 +32,10 @@ begin
         Scan_Kind (Item, Tx, Task_Identities_Table, Task_Id);
       begin
          while Entity_Tables.Has_Element (Identities) loop
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "task identity history exceeds configured item limit";
+            end if;
+            History_Count := History_Count + 1;
             Consider (Positive (Entity_Tables.Element (Identities).Parent_Id));
             Advance_Kind (Item, Tx, Task_Identities_Table, Task_Id, Identities);
          end loop;
@@ -37,10 +43,15 @@ begin
    else
       declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
          while Entity_Tables.Has_Element (Tasks) loop
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "task history exceeds configured item limit";
+            end if;
+            History_Count := History_Count + 1;
             declare
                Task_Row : constant Entity := Entity_Tables.Element (Tasks);
                Payload  : constant String := S (Task_Row.Payload);
             begin
+               Require_Payload_Limit (Payload, Limits, "task payload");
                if Field_Or (Payload, "draft_id", "") = Task_Id then
                   Consider (Positive (Task_Row.Parent_Id));
                end if;

@@ -2,6 +2,9 @@
 
 ## 0.1.0 — 2026-11-03
 
+- Centralize normal and recovery publication authorization under identical source and policy rules.
+- Add typed persistence codecs and complete-payload validation for publication, verification, approval, and journals.
+- Enforce configured history limits across revision, task, approval, completion, and inspection scans.
 - Establish the standalone Ada 2022 crate, strict CLI contract, typed quality ingestion, and deterministic indicator
   strategy registry.
 - Complete the real Ada Quality and model_runner end-to-end release workflow, including remeasurement and independent

@@ -9,14 +9,20 @@ function List
    Plans : Entity_Tables.Cursor;
    Current_Key : constant String := Project_Key (Project);
    Legacy_Key  : constant String := Legacy_Project_Key (Project);
+   Scanned     : Natural := 0;
 
    procedure Read (Key : String) is
    begin
       Plans := Scan_Kind (Item, Tx, Plans_Table, Key);
       while Entity_Tables.Has_Element (Plans) loop
+         if Scanned >= Limits.Maximum_History then
+            raise Data_Error with "plan query exceeds configured history limit";
+         end if;
+         Scanned := Scanned + 1;
          declare
             Row    : constant Entity := Entity_Tables.Element (Plans);
-            Latest : constant Natural := Latest_Revision_Id (Item, Tx, Row.Id);
+            Latest : constant Natural :=
+              Latest_Revision_Id (Item, Tx, Row.Id, Limits.Maximum_History, Scanned);
          begin
             if Latest > 0 then
                if Result.Length >= Ada.Containers.Count_Type (Maximum) then

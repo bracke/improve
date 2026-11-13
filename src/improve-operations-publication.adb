@@ -1,12 +1,8 @@
-with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
-with Improve.Source;
+with Improve.Publication_Authorization;
 
 package body Improve.Operations.Publication is
    use Ada.Strings.Unbounded;
-
-   function Number (Value : Natural) return String is
-     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
    function Run
      (State_Path       : String;
@@ -44,35 +40,8 @@ package body Improve.Operations.Publication is
          raise Argument_Error with
            "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
       end if;
-      if Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path), State_Path) /=
-        To_String (Plan.Working_Source_Id)
-      then
-         raise Data_Error with
-           "current project source differs from the assessment baseline; remeasure and refresh the plan";
-      end if;
-      declare
-         Quality : Improve.Source.Repository;
-      begin
-         Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
-         declare
-            Project : constant Improve.Model.Project_Reference :=
-              Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
-            Latest : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
-         begin
-            Improve.Operations.Require_Project_Identity (Plan.Project, Project);
-            if Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
-            then
-               raise Data_Error with "project source changed after planning; refresh the plan before publication";
-            elsif Latest.Assessment.Run.Id > Plan.Baseline.Run_Id and then
-              Latest.Baseline.Policy_Id /= Plan.Baseline.Policy_Id
-            then
-               raise Data_Error with
-                 "quality policy changed after planning; replan before publication to preserve acceptance intent";
-            end if;
-         end;
-         Improve.Source.Close (Quality);
-      end;
+      Improve.Publication_Authorization.Validate
+        (Plan, State_Path, Quality_Path, Quality_Limits);
       if not Dry_Run then
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=
@@ -109,7 +78,8 @@ package body Improve.Operations.Publication is
                Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
                Improve.Storage.Record_Publications
                  (State, To_String (Plan.Plan_Id), Mappings, Limits);
-               Improve.Storage.Complete_Publication (State, Positive (Operation_Id));
+               Improve.Storage.Complete_Publication
+                 (State, Positive (Operation_Id), Limits);
                Improve.Storage.Close (State);
             end;
          end if;

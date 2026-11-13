@@ -6,22 +6,34 @@ function Publications
    Limits     : Read_Limits := Default_Read_Limits) return Publication_Vectors.Vector is
    Tx     : Database.Transactions.Transaction;
    Result : Publication_Vectors.Vector;
+   History_Count : Natural := 0;
 
-   procedure Append_Row (Row : Entity) is
-      Payload : constant String := S (Row.Payload);
+   procedure Count_Row is
    begin
+      if History_Count >= Limits.Maximum_History then
+         raise Data_Error with "publication history exceeds configured item limit";
+      end if;
+      History_Count := History_Count + 1;
+   end Count_Row;
+
+   procedure Append_Row (Row : Entity; Already_Counted : Boolean := False) is
+      Payload : constant String := S (Row.Payload);
+      Data    : Improve.Persistence_Records.Publication_Data;
+   begin
+      if not Already_Counted then Count_Row; end if;
       Require_Payload_Limit (Payload, Limits, "publication mapping payload");
+      Data := Improve.Persistence_Records.Decode_Publication (Payload);
       if Result.Length >= Ada.Containers.Count_Type (Maximum) then
          raise Data_Error with "publication query exceeds configured item limit";
       end if;
       Result.Append
         (Publication_Record'
            (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
-            Harness_Task_Id => To_Unbounded_String (Field (Payload, "harness_id")),
-            Origin          => To_Unbounded_String (Field (Payload, "origin")),
-            Contract        => To_Unbounded_String (Field_Or (Payload, "contract", "")),
+            Harness_Task_Id => Data.Harness_Id,
+            Origin          => Data.Origin,
+            Contract        => Data.Contract,
             State           => To_Unbounded_String (S (Row.State)),
-            Plan_Revision   => Positive'Value (Field_Or (Payload, "plan_revision", "1"))));
+            Plan_Revision   => Data.Plan_Revision));
    end Append_Row;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
@@ -49,9 +61,12 @@ begin
                   Row : constant Entity := Entity_Tables.Element (Cursor);
                   Payload : constant String := S (Row.Payload);
                begin
+                  Count_Row;
                   Require_Payload_Limit (Payload, Limits, "publication mapping payload");
-                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
-                     Append_Row (Row);
+                  if Row.Parent_Id = 0 and then
+                    To_String (Improve.Persistence_Records.Decode_Publication (Payload).Plan_Id) = Plan_Id
+                  then
+                     Append_Row (Row, Already_Counted => True);
                   end if;
                end;
                Advance (Item, Tx, Publications_Table, Cursor);

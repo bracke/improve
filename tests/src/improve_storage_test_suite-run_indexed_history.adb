@@ -37,6 +37,67 @@ begin
       end;
       Assert (Rejected, "publication journal ignored its configured task limit");
    end;
+   declare
+      Limits : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+
+      procedure Expect_History_Rejection
+        (Action : not null access procedure;
+         Message : String) is
+      begin
+         Rejected := False;
+         begin
+            Action.all;
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, Message);
+      end Expect_History_Rejection;
+
+      procedure Load_Latest is
+         Value : constant Improve.Model.Plan_Revision :=
+           Improve.Storage.Load (Store, "PLAN-000001", Limits);
+      begin
+         pragma Unreferenced (Value);
+      end Load_Latest;
+
+      procedure List_Plans is
+         Values : constant Improve.Storage.Summary_Vectors.Vector :=
+           Improve.Storage.List (Store, Plan.Project, Limits => Limits);
+      begin
+         pragma Unreferenced (Values);
+      end List_Plans;
+
+      procedure Load_Historical_Task is
+         Value : constant Improve.Model.Plan_Revision :=
+           Improve.Storage.Load_Task
+             (Store, To_String (Stored.Tasks.First_Element.Id), Limits => Limits);
+      begin
+         pragma Unreferenced (Value);
+      end Load_Historical_Task;
+
+      procedure Save_Next_Revision is
+         Candidate : Improve.Model.Plan_Revision := Plan;
+      begin
+         Candidate.Fingerprint := To_Unbounded_String
+           (Improve.Stable_Digest ("bounded fifth revision"));
+         declare
+            Value : constant Improve.Storage.Save_Result :=
+              Improve.Storage.Save (Store, Candidate, Limits);
+         begin
+            pragma Unreferenced (Value);
+         end;
+      end Save_Next_Revision;
+   begin
+      Limits.Maximum_History := 3;
+      Expect_History_Rejection
+        (Load_Latest'Access, "latest-plan lookup ignored its configured history limit");
+      Expect_History_Rejection
+        (List_Plans'Access, "plan listing ignored its configured history limit");
+      Expect_History_Rejection
+        (Load_Historical_Task'Access, "task lookup ignored its configured history limit");
+      Expect_History_Rejection
+        (Save_Next_Revision'Access, "plan persistence ignored its configured history limit");
+   end;
    Rejected := False;
    begin
       declare Value : constant Improve.Model.Plan_Revision :=

@@ -11,6 +11,7 @@ with Database.Tables;
 with Database.Transactions;
 with Database.Types;
 with Database.Values;
+with Improve.Persistence_Records;
 with Improve.Storage_Codec;
 with Interfaces;
 
@@ -21,9 +22,7 @@ package body Improve.Storage is
    use type Ada.Containers.Count_Type;
    use type Database.Status_Code;
    use type Database.Predicates.Predicate;
-
    LF : constant Character := Character'Val (10);
-
    Schema_Metadata_Table     : constant Positive := 1;
    Projects_Table            : constant Positive := 2;
    Baselines_Table           : constant Positive := 3;
@@ -503,6 +502,7 @@ function Save
       Tx : Database.Transactions.Transaction;
       Revision_Id : Natural := 0;
       Plan_Row : Natural := 0;
+      History_Count : Natural := 0;
    begin
       if Plan_Id'Length > 10 and then Plan_Id (Plan_Id'First .. Plan_Id'First + 9) = "@revision:" then
          declare
@@ -521,6 +521,10 @@ function Save
       declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
          while Entity_Tables.Has_Element (Cursor) loop
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "plan revision history exceeds configured item limit";
+            end if;
+            History_Count := History_Count + 1;
             if Entity_Tables.Element (Cursor).Parent_Id = Plan_Row then
                Revision_Id := Natural'Max (Revision_Id, Entity_Tables.Element (Cursor).Id);
             end if;
@@ -547,6 +551,7 @@ function Save
       Tx          : Database.Transactions.Transaction;
       Plan_Row    : Natural := 0;
       Revision_Id : Natural := 0;
+      History_Count : Natural := 0;
    begin
       Plan_Row := Plan_Row_Id (Plan_Id);
       Database.Transactions.Begin_Read (Item.DB, Tx);
@@ -554,7 +559,12 @@ function Save
         Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
          while Entity_Tables.Has_Element (Cursor) loop
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "plan revision history exceeds configured item limit";
+            end if;
+            History_Count := History_Count + 1;
             declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               Require_Payload_Limit (S (Row.Payload), Limits, "plan revision payload");
                if Row.Parent_Id = Plan_Row and then
                  Positive'Value (Field (S (Row.Payload), "revision")) = Revision
                then
@@ -588,16 +598,9 @@ function Save
    function Latest_Revision_Id
      (Item     : in out Store;
       Tx       : in out Database.Transactions.Transaction;
-      Plan_Row : Positive) return Natural is
-      Result    : Natural := 0;
-      Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
-   begin
-      while Entity_Tables.Has_Element (Revisions) loop
-         Result := Natural'Max (Result, Entity_Tables.Element (Revisions).Id);
-         Advance_Children (Item, Tx, Revisions_Table, Plan_Row, Revisions);
-      end loop;
-      return Result;
-   end Latest_Revision_Id;
+      Plan_Row : Positive;
+      Maximum  : Positive;
+      Scanned  : in out Natural) return Natural is separate;
 
    function Summary_Of
      (Item        : in out Store;
@@ -683,7 +686,10 @@ function Save
       Task_Ids : Improve.Model.UString_Vectors.Vector;
       Limits   : Read_Limits := Default_Read_Limits) return Positive is separate;
 
-   procedure Complete_Publication (Item : in out Store; Operation_Id : Positive) is separate;
+   procedure Complete_Publication
+     (Item         : in out Store;
+      Operation_Id : Positive;
+      Limits       : Read_Limits := Default_Read_Limits) is separate;
 
    function Pending_Publications
      (Item    : in out Store;

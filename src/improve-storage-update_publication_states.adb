@@ -27,10 +27,12 @@ begin
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
+            Data    : Improve.Persistence_Records.Publication_Data;
          begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
+            Data := Improve.Persistence_Records.Decode_Publication (Payload);
             Rows.Include
-              (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")), Row.Id);
+              (Mapping_Key (S (Row.Kind), To_String (Data.Contract)), Row.Id);
          end;
          Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
       end loop;
@@ -51,11 +53,14 @@ begin
          Check (Status, "read publication mapping for reconciliation");
          declare Payload : constant String := S (Row.Payload); begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
-            if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
-              Field (Payload, "origin") /= To_String (Value.Origin)
-            then
-               raise Data_Error with "publication reconciliation identity does not match stored mapping";
-            end if;
+            declare Data : constant Improve.Persistence_Records.Publication_Data :=
+              Improve.Persistence_Records.Decode_Publication (Payload);
+            begin
+               if Data.Harness_Id /= Value.Harness_Task_Id or else Data.Origin /= Value.Origin
+               then
+                  raise Data_Error with "publication reconciliation identity does not match stored mapping";
+               end if;
+            end;
          end;
          Row.State := WW (To_String (Value.State));
          Check

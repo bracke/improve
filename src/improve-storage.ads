@@ -322,10 +322,14 @@ package Improve.Storage is
    --  @param Limits Hard reconstruction limits.
    --  @return Durable operation identity.
 
-   procedure Complete_Publication (Item : in out Store; Operation_Id : Positive);
+   procedure Complete_Publication
+     (Item         : in out Store;
+      Operation_Id : Positive;
+      Limits       : Read_Limits := Default_Read_Limits);
    --  Append an idempotent completion event after mappings are durable.
    --  @param Item Writable store.
    --  @param Operation_Id Completed publication operation.
+   --  @param Limits Hard operation-history and payload limits.
 
    function Pending_Publications
      (Item    : in out Store;

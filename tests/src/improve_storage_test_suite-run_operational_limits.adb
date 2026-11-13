@@ -42,6 +42,16 @@ begin
          Operation : Positive;
       begin
          Task_Ids.Append (Saved.Plan.Tasks.First_Element.Id);
+         Limits.Maximum_Text_Bytes := 512;
+         Rejected := False;
+         begin
+            Operation := Improve.Storage.Begin_Publication
+              (Store, Saved.Plan, [1 .. 400 => 'k'], Task_Ids, Limits);
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "publication journal accepted an oversized complete payload");
+         Limits.Maximum_Text_Bytes := 1_024;
          Operation := Improve.Storage.Begin_Publication
            (Store, Saved.Plan, "remediation", Task_Ids, Limits);
          Improve.Storage.Complete_Publication (Store, Operation);

@@ -8,16 +8,24 @@ function Is_Approved
    Key    : constant String := "approve:" & Plan_Id & ":" & Number (Revision);
    Tx     : Database.Transactions.Transaction;
    Result : Boolean := False;
+   Count  : Natural := 0;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, Key); begin
       while Entity_Tables.Has_Element (Cursor) loop
+         if Count >= Limits.Maximum_History then
+            raise Data_Error with "plan approval history exceeds configured item limit";
+         end if;
+         Count := Count + 1;
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
+            Data    : Improve.Persistence_Records.Approval_Data;
          begin
+            Require_Payload_Limit (Payload, Limits, "plan approval payload");
+            Data := Improve.Persistence_Records.Decode_Approval (Payload);
             if S (Row.Kind) = Key and then S (Row.State) = "approved" and then
-              Field_Or (Payload, "fingerprint", "") = To_String (Plan.Fingerprint)
+              Data.Fingerprint = Plan.Fingerprint
             then
                Result := True;
                exit;

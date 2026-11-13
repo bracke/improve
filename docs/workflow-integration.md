@@ -59,6 +59,7 @@ Recovery first runs an existing-only provenance probe using the task kind record
 completely committed harness transaction is adopted without replaying creation. If native work is missing, recovery
 requires durable exact-revision approval, the same current source fingerprint, the same database-qualified project,
 and a compatible latest source and policy baseline. Failed revalidation leaves the operation journal entry pending.
+Normal publication and recovery creation call the same authorization service so these preconditions cannot diverge.
 
 Normal publication also compares the newest completed assessment policy fingerprint with the immutable plan baseline.
 A changed policy requires replanning before any harness transaction is opened, even when source identity is unchanged;

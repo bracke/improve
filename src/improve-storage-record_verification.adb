@@ -65,11 +65,13 @@ begin
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
+            Data    : Improve.Persistence_Records.Verification_Data;
          begin
             Require_Payload_Limit (Payload, Limits, "verification evidence payload");
+            Data := Improve.Persistence_Records.Decode_Verification (Payload);
             declare Key : constant String := Identity_Key
-                 (S (Row.Kind), Field (Payload, "plan_id"), Field (Payload, "assessment_id"),
-                  Field_Or (Payload, "plan_revision", "1"), Field_Or (Payload, "contract", ""));
+                 (S (Row.Kind), To_String (Data.Plan_Id), Number (Data.Assessment_Id),
+                  Number (Data.Plan_Revision), To_String (Data.Contract));
             begin
                if Stored.Contains (Key) then
                   raise Data_Error with "duplicate persisted verification evidence";
@@ -78,8 +80,8 @@ begin
               (Key,
                To_Unbounded_String
                  (Stored_Value
-                    (S (Row.State), Field_Or (Payload, "scope", "task"),
-                     Field (Payload, "comparable"), Field (Payload, "explanation"))));
+                    (S (Row.State), To_String (Data.Scope), Boolean_Image (Data.Comparable),
+                     To_String (Data.Explanation))));
             end;
          end;
          Advance_Children (Item, Tx, Verifications_Table, Plan_Row, Cursor);
@@ -95,6 +97,15 @@ begin
            (Improve.Model.Image (Value.Outcome), Scope_Image (Value.Scope), Boolean_Image (Value.Comparable),
             To_String (Value.Explanation));
          Existing : constant Boolean := Stored.Contains (Identity);
+         Payload  : constant String := Improve.Persistence_Records.Encode_Verification
+           ((Plan_Id       => To_Unbounded_String (Plan_Id),
+             Assessment_Id => Value.Assessment_Id,
+             Plan_Revision => Value.Plan_Revision,
+             Contract      => Value.Contract_Fingerprint,
+             Scope         => To_Unbounded_String (Scope_Image (Value.Scope)),
+             Task_Id       => Value.Task_Id,
+             Comparable    => Value.Comparable,
+             Explanation   => Value.Explanation));
       begin
          if Existing and then To_String (Stored.Element (Identity)) /= Expected then
             raise Data_Error with "verification evidence conflicts for task and assessment";
@@ -103,29 +114,13 @@ begin
             if History_Count >= Limits.Maximum_History then
                raise Data_Error with "verification history exceeds configured item limit";
             end if;
-            Require_Payload_Limit
-              (Pair ("plan_id", Plan_Id) & LF &
-               Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
-               Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
-               Pair ("contract", To_String (Value.Contract_Fingerprint)) & LF &
-               Pair ("scope", Scope_Image (Value.Scope)) & LF &
-               Pair ("task_id", To_String (Value.Task_Id)) & LF &
-               Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
-               Pair ("explanation", To_String (Value.Explanation)),
-               Limits, "verification evidence payload");
+            Require_Payload_Limit (Payload, Limits, "verification evidence payload");
             Row_Id := Next_Id (Item, Tx, Verifications_Table);
             Check
               (Entity_Tables.Insert
                  (Tx, Item.DB, Item.Schemas (Verifications_Table),
                   (Row_Id, Plan_Row, WW (Key), WW (Improve.Model.Image (Value.Outcome)),
-                   WW (Pair ("plan_id", Plan_Id) & LF &
-                       Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
-                       Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
-                       Pair ("contract", To_String (Value.Contract_Fingerprint)) & LF &
-                       Pair ("scope", Scope_Image (Value.Scope)) & LF &
-                       Pair ("task_id", To_String (Value.Task_Id)) & LF &
-                       Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
-                       Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
+                   WW (Payload), True, Verifications_Table)),
                "record verification evidence");
             Stored.Insert (Identity, To_Unbounded_String (Expected));
             History_Count := History_Count + 1;

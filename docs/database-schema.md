@@ -99,4 +99,6 @@ Only after verified mappings are stored is the operation completed. Planning jou
 never interpreted as pending publications.
 
 Configured persistence limits apply consistently to full loads, summaries, migrations, contract validation, and
-history writes. Schema migration is bounded by the same limits supplied when writable state is opened.
+history reads and writes. Schema migration is bounded by the same limits supplied when writable state is opened.
+Entity-specific typed codecs own publication, verification, approval, and publication-operation payloads. Writers
+validate the complete encoded payload before committing it, and readers enforce the same byte contract while decoding.

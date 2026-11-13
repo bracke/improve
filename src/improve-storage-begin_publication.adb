@@ -9,6 +9,7 @@ function Begin_Publication
      Load (Item, To_String (Plan.Plan_Id), Plan.Revision, Limits);
    Tx      : Database.Transactions.Transaction;
    Packed  : Unbounded_String;
+   Payload : Unbounded_String;
    Key     : Unbounded_String;
    Row_Id  : Positive;
    Known   : String_Id_Maps.Map;
@@ -46,6 +47,15 @@ begin
       end;
    end loop;
    Packed := To_Unbounded_String (Pack (Task_Ids));
+   Payload := To_Unbounded_String
+     (Improve.Persistence_Records.Encode_Publication_Operation
+        ((Plan_Id     => Plan.Plan_Id,
+          Revision    => Plan.Revision,
+          Fingerprint => Plan.Fingerprint,
+          Task_Kind   => To_Unbounded_String (Task_Kind),
+          Task_Ids    => Task_Ids)));
+   Require_Payload_Limit
+     (To_String (Payload), Limits, "publication operation payload");
    Key := To_Unbounded_String
      ("publish:" & To_String (Plan.Plan_Id) & ":" & Number (Plan.Revision) & ":" &
       Stable_Digest (Task_Kind & Character'Val (0) & To_String (Packed)));
@@ -66,11 +76,7 @@ begin
      (Entity_Tables.Insert
         (Tx, Item.DB, Item.Schemas (Operations_Table),
          (Row_Id, 0, WW (To_String (Key)), WW ("started"),
-          WW (Pair ("plan_id", To_String (Plan.Plan_Id)) & LF &
-              Pair ("revision", Number (Plan.Revision)) & LF &
-              Pair ("fingerprint", To_String (Plan.Fingerprint)) & LF &
-              Pair ("task_kind", Task_Kind) & LF &
-              Pair ("task_ids", To_String (Packed))), True, Operations_Table)),
+          WW (To_String (Payload)), True, Operations_Table)),
       "journal publication start");
    Database.Transactions.Commit (Tx);
    return Row_Id;

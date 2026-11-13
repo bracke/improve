@@ -7,15 +7,30 @@ function Verifications
    Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is
    Tx     : Database.Transactions.Transaction;
    Result : Verification_Vectors.Vector;
+   History_Count : Natural := 0;
 
-   procedure Append_Row (Row : Entity) is
-      Payload : constant String := S (Row.Payload);
+   procedure Count_Row is
    begin
+      if History_Count >= Limits.Maximum_History then
+         raise Data_Error with "verification history exceeds configured item limit";
+      end if;
+      History_Count := History_Count + 1;
+   end Count_Row;
+
+   procedure Append_Row (Row : Entity; Already_Counted : Boolean := False) is
+      Payload : constant String := S (Row.Payload);
+      Data    : Improve.Persistence_Records.Verification_Data;
+   begin
+      if not Already_Counted then Count_Row; end if;
       Require_Payload_Limit (Payload, Limits, "verification evidence payload");
+      Data := Improve.Persistence_Records.Decode_Verification (Payload);
       declare
-         Scope : constant Verification_Scope := Parse_Scope (Field_Or (Payload, "scope", "task"));
+         Scope : constant Verification_Scope := Parse_Scope (To_String (Data.Scope));
          Stored_Task : constant String :=
-           (if Scope = Task_Evaluation then Field_Or (Payload, "task_id", S (Row.Kind)) else "");
+           (if Scope = Task_Evaluation and then Length (Data.Task_Id) > 0
+            then To_String (Data.Task_Id)
+            elsif Scope = Task_Evaluation then S (Row.Kind)
+            else "");
       begin
          if Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id) then
             if Result.Length >= Ada.Containers.Count_Type (Maximum) then
@@ -25,12 +40,12 @@ function Verifications
               (Verification_Record'
                  (Scope         => Scope,
                   Task_Id       => To_Unbounded_String (Stored_Task),
-                  Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")),
-                  Contract_Fingerprint => To_Unbounded_String (Field_Or (Payload, "contract", "")),
-                  Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
+                  Plan_Revision => Data.Plan_Revision,
+                  Contract_Fingerprint => Data.Contract,
+                  Assessment_Id => Data.Assessment_Id,
                   Outcome       => Parse_Outcome (S (Row.State)),
-                  Comparable    => Boolean'Value (Field (Payload, "comparable")),
-                  Explanation   => To_Unbounded_String (Field (Payload, "explanation"))));
+                  Comparable    => Data.Comparable,
+                  Explanation   => Data.Explanation));
          end if;
       end;
    exception
@@ -62,9 +77,12 @@ begin
                   Row : constant Entity := Entity_Tables.Element (Cursor);
                   Payload : constant String := S (Row.Payload);
                begin
+                  Count_Row;
                   Require_Payload_Limit (Payload, Limits, "verification evidence payload");
-                  if Row.Parent_Id = 0 and then Field (Payload, "plan_id") = Plan_Id then
-                     Append_Row (Row);
+                  if Row.Parent_Id = 0 and then
+                    To_String (Improve.Persistence_Records.Decode_Verification (Payload).Plan_Id) = Plan_Id
+                  then
+                     Append_Row (Row, Already_Counted => True);
                   end if;
                end;
                Advance (Item, Tx, Verifications_Table, Cursor);

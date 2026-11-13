@@ -5,16 +5,25 @@ function Pending_Publications
    Limits  : Read_Limits := Default_Read_Limits) return Operation_Vectors.Vector is
    Tx     : Database.Transactions.Transaction;
    Result : Operation_Vectors.Vector;
+   History_Count : Natural := 0;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
    declare Starts : Entity_Tables.Cursor := Scan_State (Item, Tx, Operations_Table, "started"); begin
       while Entity_Tables.Has_Element (Starts) loop
+         if History_Count >= Limits.Maximum_History then
+            raise Data_Error with "publication operation history exceeds configured item limit";
+         end if;
+         History_Count := History_Count + 1;
          declare
             Row       : constant Entity := Entity_Tables.Element (Starts);
             Completed : Boolean := False;
             Ends      : Entity_Tables.Cursor := Scan_Children (Item, Tx, Operations_Table, Row.Id);
          begin
             while Entity_Tables.Has_Element (Ends) loop
+               if History_Count >= Limits.Maximum_History then
+                  raise Data_Error with "publication operation history exceeds configured item limit";
+               end if;
+               History_Count := History_Count + 1;
                if S (Entity_Tables.Element (Ends).State) = "completed" then
                   Completed := True;
                   exit;
@@ -25,20 +34,22 @@ begin
                if Result.Length >= Ada.Containers.Count_Type (Maximum) then
                   raise Data_Error with "pending publication query exceeds configured item limit";
                end if;
-               declare Payload : constant String := S (Row.Payload); begin
+               declare
+                  Payload : constant String := S (Row.Payload);
+                  Data    : Improve.Persistence_Records.Publication_Operation_Data;
+               begin
                   Require_Payload_Limit (Payload, Limits, "publication operation payload");
+                  Data := Improve.Persistence_Records.Decode_Publication_Operation
+                    (Payload, Limits.Maximum_Tasks, Limits.Maximum_Text_Bytes);
                   Result.Append
                     (Operation_Record'
                        (Id       => Row.Id,
                         Key      => To_Unbounded_String (S (Row.Kind)),
-                        Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
-                        Revision => Positive'Value (Field_Or (Payload, "revision", "1")),
-                        Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
-                        Task_Kind => To_Unbounded_String (Field_Or (Payload, "task_kind", "")),
-                        Task_Ids =>
-                          Unpack
-                            (Field (Payload, "task_ids"), Limits.Maximum_Tasks,
-                             Limits.Maximum_Text_Bytes)));
+                        Plan_Id     => Data.Plan_Id,
+                        Revision    => Data.Revision,
+                        Fingerprint => Data.Fingerprint,
+                        Task_Kind   => Data.Task_Kind,
+                        Task_Ids    => Data.Task_Ids));
                end;
             end if;
          end;

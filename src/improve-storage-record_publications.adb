@@ -44,10 +44,12 @@ begin
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
+            Data    : Improve.Persistence_Records.Publication_Data;
          begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
+            Data := Improve.Persistence_Records.Decode_Publication (Payload);
             declare Key : constant String :=
-              Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", ""));
+              Mapping_Key (S (Row.Kind), To_String (Data.Contract));
             begin
                if Stored.Contains (Key) then
                   raise Data_Error with "duplicate persisted publication mapping";
@@ -55,7 +57,7 @@ begin
                Stored.Insert
               (Key,
                To_Unbounded_String
-                 (Field (Payload, "harness_id") & Character'Val (0) & Field (Payload, "origin")));
+                 (To_String (Data.Harness_Id) & Character'Val (0) & To_String (Data.Origin)));
             end;
          end;
          Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
@@ -68,6 +70,12 @@ begin
          Expected : constant String :=
            To_String (Value.Harness_Task_Id) & Character'Val (0) & To_String (Value.Origin);
          Existing : constant Boolean := Stored.Contains (Key);
+         Payload  : constant String := Improve.Persistence_Records.Encode_Publication
+           ((Plan_Id       => To_Unbounded_String (Plan_Id),
+             Harness_Id    => Value.Harness_Task_Id,
+             Origin        => Value.Origin,
+             Contract      => Value.Contract,
+             Plan_Revision => Value.Plan_Revision));
       begin
          if Existing and then To_String (Stored.Element (Key)) /= Expected then
             raise Data_Error with "published task identity is already mapped to unrelated work";
@@ -76,23 +84,13 @@ begin
             if History_Count >= Limits.Maximum_History then
                raise Data_Error with "publication history exceeds configured item limit";
             end if;
-            Require_Payload_Limit
-              (Pair ("plan_id", Plan_Id) & LF &
-               Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
-               Pair ("origin", To_String (Value.Origin)) & LF &
-               Pair ("contract", To_String (Value.Contract)) & LF &
-               Pair ("plan_revision", Number (Value.Plan_Revision)),
-               Limits, "publication mapping payload");
+            Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             Row_Id := Next_Id (Item, Tx, Publications_Table);
             Check
               (Entity_Tables.Insert
                  (Tx, Item.DB, Item.Schemas (Publications_Table),
                   (Row_Id, Plan_Row, WW (To_String (Value.Improve_Task_Id)), WW (To_String (Value.State)),
-                   WW (Pair ("plan_id", Plan_Id) & LF &
-                       Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
-                       Pair ("origin", To_String (Value.Origin)) & LF &
-                       Pair ("contract", To_String (Value.Contract)) & LF &
-                       Pair ("plan_revision", Number (Value.Plan_Revision))), True, Publications_Table)),
+                   WW (Payload), True, Publications_Table)),
                "record publication mapping");
             Stored.Insert (Key, To_Unbounded_String (Expected));
             History_Count := History_Count + 1;
