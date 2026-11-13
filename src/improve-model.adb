@@ -80,51 +80,22 @@ package body Improve.Model is
          Hash            => Ada.Strings.Hash,
          Equivalent_Keys => "=");
 
-      type Visit_State is (Unvisited, Visiting, Visited);
-      type State_Array is array (Natural range <>) of Visit_State;
+      package Index_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Positive);
+
+      type Count_Array is array (Natural range <>) of Natural;
+      type Adjacency_Array is array (Natural range <>) of Index_Vectors.Vector;
       type Digest_Array is array (Natural range <>) of UString;
 
-      Count   : constant Natural := Natural (Plan.Tasks.Length);
-      Indexes : Task_Maps.Map;
-      States  : State_Array (1 .. Count) := [others => Unvisited];
-      Digests : Digest_Array (1 .. Count);
-      Result  : Task_Contract_Binding_Vectors.Vector;
-
-      function Digest (Index : Positive) return String is
-         Spec     : constant Task_Specification := Plan.Tasks (Index);
-         Material : Unbounded_String;
-      begin
-         if States (Index) = Visiting then
-            raise Data_Error with "task dependency cycle while fingerprinting " & To_String (Spec.Id);
-         elsif States (Index) = Visited then
-            return To_String (Digests (Index));
-         end if;
-
-         States (Index) := Visiting;
-         if Spec.Dependencies.Is_Empty then
-            Digests (Index) := To_Unbounded_String (Task_Contract_Fingerprint (Spec));
-         else
-            Append (Material, "contract:" & Task_Contract_Fingerprint (Spec));
-            for Dependency of Spec.Dependencies loop
-               declare
-                  Name : constant String := To_String (Dependency);
-               begin
-                  if not Indexes.Contains (Name) then
-                     raise Data_Error with "unknown task dependency while fingerprinting " & Name;
-                  end if;
-                  declare
-                     Value : constant String := Digest (Indexes.Element (Name));
-                  begin
-                     Append (Material, Natural'Image (Name'Length) & ":" & Name);
-                     Append (Material, Natural'Image (Value'Length) & ":" & Value);
-                  end;
-               end;
-            end loop;
-            Digests (Index) := To_Unbounded_String (Stable_Digest (To_String (Material)));
-         end if;
-         States (Index) := Visited;
-         return To_String (Digests (Index));
-      end Digest;
+      Count      : constant Natural := Natural (Plan.Tasks.Length);
+      Indexes    : Task_Maps.Map;
+      Remaining  : Count_Array (1 .. Count) := [others => 0];
+      Dependents : Adjacency_Array (1 .. Count);
+      Digests    : Digest_Array (1 .. Count);
+      Ready      : Index_Vectors.Vector;
+      Head       : Natural := 1;
+      Visited    : Natural := 0;
+      Result     : Task_Contract_Binding_Vectors.Vector;
    begin
       for Index in 1 .. Count loop
          declare
@@ -139,10 +110,54 @@ package body Improve.Model is
          end;
       end loop;
       for Index in 1 .. Count loop
+         for Dependency of Plan.Tasks (Index).Dependencies loop
+            declare Name : constant String := To_String (Dependency); begin
+               if not Indexes.Contains (Name) then
+                  raise Data_Error with "unknown task dependency while fingerprinting " & Name;
+               end if;
+               Remaining (Index) := Remaining (Index) + 1;
+               Dependents (Indexes.Element (Name)).Append (Index);
+            end;
+         end loop;
+         if Remaining (Index) = 0 then Ready.Append (Index); end if;
+      end loop;
+      while Head <= Natural (Ready.Length) loop
+         declare
+            Index    : constant Positive := Ready (Head);
+            Spec     : Task_Specification renames Plan.Tasks (Index);
+            Material : Unbounded_String;
+         begin
+            Head := Head + 1;
+            Visited := Visited + 1;
+            if Spec.Dependencies.Is_Empty then
+               Digests (Index) := To_Unbounded_String (Task_Contract_Fingerprint (Spec));
+            else
+               Append (Material, "contract:" & Task_Contract_Fingerprint (Spec));
+               for Dependency of Spec.Dependencies loop
+                  declare
+                     Name  : constant String := To_String (Dependency);
+                     Value : constant String := To_String (Digests (Indexes.Element (Name)));
+                  begin
+                     Append (Material, Natural'Image (Name'Length) & ":" & Name);
+                     Append (Material, Natural'Image (Value'Length) & ":" & Value);
+                  end;
+               end loop;
+               Digests (Index) := To_Unbounded_String (Stable_Digest (To_String (Material)));
+            end if;
+            for Dependent of Dependents (Index) loop
+               Remaining (Dependent) := Remaining (Dependent) - 1;
+               if Remaining (Dependent) = 0 then Ready.Append (Dependent); end if;
+            end loop;
+         end;
+      end loop;
+      if Visited /= Count then
+         raise Data_Error with "task dependency graph contains a cycle while fingerprinting";
+      end if;
+      for Index in 1 .. Count loop
          Result.Append
            (Task_Contract_Binding'
               (Task_Id     => Plan.Tasks (Index).Id,
-               Fingerprint => To_Unbounded_String (Digest (Index))));
+               Fingerprint => Digests (Index)));
       end loop;
       return Result;
    end Effective_Task_Contracts;

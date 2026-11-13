@@ -1,7 +1,6 @@
 with Ada.Containers;
 with Ada.Strings.Fixed;
-with Ada.Strings.Unbounded;
-with Improve.Source;
+with Improve.Findings;
 
 package body Improve.Operations.Inspection is
    use Ada.Strings.Unbounded;
@@ -10,6 +9,55 @@ package body Improve.Operations.Inspection is
 
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
+
+   function Projects
+     (Quality_Path : String;
+      Settings     : Improve.Config.Settings) return Project_Result is
+      Quality : Improve.Source.Repository;
+      Result  : Project_Result;
+   begin
+      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+      Result.Values := Improve.Source.Projects (Quality);
+      if Result.Values.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+         raise Data_Error with "project query exceeds output.maximum_output_items";
+      end if;
+      Result.Snapshot := To_Unbounded_String (Improve.Source.Identity (Quality));
+      Improve.Source.Close (Quality);
+      return Result;
+   exception
+      when others =>
+         Improve.Source.Close (Quality);
+         raise;
+   end Projects;
+
+   function Findings
+     (Quality_Path     : String;
+      Project_Selector : String;
+      Run_Id           : Natural;
+      Settings         : Improve.Config.Settings) return Finding_Result is
+      Quality : Improve.Source.Repository;
+      Result  : Finding_Result;
+   begin
+      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+      declare
+         Project : constant Improve.Model.Project_Reference :=
+           Improve.Source.Resolve_Project (Quality, Project_Selector);
+      begin
+         Result.Selected := Improve.Source.Select_Assessment (Quality, Project, Run_Id);
+         Result.Values := Improve.Findings.Normalize
+           (Result.Selected,
+            Improve.Config.Quality_Severity (Settings.Minimum_Severity),
+            Settings.Allow_Investigation_Tasks,
+            Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
+            Settings.Maximum_Assessment_Bytes);
+      end;
+      Improve.Source.Close (Quality);
+      return Result;
+   exception
+      when others =>
+         Improve.Source.Close (Quality);
+         raise;
+   end Findings;
 
    function Views_For
      (State              : in out Improve.Storage.Store;

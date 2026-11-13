@@ -280,6 +280,16 @@ begin
                end;
             end loop;
             Improve.Dependencies.Validate (Values);
+            declare
+               Plan     : Improve.Model.Plan_Revision;
+               Bindings : Improve.Model.Task_Contract_Binding_Vectors.Vector;
+            begin
+               Plan.Tasks := Values;
+               Bindings := Improve.Model.Effective_Task_Contracts (Plan);
+               Assert
+                 (Bindings.Length = Values.Length,
+                  "deep dependency contracts were not calculated iteratively");
+            end;
          end;
       when Dense_Contract_Fingerprints =>
          declare

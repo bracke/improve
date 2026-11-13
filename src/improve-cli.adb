@@ -4,9 +4,7 @@ with Ada.Exceptions;
 with Ada.IO_Exceptions;
 with Ada.Text_IO;
 with Ada.Text_IO.Text_Streams;
-with Ada_Quality.Reporting;
 with Improve.CLI.Parsing;
-with Improve.Findings;
 with Improve.JSON;
 with Improve.Model;
 with Improve.Operations.Inspection;
@@ -16,7 +14,6 @@ with Improve.Operations.Reconciliation;
 with Improve.Operations.Verification;
 with Improve.Presentation;
 with Improve.Recovery;
-with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
@@ -107,47 +104,24 @@ package body Improve.CLI is
      (if Item.Has_State then To_String (Item.State) else ".improve.db");
 
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Store : Improve.Source.Repository;
+      Inspected : constant Improve.Operations.Inspection.Project_Result :=
+        Improve.Operations.Inspection.Projects (Quality_Path (Item, Settings), Settings);
    begin
-      Improve.Source.Open
-        (Store, Quality_Path (Item, Settings), Improve.Operations.Quality_Load_Limits (Settings));
-      declare
-         Values   : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Store);
-         Snapshot : constant String := Improve.Source.Identity (Store);
-      begin
-         Require_Output_Items (Values.Length, Settings.Maximum_Output_Items, "project query");
-         declare Result : constant String :=
-           (if Item.Format = JSON_Format then Improve.JSON.Projects (Values, Snapshot)
-            else Improve.Presentation.Projects (Values));
-         begin
-            Improve.Source.Close (Store);
-            return Result;
-         end;
-      end;
+      if Item.Format = JSON_Format then
+         return Improve.JSON.Projects (Inspected.Values, To_String (Inspected.Snapshot));
+      end if;
+      return Improve.Presentation.Projects (Inspected.Values);
    end Projects_Output;
 
    function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Store : Improve.Source.Repository;
+      Inspected : constant Improve.Operations.Inspection.Finding_Result :=
+        Improve.Operations.Inspection.Findings
+          (Quality_Path (Item, Settings), To_String (Item.Project), Item.Run_Id, Settings);
    begin
-      Improve.Source.Open
-        (Store, Quality_Path (Item, Settings), Improve.Operations.Quality_Load_Limits (Settings));
-      declare
-         Project  : constant Improve.Model.Project_Reference :=
-           Improve.Source.Resolve_Project (Store, To_String (Item.Project));
-         Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project, Item.Run_Id);
-         Values   : constant Improve.Model.Finding_Vectors.Vector :=
-           Improve.Findings.Normalize
-             (Selected, Improve.Config.Quality_Severity (Settings.Minimum_Severity),
-              Settings.Allow_Investigation_Tasks,
-              Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
-              Settings.Maximum_Assessment_Bytes);
-         Result   : constant String :=
-           (if Item.Format = JSON_Format then Improve.JSON.Findings (Selected, Values)
-            else Improve.Presentation.Findings (Selected, Values));
-      begin
-         Improve.Source.Close (Store);
-         return Result;
-      end;
+      if Item.Format = JSON_Format then
+         return Improve.JSON.Findings (Inspected.Selected, Inspected.Values);
+      end if;
+      return Improve.Presentation.Findings (Inspected.Selected, Inspected.Values);
    end Findings_Output;
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is

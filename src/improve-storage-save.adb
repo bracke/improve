@@ -1,3 +1,4 @@
+--  Persist one immutable remediation-plan revision.
 separate (Improve.Storage)
 function Save
   (Item   : in out Store;

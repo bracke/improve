@@ -1,3 +1,7 @@
+with Ada.Strings.Unbounded;
+with Improve.Config;
+with Improve.Model;
+with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
 with Ada_Quality.Reporting;
@@ -5,6 +9,42 @@ with Ada_Quality.Reporting;
 --  Read-only task and project status use cases.
 package Improve.Operations.Inspection is
    --  Assemble assessment-aware inspection models independently of presentation.
+
+   type Project_Result is record
+      Values   : Ada_Quality.Reporting.Project_Vectors.Vector;
+      Snapshot : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+   --  Registered projects and the reporting snapshot from which they were read.
+   --  @field Values Registered projects in stable reporting order.
+   --  @field Snapshot Read-only reporting snapshot identity.
+
+   type Finding_Result is record
+      Selected : Improve.Source.Selection;
+      Values   : Improve.Model.Finding_Vectors.Vector;
+   end record;
+   --  One completed assessment selection and its normalized remediation findings.
+   --  @field Selected Completed assessment and project provenance.
+   --  @field Values Normalized remediation findings in deterministic order.
+
+   function Projects
+     (Quality_Path : String;
+      Settings     : Improve.Config.Settings) return Project_Result;
+   --  Read the bounded project registry through the typed reporting interface.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Settings Validated quality and output limits.
+   --  @return Registered projects and reporting snapshot identity.
+
+   function Findings
+     (Quality_Path     : String;
+      Project_Selector : String;
+      Run_Id           : Natural;
+      Settings         : Improve.Config.Settings) return Finding_Result;
+   --  Select a completed assessment and normalize its bounded remediation evidence.
+   --  @param Quality_Path Existing read-only Ada Quality database.
+   --  @param Project_Selector Project identity or unique project name.
+   --  @param Run_Id Explicit completed assessment, or zero for the latest completed run.
+   --  @param Settings Validated evidence, planning, and output limits.
+   --  @return Assessment selection and normalized findings.
 
    function Tasks
      (State_Path       : String;

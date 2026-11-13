@@ -1,12 +1,13 @@
 with Ada.Command_Line;
-with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada_Quality.Checks;
 with Ada_Quality.Coverage;
 with Improve;
+with Improve_Coverage_Units;
 with Project_Tools.Files;
 with Project_Tools.Gcov;
 with Project_Tools.Processes;
@@ -23,6 +24,8 @@ procedure Improve_Coverage is
    Object_Dir : constant String := Project_Tools.Files.Join (Scratch, "obj");
    Binary_Dir : constant String := Project_Tools.Files.Join (Scratch, "bin");
    Alr : constant String := Project_Tools.Processes.Locate_Command ("alr");
+   Project_Overlay : constant String :=
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY", "");
    Covered : Natural := 0;
    Total   : Natural := 0;
 
@@ -41,84 +44,34 @@ procedure Improve_Coverage is
      (To_String (Unit.Stem) = "improve-operations" and then
       Length (Unit.Body_Path) = 0);
 
-   function Compilation_Stem
-     (Unit : Ada_Quality.Coverage.Production_Unit) return String is
-      Prefix : constant String := "separate (";
-      function Stem_Of (Name : String) return String is
-         Result : String := Ada.Characters.Handling.To_Lower (Name);
-      begin
-         for Index in Result'Range loop
-            if Result (Index) = '.' then Result (Index) := '-'; end if;
-         end loop;
-         return Result;
-      end Stem_Of;
-
-      function Separate_Parent (Path : String) return String is
-         Text : constant String := Project_Tools.Files.Read_Raw_File (Path);
-      begin
-         if Text'Length <= Prefix'Length or else
-           Text (Text'First .. Text'First + Prefix'Length - 1) /= Prefix
-         then
-            return "";
-         end if;
-         declare
-            Closing : constant Natural :=
-              Ada.Strings.Fixed.Index (Text, ")", From => Text'First + Prefix'Length);
-         begin
-            if Closing <= Text'First + Prefix'Length then
-               raise Program_Error with "malformed Ada separate parent in " & Path;
-            end if;
-            return Text (Text'First + Prefix'Length .. Closing - 1);
-         end;
-      end Separate_Parent;
-   begin
-      if Length (Unit.Body_Path) = 0 then return To_String (Unit.Stem); end if;
-      declare
-         Parent : Unbounded_String := To_Unbounded_String (Separate_Parent (To_String (Unit.Body_Path)));
-      begin
-         if Length (Parent) = 0 then return To_String (Unit.Stem); end if;
-         for Depth in 1 .. 32 loop
-            declare
-               Parent_Source : constant String :=
-                 Project_Tools.Files.Join
-                   (Project_Tools.Files.Join (Root, "src"), Stem_Of (To_String (Parent)) & ".adb");
-            begin
-               exit when not Project_Tools.Files.File_Exists (Parent_Source);
-               declare Next_Parent : constant String := Separate_Parent (Parent_Source); begin
-                  exit when Next_Parent = "";
-                  if Depth = 32 then
-                     raise Program_Error with "Ada separate parent nesting exceeds coverage limit";
-                  end if;
-                  if Next_Parent = To_String (Parent) then
-                     raise Program_Error with "cyclic Ada separate parent " & Next_Parent;
-                  end if;
-                  Parent := To_Unbounded_String (Next_Parent);
-               end;
-            end;
-         end loop;
-         return Stem_Of (To_String (Parent));
-      end;
-   end Compilation_Stem;
-
    procedure Fail (Message : String) is
    begin
       Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "coverage: " & Message);
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       raise Program_Error with Message;
    end Fail;
+
+   function Build_Arguments return Project_Tools.Processes.Argument_Vectors.Vector is
+      Result : Project_Tools.Processes.Argument_Vectors.Vector :=
+        Project_Tools.Processes.Arguments
+          ([Project_Tools.Processes.Argument ("exec"),
+            Project_Tools.Processes.Argument ("--"),
+            Project_Tools.Processes.Argument ("gprbuild"),
+            Project_Tools.Processes.Argument ("-P"),
+            Project_Tools.Processes.Argument ("coverage.gpr"),
+            Project_Tools.Processes.Argument ("-XIMPROVE_COVERAGE_ROOT=" & Scratch)]);
+   begin
+      if Project_Overlay /= "" then
+         Result.Append (Project_Tools.Processes.Argument ("-aP" & Project_Overlay));
+      end if;
+      Result.Append (Project_Tools.Processes.Argument ("-p"));
+      Result.Append (Project_Tools.Processes.Argument ("-j1"));
+      return Result;
+   end Build_Arguments;
 begin
    if Root = "" or else Alr = "" then Fail ("project root or Alire executable is unavailable"); end if;
    Project_Tools.Processes.Run
-     ("instrumented Improve build", Tests_Dir, Alr,
-      Project_Tools.Processes.Arguments
-        ([Project_Tools.Processes.Argument ("exec"),
-          Project_Tools.Processes.Argument ("--"),
-          Project_Tools.Processes.Argument ("gprbuild"),
-          Project_Tools.Processes.Argument ("-P"),
-          Project_Tools.Processes.Argument ("coverage.gpr"),
-          Project_Tools.Processes.Argument ("-XIMPROVE_COVERAGE_ROOT=" & Scratch),
-          Project_Tools.Processes.Argument ("-p"),
-          Project_Tools.Processes.Argument ("-j1")]));
+     ("instrumented Improve build", Tests_Dir, Alr, Build_Arguments);
    Project_Tools.Processes.Run
      ("instrumented AUnit suite", Tests_Dir,
       Project_Tools.Files.Join (Binary_Dir, "improve_tests"), Project_Tools.Processes.No_Arguments);
@@ -133,7 +86,7 @@ begin
       if Units.Is_Empty then Fail ("production source inventory is empty"); end if;
       for Unit of Units loop
          declare
-            Object_Name : constant String := Compilation_Stem (Unit) & ".gcno";
+            Object_Name : constant String := Improve_Coverage_Units.Compilation_Stem (Unit) & ".gcno";
             Run : constant Project_Tools.Processes.Captured_Process :=
               Project_Tools.Processes.Capture
                 ("gcov " & Object_Name, Root, Alr,

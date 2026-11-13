@@ -38,6 +38,8 @@ package body Improve.Storage is
    Operations_Table          : constant Positive := 12;
    Task_Details_Table        : constant Positive := 13;
    Task_Identities_Table     : constant Positive := 14;
+   Namespace_Stride          : constant Positive := 100_000_000;
+   Maximum_Logical_Id        : constant Positive := Namespace_Stride;
 
    Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
      [new Wide_Wide_String'("schema_metadata"), new Wide_Wide_String'("projects"),
@@ -69,7 +71,14 @@ package body Improve.Storage is
    end record;
 
    function Physical_Key (Table, Id : Positive) return Positive is
-     ((Table - 1) * 100_000_000 + Id);
+   begin
+      if Table > Logical_Table_Count then
+         raise Data_Error with "stored namespace identity is outside the Improve schema";
+      elsif Id > Maximum_Logical_Id then
+         raise Data_Error with "Improve logical identity space is exhausted";
+      end if;
+      return (Table - 1) * Namespace_Stride + Id;
+   end Physical_Key;
 
    function To_Row (Item : Entity) return Database.Rows.Row is
       Result : Database.Rows.Row;
@@ -86,13 +95,25 @@ package body Improve.Storage is
    end To_Row;
 
    function From_Row (Row : Database.Rows.Row) return Entity is
-     ((Id        => Positive (Database.Rows.Get (Row, 2).Int),
-       Parent_Id => Natural (Database.Rows.Get (Row, 3).Int),
-       Kind      => Database.Rows.Get (Row, 4).Text,
-       State     => Database.Rows.Get (Row, 5).Text,
-       Payload   => Database.Rows.Get (Row, 6).Text,
-       Active    => Database.Rows.Get (Row, 7).Bool,
-       Table_Id  => Positive (Database.Rows.Get (Row, 1).Int)));
+      Stored_Key : constant Positive := Positive (Database.Rows.Get (Row, 0).Int);
+      Table      : constant Positive := Positive (Database.Rows.Get (Row, 1).Int);
+      Id         : constant Positive := Positive (Database.Rows.Get (Row, 2).Int);
+   begin
+      if Stored_Key /= Physical_Key (Table, Id) then
+         raise Data_Error with "stored Improve physical identity is inconsistent";
+      end if;
+      return
+        (Id        => Id,
+         Parent_Id => Natural (Database.Rows.Get (Row, 3).Int),
+         Kind      => Database.Rows.Get (Row, 4).Text,
+         State     => Database.Rows.Get (Row, 5).Text,
+         Payload   => Database.Rows.Get (Row, 6).Text,
+         Active    => Database.Rows.Get (Row, 7).Bool,
+         Table_Id  => Table);
+   exception
+      when Constraint_Error =>
+         raise Data_Error with "stored Improve physical identity is malformed";
+   end From_Row;
 
    function Key_Of (Item : Entity) return Positive is (Physical_Key (Item.Table_Id, Item.Id));
    function Key_Value (Key : Positive) return Database.Values.Value is
@@ -275,8 +296,14 @@ package body Improve.Storage is
                Highest := Natural'Max (Highest, Entity_Tables.Element (Cursor).Id);
                Advance (Item, Tx, Table, Cursor);
             end loop;
+            if Highest >= Maximum_Logical_Id then
+               raise Data_Error with "Improve logical identity space is exhausted";
+            end if;
             Item.Next_Ids (Table) := Highest + 1;
          end;
+      end if;
+      if Item.Next_Ids (Table) > Maximum_Logical_Id then
+         raise Data_Error with "Improve logical identity space is exhausted";
       end if;
       Result := Positive (Item.Next_Ids (Table));
       Item.Next_Ids (Table) := Item.Next_Ids (Table) + 1;
@@ -289,8 +316,12 @@ package body Improve.Storage is
       Table : Positive;
       Count : Natural) return Positive is
       First : constant Positive := Next_Id (Item, Tx, Table);
+      Reserved : constant Natural := Natural'Max (1, Count);
    begin
-      Item.Next_Ids (Table) := Item.Next_Ids (Table) + Natural'Max (1, Count) - 1;
+      if Reserved - 1 > Maximum_Logical_Id - First then
+         raise Data_Error with "Improve logical identity space is exhausted";
+      end if;
+      Item.Next_Ids (Table) := Item.Next_Ids (Table) + Reserved - 1;
       return First;
    end Reserve_Ids;
 
