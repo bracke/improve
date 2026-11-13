@@ -161,10 +161,17 @@ package body Improve.Model is
    procedure Validate (Plan : Plan_Revision) is
       Findings : String_Sets.Set;
    begin
+      if Plan.Baseline.Project_Id /= Plan.Project.Id then
+         raise Data_Error with "assessment baseline belongs to a different project";
+      end if;
       Validate_Task_Graph (Plan.Tasks);
       for Finding of Plan.Findings loop
          declare Identity : constant String := To_String (Finding.Fingerprint); begin
-            if Identity = "" then
+            if Finding.Project_Id /= Plan.Project.Id then
+               raise Data_Error with "plan finding belongs to a different project";
+            elsif Finding.Run_Id /= Plan.Baseline.Run_Id then
+               raise Data_Error with "plan finding belongs to a different assessment";
+            elsif Identity = "" then
                raise Data_Error with "finding identity must not be empty";
             elsif Findings.Contains (Identity) then
                raise Data_Error with "duplicate plan finding " & Identity;

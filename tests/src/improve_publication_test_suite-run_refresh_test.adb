@@ -42,9 +42,12 @@ begin
                Assert (Errors.Is_Ok (Status), "refresh fixture harness commit failed");
                Stores.Close (Store);
                Run := Publish_Followup (Data, Source => "source-remediated", Toolchain => "gnat-16.0");
+               Stores.Open (Store, To_String (Data.Target), Recovery, Status);
+               Assert (Errors.Is_Ok (Status), "refresh fixture could not hold the harness writer lock");
                Refreshed := Improve.CLI.Execute
                  (Args ("refresh|--project|" & Id_Image (Data.Project) & "|--database|" &
                         To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+               Stores.Close (Store);
                Assert (Run > Data.Run and then Refreshed.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                          (To_String (Refreshed.Output), """command"":""refresh""") > 0,
                        "refresh command did not complete: " & To_String (Refreshed.Errors));

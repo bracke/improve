@@ -120,11 +120,15 @@ function Load_Revision
                      declare
                         Detail : constant Entity := Entity_Tables.Element (Child);
                         Text   : constant String := S (Detail.Payload);
+                        Key    : constant String :=
+                          Number (Row.Id) & Character'Val (0) & S (Detail.Kind);
                      begin
                         Require_Payload_Limit (Text, Limits, "task detail");
-                        Details.Include
-                          (Number (Row.Id) & Character'Val (0) & S (Detail.Kind),
-                           To_Unbounded_String (Text));
+                        if Details.Contains (Key) then
+                           raise Data_Error with
+                             "duplicate persisted task detail " & S (Detail.Kind);
+                        end if;
+                        Details.Insert (Key, To_Unbounded_String (Text));
                      end;
                      Advance_Children (Item, Tx, Task_Details_Table, Row.Id, Child);
                   end loop;

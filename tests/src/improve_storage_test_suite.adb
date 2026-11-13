@@ -205,6 +205,34 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Insert_Unknown_Finding_Link;
 
+   procedure Insert_Duplicate_Task_Detail (Path : String; Task_Row : Positive) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : constant Raw_Entity :=
+        (Id        => 99_000_000,
+         Parent_Id => Task_Row,
+         Kind      => To_Unbounded_Wide_Wide_String ("goal"),
+         State     => To_Unbounded_Wide_Wide_String ("value"),
+         Payload   => To_Unbounded_Wide_Wide_String ("conflicting persisted goal"),
+         Active    => True,
+         Table_Id  => 13);
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for detail corruption");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Assert
+        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "duplicate task-detail fixture could not be inserted");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Insert_Duplicate_Task_Detail;
+
    type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
 
@@ -258,8 +286,12 @@ package body Improve_Storage_Test_Suite is
       declare
          Invalid_Graph : Improve.Model.Plan_Revision := Plan;
          Invalid_Link  : Improve.Model.Plan_Revision := Plan;
+         Invalid_Baseline : Improve.Model.Plan_Revision := Plan;
+         Invalid_Finding  : Improve.Model.Plan_Revision := Plan;
          Graph_Rejected : Boolean := False;
          Link_Rejected  : Boolean := False;
+         Baseline_Rejected : Boolean := False;
+         Finding_Rejected  : Boolean := False;
       begin
          Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
          Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
@@ -278,9 +310,35 @@ package body Improve_Storage_Test_Suite is
          exception
             when Improve.Data_Error => Link_Rejected := True;
          end;
+         Invalid_Baseline.Baseline.Project_Id := 2;
+         begin
+            declare Saved : constant Improve.Storage.Save_Result :=
+              Improve.Storage.Save (Store, Invalid_Baseline);
+            begin
+               pragma Unreferenced (Saved);
+            end;
+         exception
+            when Improve.Data_Error => Baseline_Rejected := True;
+         end;
+         Invalid_Finding.Findings.Append
+           (Improve.Model.Finding_Reference'
+              (Project_Id  => 2,
+               Run_Id      => Invalid_Finding.Baseline.Run_Id,
+               Fingerprint => To_Unbounded_String ("foreign-finding"),
+               others      => <>));
+         Invalid_Finding.Tasks (1).Finding_Keys.Append (To_Unbounded_String ("foreign-finding"));
+         begin
+            declare Saved : constant Improve.Storage.Save_Result :=
+              Improve.Storage.Save (Store, Invalid_Finding);
+            begin
+               pragma Unreferenced (Saved);
+            end;
+         exception
+            when Improve.Data_Error => Finding_Rejected := True;
+         end;
          Assert
-           (Graph_Rejected and then Link_Rejected,
-            "storage persisted a plan that violated graph or finding-link invariants");
+           (Graph_Rejected and then Link_Rejected and then Baseline_Rejected and then Finding_Rejected,
+            "storage persisted a plan that violated graph, finding-link, or provenance invariants");
       end;
       for Revision in 1 .. 4 loop
          Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("scale revision " & Image (Revision)));
@@ -539,6 +597,19 @@ package body Improve_Storage_Test_Suite is
          Assert
            (Integrity_Rejected and then not Misclassified,
             "corrupt persisted revision was not classified as an integrity failure");
+      end;
+      Improve.Storage.Close (Store);
+      Insert_Duplicate_Task_Detail (Path, Task_Row => 1);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      declare
+         Rejected : Boolean := False;
+      begin
+         begin
+            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001", 1);
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "storage silently accepted duplicate persisted task details");
       end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);

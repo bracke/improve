@@ -303,6 +303,26 @@ begin
                      Ada.Strings.Fixed.Index (To_String (Summary.Output), Old_Id) = 0 and then
                      Ada.Strings.Fixed.Index (To_String (Summary.Output), """harness_state"":""running""") > 0,
                      "status JSON selected the obsolete native contract mapping");
+                  declare
+                     Improve_State : Improve.Storage.Store;
+                     History       : Improve.Storage.Publication_Vectors.Vector;
+                     Old_State     : Unbounded_String;
+                  begin
+                     Improve.Storage.Open (Improve_State, State, Writable => False);
+                     History := Improve.Storage.Publications
+                       (Improve_State, To_String (Second.Plan.Plan_Id));
+                     Improve.Storage.Close (Improve_State);
+                     for Mapping of History loop
+                        if Mapping.Improve_Task_Id = Published.Tasks (1).Improve_Id and then
+                          Mapping.Contract = Published.Tasks (1).Contract
+                        then
+                           Old_State := Mapping.State;
+                        end if;
+                     end loop;
+                     Assert
+                       (To_String (Old_State) = "cancelled",
+                        "refresh left the historical native task state stale");
+                  end;
                end;
                Remove (Data);
             end;

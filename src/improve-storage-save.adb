@@ -163,11 +163,21 @@ function Save
                        To_Unbounded_String (Field_Or (Payload, "acceptance", ""));
                      Details    : Entity_Tables.Cursor :=
                        Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
+                     Seen_Details : String_Id_Maps.Map;
                   begin
-                     while Length (Acceptance) = 0 and then Entity_Tables.Has_Element (Details) loop
-                        if S (Entity_Tables.Element (Details).Kind) = "acceptance" then
-                           Acceptance := To_Unbounded_String (S (Entity_Tables.Element (Details).Payload));
-                        end if;
+                     while Entity_Tables.Has_Element (Details) loop
+                        declare
+                           Detail : constant Entity := Entity_Tables.Element (Details);
+                           Name   : constant String := S (Detail.Kind);
+                        begin
+                           if Seen_Details.Contains (Name) then
+                              raise Data_Error with "duplicate persisted task detail " & Name;
+                           end if;
+                           Seen_Details.Insert (Name, Detail.Id);
+                           if Length (Acceptance) = 0 and then Name = "acceptance" then
+                              Acceptance := To_Unbounded_String (S (Detail.Payload));
+                           end if;
+                        end;
                         Advance_Children (Item, Tx, Task_Details_Table, Row.Id, Details);
                      end loop;
                      declare

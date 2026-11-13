@@ -230,7 +230,7 @@ function Execute
       if not Stores.Is_Initialized (Project_Directory) then
          raise Dependency_Error with "model_runner project state is not initialized: " & Project_Directory;
       end if;
-      if Dry_Run then
+      if Dry_Run or else Existing_Only then
          Stores.Open_To_Read (Store, Project_Directory, Status);
       else
          Stores.Open (Store, Project_Directory, Report, Status);
