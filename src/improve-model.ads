@@ -19,6 +19,14 @@ package Improve.Model is
    --  @param Values Components whose boundaries must remain unambiguous.
    --  @return Canonical boundary-safe representation.
 
+   function Safe_Relative_Path
+     (Path          : String;
+      Empty_Allowed : Boolean := True) return Boolean;
+   --  Check an untrusted UTF-8 path for safe project-relative use.
+   --  @param Path Candidate project-relative path.
+   --  @param Empty_Allowed Whether an absent path is valid in this context.
+   --  @return True only for a normalized relative path without control or bidi characters.
+
    type Project_Reference is record
       Id          : Positive;
       Name        : UString;

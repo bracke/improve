@@ -1,6 +1,6 @@
 # Improve state schema
 
-Improve owns schema version 4 of its state database. It uses the existing `database` crate and its typed rows,
+Improve owns schema version 5 of its state database. It uses the existing `database` crate and its typed rows,
 transactions, write-ahead recovery, process locking, and read-only open mode. Ada Quality and model runner state are
 never stored here.
 
@@ -28,7 +28,8 @@ The schema has fourteen append-oriented logical namespaces:
 The current database library keeps its catalog on one page. Fourteen separately registered physical tables exceed that
 catalog capacity, so the schema represents the namespaces in one typed `improve_records` table. Every
 row carries a `table_id`, logical identity, parent identity, kind, state, payload, and active flag. Its primary key is a
-checked composite of namespace and logical identity. The schema metadata row records all fourteen stable namespace names.
+checked composite of namespace and logical identity. The schema metadata row records all fourteen stable namespace
+names.
 This is a physical layout choice; the storage API enforces namespace isolation and logical foreign-key invariants.
 
 ## Transactions and identity
@@ -51,16 +52,20 @@ current revision.
 
 Project and plan keys include the canonical Ada Quality database identity, registry ID, and canonical project path.
 Numeric project IDs are never treated as globally unique across independent quality databases.
+Plans and assessment baselines reference the local `projects` row. The project row stores the database-qualified Ada
+Quality identity, while each revision references its normalized baseline. Revision payload provenance is retained for
+auditing and checked against those authoritative relationships when loaded.
 
 Verification identity includes the stable plan ID, immutable plan revision, completed assessment, evaluation scope,
-and acceptance-contract fingerprint. Task-scoped records fingerprint the complete persisted task definition; plan and
+and acceptance-contract fingerprint. Task-scoped records use the dependency-qualified effective contract; plan and
 project records retain the immutable plan fingerprint. Thus two revisions can be evaluated against one assessment
 without conflicting, while an identical evaluation remains idempotent.
 
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
-perform recovery. Writable open initializes a missing version-4 database and upgrades older supported state before
+perform recovery. Writable open initializes a missing version-5 database and upgrades older supported state before
 writing. The version-3 migration backfills indexed plan parents for publication and verification records; the version-4
-migration builds the logical-task history index so
+migration builds the logical-task history index. Version 5 links plans and baselines to database-qualified local
+project references and validates duplicated provenance so
 normal plan-scoped access does not scan their complete history. Read-only access remains compatible with older state
 without migrating it. Missing or unknown schema metadata is rejected rather than guessed.
 

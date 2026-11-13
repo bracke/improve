@@ -72,9 +72,9 @@ function Save
       end if;
       Stored.Created_At := Ada.Calendar.Clock;
       declare
-         Project_Row  : constant Positive := Next_Id (Item, Tx, Projects_Table);
+         Project_Row  : Positive := 1;
          Baseline_Row : constant Positive := Next_Id (Item, Tx, Baselines_Table);
-         Plan_Row     : Positive := Next_Id (Item, Tx, Plans_Table);
+         Plan_Row     : Positive := 1;
          Revision_Row : constant Positive := Next_Id (Item, Tx, Revisions_Table);
          Revision_No  : Positive := 1;
          Previous_Revision : Natural := 0;
@@ -85,6 +85,29 @@ function Save
          end if;
          if Entity_Tables.Has_Element (Cursor) then
             Plan_Row := Entity_Tables.Element (Cursor).Id;
+            if Entity_Tables.Element (Cursor).Parent_Id = 0 then
+               raise Data_Error with "persisted plan has no project relationship";
+            end if;
+            Project_Row := Positive (Entity_Tables.Element (Cursor).Parent_Id);
+            declare
+               Project_Entity : Entity;
+               Status : constant Database.Status.Result :=
+                 Entity_Tables.Find
+                   (Tx, Item.DB, Item.Schemas (Projects_Table),
+                    Physical_Key (Projects_Table, Project_Row), Project_Entity);
+            begin
+               Check (Status, "read persisted project reference");
+               declare Payload : constant String := S (Project_Entity.Payload); begin
+                  if S (Project_Entity.Kind) /= S (Entity_Tables.Element (Cursor).Kind) or else
+                    Positive'Value (Field (Payload, "quality_project_id")) /= Stored.Project.Id or else
+                    Field (Payload, "name") /= To_String (Stored.Project.Name) or else
+                    Field (Payload, "path") /= To_String (Stored.Project.Path) or else
+                    Field (Payload, "quality_database") /= To_String (Stored.Project.Database_Id)
+                  then
+                     raise Data_Error with "stored plan project identity is inconsistent";
+                  end if;
+               end;
+            end;
             declare Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
             begin
                while Entity_Tables.Has_Element (Revisions) loop
@@ -100,19 +123,22 @@ function Save
                end loop;
             end;
          else
+            Project_Row := Next_Id (Item, Tx, Projects_Table);
+            Plan_Row := Next_Id (Item, Tx, Plans_Table);
             Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Projects_Table),
                    (Project_Row, 0, WW (Project_Key (Stored.Project)), WW ("active"), WW
                      (Pair ("name", To_String (Stored.Project.Name)) & LF &
                       Pair ("path", To_String (Stored.Project.Path)) & LF &
-                      Pair ("quality_database", To_String (Stored.Project.Database_Id))),
+                      Pair ("quality_database", To_String (Stored.Project.Database_Id)) & LF &
+                      Pair ("quality_project_id", Number (Stored.Project.Id))),
                     True, Projects_Table)), "store project");
             Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Plans_Table),
-                   (Plan_Row, Stored.Project.Id, WW (Project_Key (Stored.Project)), WW ("active"), WW (""), True,
+                   (Plan_Row, Project_Row, WW (Project_Key (Stored.Project)), WW ("active"), WW (""), True,
                     Plans_Table)),
                    "store plan");
          end if;
          Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Baselines_Table),
-                (Baseline_Row, Stored.Project.Id, WW (Number (Stored.Baseline.Run_Id)), WW ("completed"),
+                (Baseline_Row, Project_Row, WW (Number (Stored.Baseline.Run_Id)), WW ("completed"),
                  WW (Pair ("source", To_String (Stored.Baseline.Source_Id)) & LF &
                      Pair ("policy", To_String (Stored.Baseline.Policy_Id)) & LF &
                      Pair ("toolchain", To_String (Stored.Baseline.Toolchain_Id)) & LF &

@@ -31,6 +31,25 @@ begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for verification recording";
    end if;
+   for Value of Values loop
+      if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
+         raise Data_Error with "task verification has no task identity";
+      elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
+         raise Data_Error with "aggregate verification must not name a task";
+      end if;
+      declare
+         Plan : constant Improve.Model.Plan_Revision :=
+           Load (Item, Plan_Id, Value.Plan_Revision);
+         Expected : constant String :=
+           (if Value.Scope = Task_Evaluation then
+               Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Value.Task_Id)
+            else To_String (Plan.Fingerprint));
+      begin
+         if To_String (Value.Contract_Fingerprint) /= Expected then
+            raise Data_Error with "verification does not match the persisted evaluation contract";
+         end if;
+      end;
+   end loop;
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
@@ -38,14 +57,20 @@ begin
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
          begin
-            Stored.Include
-              (Identity_Key
+            declare Key : constant String := Identity_Key
                  (S (Row.Kind), Field (Payload, "plan_id"), Field (Payload, "assessment_id"),
-                  Field_Or (Payload, "plan_revision", "1"), Field_Or (Payload, "contract", "")),
+                  Field_Or (Payload, "plan_revision", "1"), Field_Or (Payload, "contract", ""));
+            begin
+               if Stored.Contains (Key) then
+                  raise Data_Error with "duplicate persisted verification evidence";
+               end if;
+               Stored.Insert
+              (Key,
                To_Unbounded_String
                  (Stored_Value
                     (S (Row.State), Field_Or (Payload, "scope", "task"),
                      Field (Payload, "comparable"), Field (Payload, "explanation"))));
+            end;
          end;
          Advance_Children (Item, Tx, Verifications_Table, Plan_Row, Cursor);
       end loop;
@@ -61,11 +86,6 @@ begin
             To_String (Value.Explanation));
          Existing : constant Boolean := Stored.Contains (Identity);
       begin
-         if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
-            raise Data_Error with "task verification has no task identity";
-         elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
-            raise Data_Error with "aggregate verification must not name a task";
-         end if;
          if Existing and then To_String (Stored.Element (Identity)) /= Expected then
             raise Data_Error with "verification evidence conflicts for task and assessment";
          end if;

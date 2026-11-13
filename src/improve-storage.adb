@@ -333,6 +333,10 @@ package body Improve.Storage is
      (Item     : in out Store;
       Metadata : in out Entity) is separate;
 
+   procedure Migrate_To_Version_5
+     (Item     : in out Store;
+      Metadata : in out Entity) is separate;
+
    procedure Open (Item : in out Store; Path : String; Writable : Boolean) is separate;
 
    procedure Close (Item : in out Store) is

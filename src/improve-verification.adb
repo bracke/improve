@@ -44,11 +44,6 @@ package body Improve.Verification is
      (Improve.Model.Canonical_Key
         ([To_Unbounded_String (Semantic), Fingerprint]));
 
-   function Contract_Fingerprint (Item : Improve.Model.Task_Specification) return String is
-   begin
-      return Improve.Model.Task_Contract_Fingerprint (Item);
-   end Contract_Fingerprint;
-
    function Baseline_Finding
      (Plan      : Improve.Model.Plan_Revision;
       Indexes   : Finding_Index_Maps.Map;

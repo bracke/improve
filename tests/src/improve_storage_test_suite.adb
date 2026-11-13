@@ -149,89 +149,16 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Corrupt_Revision;
 
-   procedure Exhaust_Project_Identities (Path : String) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : constant Raw_Entity :=
-        (Id        => 100_000_000,
-         Parent_Id => 0,
-         Kind      => To_Unbounded_Wide_Wide_String ("exhausted-project-identity"),
-         State     => To_Unbounded_Wide_Wide_String ("active"),
-         Payload   => To_Unbounded_Wide_Wide_String ("fixture=true"),
-         Active    => True,
-         Table_Id  => 2);
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be reopened for identity fixture");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Assert
-        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "identity exhaustion fixture could not be inserted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Exhaust_Project_Identities;
+   procedure Corrupt_Baseline_Parent
+     (Path : String; Baseline_Id : Positive) is separate;
 
-   procedure Insert_Unknown_Finding_Link (Path : String; Task_Row : Positive) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : constant Raw_Entity :=
-        (Id        => 1,
-         Parent_Id => Task_Row,
-         Kind      => To_Unbounded_Wide_Wide_String ("unknown-finding"),
-         State     => To_Unbounded_Wide_Wide_String ("linked"),
-         Payload   => Null_Unbounded_Wide_Wide_String,
-         Active    => True,
-         Table_Id  => 8);
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for link corruption");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Assert
-        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "unknown finding-link fixture could not be inserted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Insert_Unknown_Finding_Link;
+   procedure Exhaust_Project_Identities (Path : String) is separate;
 
-   procedure Insert_Duplicate_Task_Detail (Path : String; Task_Row : Positive) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : constant Raw_Entity :=
-        (Id        => 99_000_000,
-         Parent_Id => Task_Row,
-         Kind      => To_Unbounded_Wide_Wide_String ("goal"),
-         State     => To_Unbounded_Wide_Wide_String ("value"),
-         Payload   => To_Unbounded_Wide_Wide_String ("conflicting persisted goal"),
-         Active    => True,
-         Table_Id  => 13);
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for detail corruption");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Assert
-        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "duplicate task-detail fixture could not be inserted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Insert_Duplicate_Task_Detail;
+   procedure Insert_Unknown_Finding_Link
+     (Path : String; Task_Row : Positive) is separate;
+
+   procedure Insert_Duplicate_Task_Detail
+     (Path : String; Task_Row : Positive) is separate;
 
    type Storage_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
@@ -288,10 +215,12 @@ package body Improve_Storage_Test_Suite is
          Invalid_Link  : Improve.Model.Plan_Revision := Plan;
          Invalid_Baseline : Improve.Model.Plan_Revision := Plan;
          Invalid_Finding  : Improve.Model.Plan_Revision := Plan;
+         Invalid_Path     : Improve.Model.Plan_Revision := Plan;
          Graph_Rejected : Boolean := False;
          Link_Rejected  : Boolean := False;
          Baseline_Rejected : Boolean := False;
          Finding_Rejected  : Boolean := False;
+         Path_Rejected     : Boolean := False;
       begin
          Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
          Invalid_Graph.Tasks (2).Dependencies.Append (Invalid_Graph.Tasks (1).Id);
@@ -336,9 +265,21 @@ package body Improve_Storage_Test_Suite is
          exception
             when Improve.Data_Error => Finding_Rejected := True;
          end;
+         Invalid_Path.Tasks (1).Relevant_Files.Append
+           (To_Unbounded_String ("src/unsafe" & Character'Val (10) & "instruction.adb"));
+         begin
+            declare Saved : constant Improve.Storage.Save_Result :=
+              Improve.Storage.Save (Store, Invalid_Path);
+            begin
+               pragma Unreferenced (Saved);
+            end;
+         exception
+            when Improve.Data_Error => Path_Rejected := True;
+         end;
          Assert
-           (Graph_Rejected and then Link_Rejected and then Baseline_Rejected and then Finding_Rejected,
-            "storage persisted a plan that violated graph, finding-link, or provenance invariants");
+           (Graph_Rejected and then Link_Rejected and then Baseline_Rejected and then
+            Finding_Rejected and then Path_Rejected,
+            "storage persisted a plan that violated graph, path, finding-link, or provenance invariants");
       end;
       for Revision in 1 .. 4 loop
          Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("scale revision " & Image (Revision)));
@@ -408,7 +349,9 @@ package body Improve_Storage_Test_Suite is
                  (Improve_Task_Id => Stored_Plan.Tasks (Index).Id,
                   Harness_Task_Id => To_Unbounded_String ("TASK-SCALE-" & Image (Index)),
                   Origin          => To_Unbounded_String ("improve:scale:" & Image (Index)),
-                  Contract        => To_Unbounded_String ("contract-" & Image (Index)),
+                  Contract        => To_Unbounded_String
+                    (Improve.Model.Effective_Task_Contract_Fingerprint
+                       (Stored_Plan, Stored_Plan.Tasks (Index).Id)),
                   State           => To_Unbounded_String ("candidate"),
                   Plan_Revision   => Stored_Plan.Revision));
             Evidence.Append
@@ -416,7 +359,9 @@ package body Improve_Storage_Test_Suite is
                  (Scope                => Improve.Storage.Task_Evaluation,
                   Task_Id              => Stored_Plan.Tasks (Index).Id,
                   Plan_Revision        => Stored_Plan.Revision,
-                  Contract_Fingerprint => To_Unbounded_String ("verification-" & Image (Index)),
+                  Contract_Fingerprint => To_Unbounded_String
+                    (Improve.Model.Effective_Task_Contract_Fingerprint
+                       (Stored_Plan, Stored_Plan.Tasks (Index).Id)),
                   Assessment_Id        => 1,
                   Outcome              => Improve.Model.Still_Failing,
                   Comparable           => True,
@@ -424,6 +369,48 @@ package body Improve_Storage_Test_Suite is
          end loop;
          Improve.Storage.Record_Publications (Store, To_String (Stored_Plan.Plan_Id), Mappings);
          Improve.Storage.Record_Verification (Store, To_String (Stored_Plan.Plan_Id), Evidence);
+         declare
+            Invalid_Mapping : Improve.Storage.Publication_Vectors.Vector := Mappings;
+            Invalid_Evidence : Improve.Storage.Verification_Vectors.Vector := Evidence;
+            Mapping_Rejected : Boolean := False;
+            Evidence_Rejected : Boolean := False;
+            Revision_Rejected : Boolean := False;
+            Task_Rejected     : Boolean := False;
+         begin
+            Invalid_Mapping (1).Contract := To_Unbounded_String ("unrelated-contract");
+            begin
+               Improve.Storage.Record_Publications
+                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Mapping);
+            exception
+               when Improve.Data_Error => Mapping_Rejected := True;
+            end;
+            Invalid_Mapping := Mappings;
+            Invalid_Mapping (1).Plan_Revision := Stored_Plan.Revision + 1;
+            begin
+               Improve.Storage.Record_Publications
+                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Mapping);
+            exception
+               when Improve.Argument_Error | Improve.Data_Error => Revision_Rejected := True;
+            end;
+            Invalid_Evidence (1).Contract_Fingerprint := To_Unbounded_String ("unrelated-contract");
+            begin
+               Improve.Storage.Record_Verification
+                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Evidence);
+            exception
+               when Improve.Data_Error => Evidence_Rejected := True;
+            end;
+            Invalid_Evidence := Evidence;
+            Invalid_Evidence (1).Task_Id := To_Unbounded_String ("IMP-UNKNOWN");
+            begin
+               Improve.Storage.Record_Verification
+                 (Store, To_String (Stored_Plan.Plan_Id), Invalid_Evidence);
+            exception
+               when Improve.Data_Error => Task_Rejected := True;
+            end;
+            Assert
+              (Mapping_Rejected and then Evidence_Rejected and then Revision_Rejected and then Task_Rejected,
+               "storage accepted history unrelated to the persisted task contract");
+         end;
          Assert
            (Improve.Storage.Publications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2 and then
             Improve.Storage.Verifications (Store, To_String (Stored_Plan.Plan_Id)).Length = 2,
@@ -610,6 +597,19 @@ package body Improve_Storage_Test_Suite is
             when Improve.Data_Error => Rejected := True;
          end;
          Assert (Rejected, "storage silently accepted duplicate persisted task details");
+      end;
+      Improve.Storage.Close (Store);
+      Corrupt_Baseline_Parent (Path, Baseline_Id => 4);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      declare
+         Rejected : Boolean := False;
+      begin
+         begin
+            Stored_Plan := Improve.Storage.Load (Store, "PLAN-000001", 4);
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "storage ignored a broken project-to-baseline relationship");
       end;
       Improve.Storage.Close (Store);
       Project_Tools.Files.Delete_Tree (Root);

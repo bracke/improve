@@ -81,13 +81,12 @@ package body Improve.Operations.Verification is
          begin
             Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);
-            for Spec of Plan.Tasks loop
-               declare Identity : constant String := To_String (Spec.Id); begin
+            for Binding of Improve.Model.Effective_Task_Contracts (Plan) loop
+               declare Identity : constant String := To_String (Binding.Task_Id); begin
                   if Contracts.Contains (Identity) then
                      raise Data_Error with "plan contains duplicate task identity " & Identity;
                   end if;
-                  Contracts.Insert
-                    (Identity, To_Unbounded_String (Improve.Verification.Contract_Fingerprint (Spec)));
+                  Contracts.Insert (Identity, Binding.Fingerprint);
                end;
             end loop;
             Improve.Storage.Open (State, State_Path, Writable => False);

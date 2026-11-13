@@ -14,6 +14,20 @@ begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for publication recording";
    end if;
+   for Value of Values loop
+      declare
+         Plan : constant Improve.Model.Plan_Revision :=
+           Load (Item, Plan_Id, Value.Plan_Revision);
+         Expected : constant String := Improve.Model.Effective_Task_Contract_Fingerprint
+           (Plan, Value.Improve_Task_Id);
+      begin
+         if To_String (Value.Contract) /= Expected then
+            raise Data_Error with "publication does not match the persisted task contract";
+         elsif Length (Value.Harness_Task_Id) = 0 or else Length (Value.Origin) = 0 then
+            raise Data_Error with "publication mapping is incomplete";
+         end if;
+      end;
+   end loop;
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
@@ -21,10 +35,17 @@ begin
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
          begin
-            Stored.Include
-              (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")),
+            declare Key : constant String :=
+              Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", ""));
+            begin
+               if Stored.Contains (Key) then
+                  raise Data_Error with "duplicate persisted publication mapping";
+               end if;
+               Stored.Insert
+              (Key,
                To_Unbounded_String
                  (Field (Payload, "harness_id") & Character'Val (0) & Field (Payload, "origin")));
+            end;
          end;
          Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
       end loop;

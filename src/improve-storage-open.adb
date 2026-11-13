@@ -60,6 +60,10 @@ begin
             Migrate_To_Version_4 (Item, Metadata);
             Item.Schema_Version := 4;
          end if;
+         if Item.Schema_Version < 5 and then Writable then
+            Migrate_To_Version_5 (Item, Metadata);
+            Item.Schema_Version := 5;
+         end if;
       end if;
    end;
 exception

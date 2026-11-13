@@ -10,22 +10,7 @@ package body Improve.Findings is
      (Key_Type => String, Element_Type => Boolean);
 
    function Safe_Relative_Path (Path : String) return Boolean is
-      Start : Positive := Path'First;
-   begin
-      if Path = "" then return True; end if;
-      if Path (Path'First) in '/' | '\' or else
-        (Path'Length >= 2 and then Path (Path'First + 1) = ':')
-      then
-         return False;
-      end if;
-      for Index in Path'Range loop
-         if Path (Index) in '/' | '\' then
-            if Index = Start or else Path (Start .. Index - 1) = ".." then return False; end if;
-            Start := Index + 1;
-         end if;
-      end loop;
-      return Start <= Path'Last and then Path (Start .. Path'Last) /= "..";
-   end Safe_Relative_Path;
+     (Improve.Model.Safe_Relative_Path (Path));
 
    function Normalize
      (Selected         : Improve.Source.Selection;

@@ -1,6 +1,8 @@
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Hash;
+with Ada.Strings.UTF_Encoding;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 
 package body Improve.Model is
    use Ada.Strings.Unbounded;
@@ -100,6 +102,49 @@ package body Improve.Model is
       return To_String (Result);
    end Canonical_Key;
 
+   function Safe_Relative_Path
+     (Path          : String;
+      Empty_Allowed : Boolean := True) return Boolean is
+      Start : Positive := Path'First;
+   begin
+      if Path = "" then
+         return Empty_Allowed;
+      end if;
+      declare
+         Text : constant Wide_Wide_String :=
+           Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path);
+      begin
+         for Value of Text loop
+            declare Code : constant Natural := Wide_Wide_Character'Pos (Value); begin
+               if Code < 32 or else Code in 127 .. 159 or else
+                 Code in 16#061C# | 16#180E# | 16#2028# | 16#2029# | 16#2060# | 16#FEFF# or else
+                 Code in 16#200B# .. 16#200F# or else
+                 Code in 16#202A# .. 16#202E# or else Code in 16#2066# .. 16#2069#
+               then
+                  return False;
+               end if;
+            end;
+         end loop;
+      end;
+      if Path (Path'First) in '/' | '\' or else
+        (Path'Length >= 2 and then Path (Path'First + 1) = ':')
+      then
+         return False;
+      end if;
+      for Index in Path'Range loop
+         if Path (Index) in '/' | '\' then
+            if Index = Start or else Path (Start .. Index - 1) = ".." then
+               return False;
+            end if;
+            Start := Index + 1;
+         end if;
+      end loop;
+      return Start <= Path'Last and then Path (Start .. Path'Last) /= "..";
+   exception
+      when Ada.Strings.UTF_Encoding.Encoding_Error =>
+         return False;
+   end Safe_Relative_Path;
+
    function Image (Item : Candidate_Kind) return String is
      (case Item is
          when Remediation_Candidate => "remediation",
@@ -173,6 +218,8 @@ package body Improve.Model is
                raise Data_Error with "plan finding belongs to a different assessment";
             elsif Identity = "" then
                raise Data_Error with "finding identity must not be empty";
+            elsif not Safe_Relative_Path (To_String (Finding.Relative_Path)) then
+               raise Data_Error with "unsafe finding path";
             elsif Findings.Contains (Identity) then
                raise Data_Error with "duplicate plan finding " & Identity;
             end if;
@@ -180,7 +227,20 @@ package body Improve.Model is
          end;
       end loop;
       for Spec of Plan.Tasks loop
-         declare Linked : String_Sets.Set; begin
+         declare
+            Linked : String_Sets.Set;
+            Files  : String_Sets.Set;
+         begin
+            for File of Spec.Relevant_Files loop
+               declare Name : constant String := To_String (File); begin
+                  if not Safe_Relative_Path (Name, Empty_Allowed => False) then
+                     raise Data_Error with "unsafe task path on " & To_String (Spec.Id);
+                  elsif Files.Contains (Name) then
+                     raise Data_Error with "duplicate task path on " & To_String (Spec.Id);
+                  end if;
+                  Files.Insert (Name);
+               end;
+            end loop;
             for Key of Spec.Finding_Keys loop
                declare Identity : constant String := To_String (Key); begin
                   if Linked.Contains (Identity) then

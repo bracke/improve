@@ -1,6 +1,5 @@
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Strings.Hash;
-with Improve.Verification;
 
 package body Improve.Tasks is
    use Ada.Strings.Unbounded;
@@ -74,7 +73,6 @@ package body Improve.Tasks is
       Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
       Effective : Value_Maps.Map;
-      Task_Contracts : Value_Maps.Map;
       Specifications : Index_Maps.Map;
       Published_By_Contract : Index_Maps.Map;
       Latest_Verification : Index_Maps.Map;
@@ -91,9 +89,6 @@ package body Improve.Tasks is
                raise Improve.Data_Error with "duplicate task specification " & Identity;
             end if;
             Specifications.Insert (Identity, Index);
-            Task_Contracts.Insert
-              (Identity,
-               To_Unbounded_String (Improve.Verification.Contract_Fingerprint (Plan.Tasks (Index))));
          end;
       end loop;
       for Index in 1 .. Natural (Publications.Length) loop
@@ -115,7 +110,7 @@ package body Improve.Tasks is
             if Verification.Scope = Improve.Storage.Task_Evaluation and then
               Specifications.Contains (Identity) and then
               Verification.Plan_Revision = Plan.Revision and then
-              Verification.Contract_Fingerprint = Task_Contracts.Element (Identity)
+              Verification.Contract_Fingerprint = Effective.Element (Identity)
             then
                if not Latest_Verification.Contains (Identity) or else
                  Verifications (Latest_Verification.Element (Identity)).Assessment_Id <=

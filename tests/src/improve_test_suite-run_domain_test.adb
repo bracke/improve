@@ -280,6 +280,14 @@ begin
          Assert (not Improve.Findings.Safe_Relative_Path ("/absolute/path"), "absolute path was accepted");
          Assert (not Improve.Findings.Safe_Relative_Path ("C:\outside"), "drive path was accepted");
          Assert (not Improve.Findings.Safe_Relative_Path (".."), "terminal parent traversal was accepted");
+         Assert
+           (not Improve.Findings.Safe_Relative_Path ("src/unsafe" & Character'Val (10) & "instruction.adb"),
+            "control character in path was accepted");
+         Assert
+           (not Improve.Findings.Safe_Relative_Path
+              ("src/" & Character'Val (16#E2#) & Character'Val (16#80#) &
+               Character'Val (16#AE#) & "unit.adb"),
+            "bidirectional override in path was accepted");
       when Projects_CLI =>
          declare
             Data   : constant Fixture := Build_Fixture ("projects_cli");

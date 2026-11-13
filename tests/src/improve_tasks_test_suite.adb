@@ -6,7 +6,6 @@ with AUnit.Simple_Test_Cases;
 with Improve.Model;
 with Improve.Storage;
 with Improve.Tasks;
-with Improve.Verification;
 
 package body Improve_Tasks_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -82,7 +81,7 @@ package body Improve_Tasks_Test_Suite is
                   Task_Id              => Only.Id,
                   Plan_Revision        => Plan.Revision,
                   Contract_Fingerprint => To_Unbounded_String
-                    (Improve.Verification.Contract_Fingerprint (Only)),
+                    (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Only.Id)),
                   Assessment_Id        => 2,
                   Outcome              => Outcome,
                   Comparable           => True,
@@ -108,7 +107,8 @@ package body Improve_Tasks_Test_Suite is
               (Scope                => Improve.Storage.Task_Evaluation,
                Task_Id              => Only.Id,
                Plan_Revision        => Joined.Revision,
-               Contract_Fingerprint => To_Unbounded_String (Improve.Verification.Contract_Fingerprint (Only)),
+               Contract_Fingerprint => To_Unbounded_String
+                 (Improve.Model.Effective_Task_Contract_Fingerprint (Joined, Only.Id)),
                Assessment_Id        => 2,
                Outcome              => Improve.Model.Verified,
                Comparable           => True,
@@ -119,6 +119,36 @@ package body Improve_Tasks_Test_Suite is
          Reordered.Append (Ordered.First_Element);
          Summary := Improve.Tasks.Findings (Joined, Reordered);
          Assert (Summary.Resolved = 1, "finding aggregation used task/view position instead of task identity");
+      end;
+      declare
+         Original  : Improve.Model.Plan_Revision := Plan;
+         Revised   : Improve.Model.Plan_Revision;
+         Dependent : Improve.Model.Task_Specification := Only;
+         Evidence  : Improve.Storage.Verification_Vectors.Vector;
+         Views     : Improve.Tasks.View_Vectors.Vector;
+      begin
+         Dependent.Id := To_Unbounded_String ("IMP-000002");
+         Dependent.Finding_Keys.Clear;
+         Dependent.Dependencies.Append (Only.Id);
+         Original.Tasks.Append (Dependent);
+         Revised := Original;
+         Revised.Tasks (1).Goal := To_Unbounded_String ("Changed prerequisite contract");
+         Evidence.Append
+           (Improve.Storage.Verification_Record'
+              (Scope                => Improve.Storage.Task_Evaluation,
+               Task_Id              => Dependent.Id,
+               Plan_Revision        => Revised.Revision,
+               Contract_Fingerprint => To_Unbounded_String
+                 (Improve.Model.Effective_Task_Contract_Fingerprint (Original, Dependent.Id)),
+               Assessment_Id        => 2,
+               Outcome              => Improve.Model.Verified,
+               Comparable           => True,
+               Explanation          => To_Unbounded_String ("obsolete prerequisite binding")));
+         Views := Improve.Tasks.Build
+           (Revised, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 2);
+         Assert
+           (not Views (2).Has_Verification,
+            "dependent task reused verification from an obsolete prerequisite contract");
       end;
       Check ("", Improve.Tasks.Proposed);
       Check ("candidate", Improve.Tasks.Published);
