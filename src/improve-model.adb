@@ -168,6 +168,17 @@ package body Improve.Model is
          when Inconclusive => "inconclusive",
          when Superseded => "superseded");
 
+   function Finding_Key (Item : Finding_Reference) return String is
+   begin
+      return Canonical_Key
+        ([To_Unbounded_String (Positive'Image (Item.Project_Id)),
+          To_Unbounded_String (Ada_Quality.Types.Image (Item.Indicator)),
+          Item.Rule, Item.Fingerprint, Item.Semantic_Subject]);
+   exception
+      when Constraint_Error =>
+         raise Data_Error with "finding has an invalid indicator identity";
+   end Finding_Key;
+
    function Task_Contract_Fingerprint (Item : Task_Specification) return String is
       Material : Unbounded_String;
 
@@ -204,26 +215,38 @@ package body Improve.Model is
    end Task_Contract_Fingerprint;
 
    procedure Validate (Plan : Plan_Revision) is
-      Findings : String_Sets.Set;
+      Findings      : String_Sets.Set;
+      Raw_Findings  : String_Sets.Set;
+      Ambiguous_Raw : String_Sets.Set;
    begin
       if Plan.Baseline.Project_Id /= Plan.Project.Id then
          raise Data_Error with "assessment baseline belongs to a different project";
       end if;
       Validate_Task_Graph (Plan.Tasks);
       for Finding of Plan.Findings loop
-         declare Identity : constant String := To_String (Finding.Fingerprint); begin
+         declare
+            Fingerprint : constant String := To_String (Finding.Fingerprint);
+         begin
             if Finding.Project_Id /= Plan.Project.Id then
                raise Data_Error with "plan finding belongs to a different project";
             elsif Finding.Run_Id /= Plan.Baseline.Run_Id then
                raise Data_Error with "plan finding belongs to a different assessment";
-            elsif Identity = "" then
+            elsif Fingerprint = "" then
                raise Data_Error with "finding identity must not be empty";
             elsif not Safe_Relative_Path (To_String (Finding.Relative_Path)) then
                raise Data_Error with "unsafe finding path";
-            elsif Findings.Contains (Identity) then
-               raise Data_Error with "duplicate plan finding " & Identity;
             end if;
-            Findings.Insert (Identity);
+            declare Identity : constant String := Finding_Key (Finding); begin
+               if Findings.Contains (Identity) then
+                  raise Data_Error with "duplicate plan finding " & Identity;
+               end if;
+               Findings.Insert (Identity);
+            end;
+            if Raw_Findings.Contains (Fingerprint) then
+               Ambiguous_Raw.Include (Fingerprint);
+            else
+               Raw_Findings.Insert (Fingerprint);
+            end if;
          end;
       end loop;
       for Spec of Plan.Tasks loop
@@ -245,7 +268,9 @@ package body Improve.Model is
                declare Identity : constant String := To_String (Key); begin
                   if Linked.Contains (Identity) then
                      raise Data_Error with "duplicate task finding link on " & To_String (Spec.Id);
-                  elsif not Findings.Contains (Identity) then
+                  elsif not Findings.Contains (Identity) and then
+                    (not Raw_Findings.Contains (Identity) or else Ambiguous_Raw.Contains (Identity))
+                  then
                      raise Data_Error with "task references unknown finding " & Identity;
                   end if;
                   Linked.Insert (Identity);

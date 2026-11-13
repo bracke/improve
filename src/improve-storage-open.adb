@@ -1,5 +1,9 @@
 separate (Improve.Storage)
-procedure Open (Item : in out Store; Path : String; Writable : Boolean) is
+procedure Open
+  (Item     : in out Store;
+   Path     : String;
+   Writable : Boolean;
+   Limits   : Read_Limits := Default_Read_Limits) is
    Exists : constant Boolean := Ada.Directories.Exists (Path);
 begin
    if Item.Opened then Close (Item); end if;
@@ -61,7 +65,7 @@ begin
             Item.Schema_Version := 4;
          end if;
          if Item.Schema_Version < 5 and then Writable then
-            Migrate_To_Version_5 (Item, Metadata);
+            Migrate_To_Version_5 (Item, Metadata, Limits);
             Item.Schema_Version := 5;
          end if;
       end if;

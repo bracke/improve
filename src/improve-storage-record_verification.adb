@@ -2,12 +2,14 @@ separate (Improve.Storage)
 procedure Record_Verification
   (Item    : in out Store;
    Plan_Id : String;
-   Values  : Verification_Vectors.Vector) is
+   Values  : Verification_Vectors.Vector;
+   Limits  : Read_Limits := Default_Read_Limits) is
    Tx     : Database.Transactions.Transaction;
    Row_Id : Positive;
    Stored : String_Value_Maps.Map;
    Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
+   History_Count : Natural := 0;
 
    function Scope_Image (Value : Verification_Scope) return String is
      (case Value is
@@ -31,6 +33,8 @@ procedure Record_Verification
 begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for verification recording";
+   elsif Values.Length > Ada.Containers.Count_Type (Limits.Maximum_History) then
+      raise Data_Error with "verification recording exceeds configured item limit";
    end if;
    for Value of Values loop
       if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
@@ -38,7 +42,7 @@ begin
       elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
          raise Data_Error with "aggregate verification must not name a task";
       end if;
-      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Contracts);
+      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Limits, Contracts);
       declare
          Key : constant String := Contract_Key
            (Value.Plan_Revision,
@@ -54,10 +58,15 @@ begin
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
+         if History_Count >= Limits.Maximum_History then
+            raise Data_Error with "verification history exceeds configured item limit";
+         end if;
+         History_Count := History_Count + 1;
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
          begin
+            Require_Payload_Limit (Payload, Limits, "verification evidence payload");
             declare Key : constant String := Identity_Key
                  (S (Row.Kind), Field (Payload, "plan_id"), Field (Payload, "assessment_id"),
                   Field_Or (Payload, "plan_revision", "1"), Field_Or (Payload, "contract", ""));
@@ -91,6 +100,19 @@ begin
             raise Data_Error with "verification evidence conflicts for task and assessment";
          end if;
          if not Existing then
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "verification history exceeds configured item limit";
+            end if;
+            Require_Payload_Limit
+              (Pair ("plan_id", Plan_Id) & LF &
+               Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
+               Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
+               Pair ("contract", To_String (Value.Contract_Fingerprint)) & LF &
+               Pair ("scope", Scope_Image (Value.Scope)) & LF &
+               Pair ("task_id", To_String (Value.Task_Id)) & LF &
+               Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
+               Pair ("explanation", To_String (Value.Explanation)),
+               Limits, "verification evidence payload");
             Row_Id := Next_Id (Item, Tx, Verifications_Table);
             Check
               (Entity_Tables.Insert
@@ -106,6 +128,7 @@ begin
                        Pair ("explanation", To_String (Value.Explanation))), True, Verifications_Table)),
                "record verification evidence");
             Stored.Insert (Identity, To_Unbounded_String (Expected));
+            History_Count := History_Count + 1;
          end if;
       end;
    end loop;

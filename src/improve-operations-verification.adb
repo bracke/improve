@@ -41,7 +41,7 @@ package body Improve.Operations.Verification is
       Verified_Ids        : String_Sets.Set;
       Limits : constant Improve.Storage.Read_Limits := Improve.Operations.Storage_Read_Limits (Settings);
    begin
-      Improve.Storage.Open (State, State_Path, Writable => False);
+      Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       if Task_Id /= "" then
          Plan := Improve.Storage.Load_Task (State, Task_Id, Revision, Limits);
       else
@@ -54,7 +54,7 @@ package body Improve.Operations.Verification is
             Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Improve.Source.Close (Quality);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project, Limits.Maximum_History);
+              Improve.Storage.List (State, Project, Limits.Maximum_History, Limits);
             begin
                if Values.Is_Empty then
                   raise Argument_Error with "project has no stored remediation plan";
@@ -89,7 +89,7 @@ package body Improve.Operations.Verification is
                   Contracts.Insert (Identity, Binding.Fingerprint);
                end;
             end loop;
-            Improve.Storage.Open (State, State_Path, Writable => False);
+            Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
             for Record_Value of Improve.Storage.Verifications
               (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
             loop
@@ -154,8 +154,9 @@ package body Improve.Operations.Verification is
                         Comparable           => Report.Comparable,
                         Explanation          => Report.Explanation));
                end if;
-               Improve.Storage.Open (State, State_Path, Writable => True);
-               Improve.Storage.Record_Verification (State, To_String (Plan.Plan_Id), Records);
+               Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
+               Improve.Storage.Record_Verification
+                 (State, To_String (Plan.Plan_Id), Records, Limits);
                Improve.Storage.Close (State);
                return (Plan => Plan, Report => Report);
             end;

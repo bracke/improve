@@ -3,7 +3,8 @@ function Provenance_Of
   (Item     : in out Store;
    Tx       : in out Database.Transactions.Transaction;
    Revision : Entity;
-   Payload  : String) return Stored_Provenance is
+   Payload  : String;
+   Limits   : Read_Limits) return Stored_Provenance is
    Result : Stored_Provenance;
 
    function Required (Table, Id : Positive; Context : String) return Entity is
@@ -19,7 +20,7 @@ function Provenance_Of
       return Value;
    end Required;
 begin
-   Require_Payload_Limit (Payload, Default_Read_Limits, "plan provenance payload");
+   Require_Payload_Limit (Payload, Limits, "plan provenance payload");
    if Item.Schema_Version < 5 then
       Result.Project :=
         (Positive'Value (Field (Payload, "project_id")),
@@ -45,8 +46,8 @@ begin
       Project_Data : constant String := S (Project_Row.Payload);
       Baseline_Data : constant String := S (Baseline_Row.Payload);
    begin
-      Require_Payload_Limit (Project_Data, Default_Read_Limits, "project reference payload");
-      Require_Payload_Limit (Baseline_Data, Default_Read_Limits, "assessment baseline payload");
+      Require_Payload_Limit (Project_Data, Limits, "project reference payload");
+      Require_Payload_Limit (Baseline_Data, Limits, "assessment baseline payload");
       Result.Project :=
         (Positive'Value (Field (Project_Data, "quality_project_id")),
          To_Unbounded_String (Field (Project_Data, "name")),

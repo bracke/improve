@@ -49,6 +49,7 @@ package Improve.Operations.Planning is
       Quality_Path     : String;
       Project_Selector : String;
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
+      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
       return Improve.Storage.Summary_Vectors.Vector;
    --  List stored plans for one database-qualified project.
@@ -56,6 +57,7 @@ package Improve.Operations.Planning is
    --  @param Quality_Path Read-only Ada Quality database path.
    --  @param Project_Selector Project identity or unique name.
    --  @param Maximum_Items Maximum plan summaries to materialize.
+   --  @param Limits Hard persistence reconstruction limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
    --  @return Latest stored plan summaries for the exact project identity.
 

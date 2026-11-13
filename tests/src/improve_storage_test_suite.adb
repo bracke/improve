@@ -6,6 +6,7 @@ with Ada.Strings.Wide_Wide_Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Ada_Quality.Types;
 with Database;
 with Database.Rows;
 with Database.Schema;
@@ -219,18 +220,21 @@ package body Improve_Storage_Test_Suite is
      (Store     : in out Improve.Storage.Store;
       Plan      : in out Improve.Model.Plan_Revision;
       Revisions : Positive;
-      Stored    : out Improve.Model.Plan_Revision) is
+      Stored    : out Improve.Model.Plan_Revision;
+      Limits    : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) is
    begin
       for Revision in 1 .. Revisions loop
          Plan.Fingerprint := To_Unbounded_String
            (Improve.Stable_Digest ("scale revision " & Image (Revision)));
-         declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Plan); begin
+         declare Saved : constant Improve.Storage.Save_Result :=
+           Improve.Storage.Save (Store, Plan, Limits);
+         begin
             Assert
               (not Saved.Existing and then Saved.Plan.Revision = Revision,
                "indexed history did not create the expected revision");
          end;
       end loop;
-      Stored := Improve.Storage.Load (Store, "PLAN-000001");
+      Stored := Improve.Storage.Load (Store, "PLAN-000001", Limits);
    end Seed;
 
    procedure History_Records

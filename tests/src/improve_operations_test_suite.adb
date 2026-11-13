@@ -40,7 +40,8 @@ package body Improve_Operations_Test_Suite is
      (In_Project_State_Does_Not_Stale_Plan, Tasks_CLI_Golden, Tasks_JSON_Filter,
       Status_Project_And_All, Status_Verification_Freshness,
       Status_All_Mixed_Freshness, Interrupted_Publication_Recovery, Recovery_Rejects_Stale_Uncommitted,
-      Published_Task_Reused_Across_Revisions, Recovery_Uses_Exact_Revision, Recovery_Limit_Enforced,
+      Recovery_Rejects_Policy_Change, Published_Task_Reused_Across_Revisions,
+      Recovery_Uses_Exact_Revision, Recovery_Limit_Enforced,
       Recover_Missing_State, Configuration_Bounds, Operational_Terminal_Paths, Real_End_To_End_Workflow);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;

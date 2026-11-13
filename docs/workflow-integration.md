@@ -55,9 +55,10 @@ graph in one transaction, and the replacement B points to the replacement A. A s
 active published dependent is rejected before retiring any prerequisite and directs the operator to publish the complete
 plan. Completed, cancelled, and rejected dependent definitions retain their historical native dependency edges.
 
-Recovery first runs an existing-only provenance probe. A completely committed harness transaction is adopted without
-replaying creation. If native work is missing, recovery requires durable exact-revision approval and the same current
-source fingerprint enforced by normal publication. Failed revalidation leaves the operation journal entry pending.
+Recovery first runs an existing-only provenance probe using the task kind recorded by publication preflight. A
+completely committed harness transaction is adopted without replaying creation. If native work is missing, recovery
+requires durable exact-revision approval, the same current source fingerprint, the same database-qualified project,
+and a compatible latest source and policy baseline. Failed revalidation leaves the operation journal entry pending.
 
 Normal publication also compares the newest completed assessment policy fingerprint with the immutable plan baseline.
 A changed policy requires replanning before any harness transaction is opened, even when source identity is unchanged;

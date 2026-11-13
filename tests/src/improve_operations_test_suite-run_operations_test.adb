@@ -366,7 +366,10 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                for Finding of Plan.Findings loop
-                  if Finding.Indicator = Ada_Quality.Types.SRC_04 then Hygiene_Key := Finding.Fingerprint; exit; end if;
+                  if Finding.Indicator = Ada_Quality.Types.SRC_04 then
+                     Hygiene_Key := To_Unbounded_String (Improve.Model.Finding_Key (Finding));
+                     exit;
+                  end if;
                end loop;
                Assert (Length (Hygiene_Key) > 0, "real assessment did not report the hygiene defect");
                for Spec of Plan.Tasks loop

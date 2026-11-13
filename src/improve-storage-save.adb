@@ -228,7 +228,35 @@ function Save
                    (To_String (Spec.Category), To_String (Spec.Title), To_String (Spec.Acceptance),
                     Stable_Digest (Pack (Spec.Finding_Keys)));
             begin
-               return (if Previous_Tasks.Contains (Key) then Previous_Tasks.Element (Key) else Null_Unbounded_String);
+               if Previous_Tasks.Contains (Key) then
+                  return Previous_Tasks.Element (Key);
+               end if;
+               declare
+                  Legacy : Improve.Model.UString_Vectors.Vector;
+               begin
+                  for Link of Spec.Finding_Keys loop
+                     declare Matched : Boolean := False; begin
+                        for Finding of Stored.Findings loop
+                           if To_String (Link) = Improve.Model.Finding_Key (Finding) then
+                              Legacy.Append (Finding.Fingerprint);
+                              Matched := True;
+                              exit;
+                           end if;
+                        end loop;
+                        if not Matched then Legacy.Append (Link); end if;
+                     end;
+                  end loop;
+                  declare
+                     Legacy_Key : constant String :=
+                       Identity_Key
+                         (To_String (Spec.Category), To_String (Spec.Title), To_String (Spec.Acceptance),
+                          Stable_Digest (Pack (Legacy)));
+                  begin
+                     return
+                       (if Previous_Tasks.Contains (Legacy_Key) then Previous_Tasks.Element (Legacy_Key)
+                        else Null_Unbounded_String);
+                  end;
+               end;
             end Previous_Task_Id;
          begin
             Index_Previous_Tasks;

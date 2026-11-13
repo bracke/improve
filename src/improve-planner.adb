@@ -122,7 +122,7 @@ package body Improve.Planner is
       Result.Requires_Review := Settings.Require_Review;
       Result.Kind := Kind;
       for Finding of Item.Findings loop
-         Result.Finding_Keys.Append (Finding.Fingerprint);
+         Result.Finding_Keys.Append (To_Unbounded_String (Improve.Model.Finding_Key (Finding)));
          if Length (Finding.Relative_Path) > 0 and then
            not Files.Contains (To_String (Finding.Relative_Path))
          then

@@ -28,7 +28,7 @@ begin
       Limits.Maximum_Tasks := 1;
       begin
          declare Operation : constant Positive :=
-           Improve.Storage.Begin_Publication (Store, Stored, Task_Ids, Limits);
+           Improve.Storage.Begin_Publication (Store, Stored, "remediation", Task_Ids, Limits);
          begin
             pragma Unreferenced (Operation);
          end;

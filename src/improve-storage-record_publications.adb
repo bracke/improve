@@ -2,21 +2,25 @@ separate (Improve.Storage)
 procedure Record_Publications
   (Item    : in out Store;
    Plan_Id : String;
-   Values  : Publication_Vectors.Vector) is
+   Values  : Publication_Vectors.Vector;
+   Limits  : Read_Limits := Default_Read_Limits) is
    Tx     : Database.Transactions.Transaction;
    Row_Id : Positive;
    Stored : String_Value_Maps.Map;
    Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
+   History_Count : Natural := 0;
 
    function Mapping_Key (Task_Id, Contract : String) return String is
      (Task_Id & Character'Val (0) & Contract);
 begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for publication recording";
+   elsif Values.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
+      raise Data_Error with "publication recording exceeds configured task limit";
    end if;
    for Value of Values loop
-      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Contracts);
+      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Limits, Contracts);
       declare
          Key : constant String :=
            Contract_Key (Value.Plan_Revision, To_String (Value.Improve_Task_Id));
@@ -33,10 +37,15 @@ begin
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
+         if History_Count >= Limits.Maximum_History then
+            raise Data_Error with "publication history exceeds configured item limit";
+         end if;
+         History_Count := History_Count + 1;
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
          begin
+            Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             declare Key : constant String :=
               Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", ""));
             begin
@@ -64,6 +73,16 @@ begin
             raise Data_Error with "published task identity is already mapped to unrelated work";
          end if;
          if not Existing then
+            if History_Count >= Limits.Maximum_History then
+               raise Data_Error with "publication history exceeds configured item limit";
+            end if;
+            Require_Payload_Limit
+              (Pair ("plan_id", Plan_Id) & LF &
+               Pair ("harness_id", To_String (Value.Harness_Task_Id)) & LF &
+               Pair ("origin", To_String (Value.Origin)) & LF &
+               Pair ("contract", To_String (Value.Contract)) & LF &
+               Pair ("plan_revision", Number (Value.Plan_Revision)),
+               Limits, "publication mapping payload");
             Row_Id := Next_Id (Item, Tx, Publications_Table);
             Check
               (Entity_Tables.Insert
@@ -76,6 +95,7 @@ begin
                        Pair ("plan_revision", Number (Value.Plan_Revision))), True, Publications_Table)),
                "record publication mapping");
             Stored.Insert (Key, To_Unbounded_String (Expected));
+            History_Count := History_Count + 1;
          end if;
       end;
    end loop;

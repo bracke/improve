@@ -121,6 +121,7 @@ package Improve.Storage is
       Plan_Id  : Ada.Strings.Unbounded.Unbounded_String;
       Revision : Positive;
       Fingerprint : Ada.Strings.Unbounded.Unbounded_String;
+      Task_Kind : Ada.Strings.Unbounded.Unbounded_String;
       Task_Ids : Improve.Model.UString_Vectors.Vector;
    end record;
    --  Pending durable publication authorization.
@@ -129,17 +130,23 @@ package Improve.Storage is
    --  @field Plan_Id Authorized plan identity.
    --  @field Revision Exact authorized immutable revision.
    --  @field Fingerprint Exact authorized revision fingerprint.
+   --  @field Task_Kind Exact resolved native task kind authorized by preflight.
    --  @field Task_Ids Exact authorized task identities.
 
    package Operation_Vectors is new Ada.Containers.Vectors (Positive, Operation_Record);
    --  Ordered pending operations.
 
-   procedure Open (Item : in out Store; Path : String; Writable : Boolean);
+   procedure Open
+     (Item     : in out Store;
+      Path     : String;
+      Writable : Boolean;
+      Limits   : Read_Limits := Default_Read_Limits);
    --  Open Improve state. Writable mode creates and initializes a missing
    --  database; read-only mode never creates, migrates, or repairs state.
    --  @param Item Store handle.
    --  @param Path Improve database path.
    --  @param Writable Whether writes and initialization are authorized.
+   --  @param Limits Hard limits applied to any required schema migration.
 
    procedure Close (Item : in out Store);
    --  Close a store; closing an already closed store is harmless.
@@ -193,31 +200,37 @@ package Improve.Storage is
 
    function List_All
      (Item    : in out Store;
-      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector;
    --  List latest plan revisions across all database-qualified projects.
    --  @param Item Open store.
    --  @param Maximum Maximum summaries to materialize.
+   --  @param Limits Hard provenance and task-count limits.
    --  @return Stable plan summaries.
 
    function List
      (Item    : in out Store;
       Project : Improve.Model.Project_Reference;
-      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector;
    --  List latest plans for one database-qualified Ada Quality project.
    --  @param Item Open store.
    --  @param Project Full project identity including database and canonical path.
    --  @param Maximum Maximum summaries to materialize.
+   --  @param Limits Hard provenance and task-count limits.
    --  @return Stable plan summaries isolated from equal numeric IDs in other databases.
 
    procedure Record_Publications
      (Item    : in out Store;
       Plan_Id : String;
-      Values  : Publication_Vectors.Vector);
+      Values  : Publication_Vectors.Vector;
+      Limits  : Read_Limits := Default_Read_Limits);
    --  Atomically record verified Improve-to-harness mappings. Existing equal
    --  mappings are retained; conflicting reuse is rejected.
    --  @param Item Writable store.
    --  @param Plan_Id Owning plan identity.
    --  @param Values Verified mappings.
+   --  @param Limits Hard contract and history limits.
 
    function Publications
      (Item       : in out Store;
@@ -234,22 +247,26 @@ package Improve.Storage is
    procedure Update_Publication_States
      (Item   : in out Store;
       Plan_Id : String;
-      Values : Publication_Vectors.Vector);
+      Values : Publication_Vectors.Vector;
+      Limits : Read_Limits := Default_Read_Limits);
    --  Update only the cached harness-owned runtime state after validating
    --  that task identity, harness identity, and origin still match.
    --  @param Item Writable store.
    --  @param Plan_Id Owning plan identity.
    --  @param Values Reconciled mappings and states.
+   --  @param Limits Hard mapping and history limits.
 
    procedure Record_Verification
      (Item    : in out Store;
       Plan_Id : String;
-      Values  : Verification_Vectors.Vector);
+      Values  : Verification_Vectors.Vector;
+      Limits  : Read_Limits := Default_Read_Limits);
    --  Append independent measurement outcomes in one transaction. Repeating
    --  identical task/assessment evidence is idempotent.
    --  @param Item Writable store.
    --  @param Plan_Id Owning plan identity.
    --  @param Values Verification evidence.
+   --  @param Limits Hard contract and history limits.
 
    function Verifications
      (Item    : in out Store;
@@ -293,12 +310,14 @@ package Improve.Storage is
    function Begin_Publication
      (Item     : in out Store;
       Plan     : Improve.Model.Plan_Revision;
+      Task_Kind : String;
       Task_Ids : Improve.Model.UString_Vectors.Vector;
       Limits   : Read_Limits := Default_Read_Limits) return Positive;
    --  Durably record deliberate publication authorization before touching
    --  harness state. Repeating the same plan/task set returns the same ID.
    --  @param Item Writable store.
    --  @param Plan Exact authorized immutable plan revision.
+   --  @param Task_Kind Exact resolved native task kind authorized by preflight.
    --  @param Task_Ids Exact authorized Improve task identities.
    --  @param Limits Hard reconstruction limits.
    --  @return Durable operation identity.

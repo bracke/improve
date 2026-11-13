@@ -2,7 +2,8 @@ separate (Improve.Storage)
 function List
   (Item    : in out Store;
    Project : Improve.Model.Project_Reference;
-   Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector is
+   Maximum : Positive := Default_Query_Maximum;
+   Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector is
    Result : Summary_Vectors.Vector;
    Tx : Database.Transactions.Transaction;
    Plans : Entity_Tables.Cursor;
@@ -32,13 +33,13 @@ function List
                   declare
                      Payload    : constant String := S (Revision.Payload);
                      Provenance : constant Stored_Provenance :=
-                       Provenance_Of (Item, Tx, Revision, Payload);
+                       Provenance_Of (Item, Tx, Revision, Payload, Limits);
                   begin
                      if Provenance.Project.Id = Project.Id and then
                        Provenance.Project.Path = Project.Path and then
                        Provenance.Project.Database_Id = Project.Database_Id
                      then
-                        Result.Append (Summary_Of (Item, Tx, Positive (Latest)));
+                        Result.Append (Summary_Of (Item, Tx, Positive (Latest), Limits));
                      end if;
                   end;
                end;

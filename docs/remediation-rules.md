@@ -15,7 +15,8 @@ Priority has a deterministic order: critical, high, normal, low. It derives from
 security, build, dependency, and release impact raising priority where applicable. Severity alone never causes findings
 with unrelated subjects to be grouped.
 
-Every task includes a goal, problem statement, evidence and finding fingerprints, bounded scope, explicit exclusions,
+Every task includes a goal, problem statement, evidence and canonical finding references, bounded scope, explicit
+exclusions,
 implementation requirements, acceptance conditions, measurement verification, confidence, and review policy. A task
 never represents a hypothesized root cause as established evidence.
 

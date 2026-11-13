@@ -390,9 +390,16 @@ begin
                Revision_1 : Improve.CLI.Outcome;
                Revision_2 : Improve.CLI.Outcome;
                Plan_Count : Natural := 0;
+               Structure_Key : Unbounded_String;
             begin
+               for Finding of First.Findings loop
+                  if To_String (Finding.Fingerprint) = "fixture-manifest" then
+                     Structure_Key := To_Unbounded_String (Improve.Model.Finding_Key (Finding));
+                     exit;
+                  end if;
+               end loop;
                for Index in 1 .. Natural (First.Tasks.Length) loop
-                  if First.Tasks (Index).Finding_Keys.Contains (To_Unbounded_String ("fixture-manifest")) then
+                  if First.Tasks (Index).Finding_Keys.Contains (Structure_Key) then
                      Removed_Id := First.Tasks (Index).Id;
                      First.Tasks.Delete (Index);
                      exit;

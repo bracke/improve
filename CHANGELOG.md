@@ -39,8 +39,11 @@
   block running or verification predecessors, and trace predecessor identities in replacement task definitions.
 - Qualify native publication identity by transitive prerequisite contracts so full-plan replacement migrates concrete
   dependency edges atomically, while selective replacement rejects active downstream work before modifying the harness.
-- Add an Ada-only Phase 9 gate covering warning-clean builds, 83 AUnit cases, GNATdoc, GNATprove, repository checks, and
-  at least 90% measured production-line coverage.
+- Preserve composite finding identity in task links while retaining compatibility with unambiguous legacy fingerprints.
+- Apply configured persistence limits consistently to migration, summaries, contract checks, and bounded history writes.
+- Journal the resolved native task kind and revalidate project and policy identity before recovery creates missing work.
+- Add an Ada-only Phase 9 gate covering warning-clean builds, the complete AUnit suite, GNATdoc, GNATprove, repository
+  checks, and at least 90% measured production-line coverage.
 - Add pin-free release manifests, dependency-license evidence, a complete API documentation audit, fingerprinted
   coverage evidence, and an Ada-only clean release-candidate assessment across all 33 quality indicators.
 

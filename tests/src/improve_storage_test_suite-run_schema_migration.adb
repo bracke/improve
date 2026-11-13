@@ -7,24 +7,37 @@ procedure Run_Schema_Migration is
    Stored   : Improve.Model.Plan_Revision;
    Mappings : Improve.Storage.Publication_Vectors.Vector;
    Evidence : Improve.Storage.Verification_Vectors.Vector;
+   Limits   : constant Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
 begin
-   Improve.Storage.Open (Store, Path, Writable => True);
-   Seed (Store, Plan, 4, Stored);
+   Improve.Storage.Open (Store, Path, Writable => True, Limits => Limits);
+   Seed (Store, Plan, 4, Stored, Limits);
    History_Records (Stored, Mappings, Evidence);
-   Improve.Storage.Record_Publications (Store, To_String (Stored.Plan_Id), Mappings);
-   Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Evidence);
+   Improve.Storage.Record_Publications (Store, To_String (Stored.Plan_Id), Mappings, Limits);
+   Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Evidence, Limits);
    Improve.Storage.Close (Store);
    Downgrade_To_Version_2 (Path);
-   Improve.Storage.Open (Store, Path, Writable => True);
+   declare
+      Too_Small : Improve.Storage.Read_Limits := Limits;
+      Rejected  : Boolean := False;
+   begin
+      Too_Small.Maximum_History := 3;
+      begin
+         Improve.Storage.Open (Store, Path, Writable => True, Limits => Too_Small);
+      exception
+         when Improve.Data_Error => Rejected := True;
+      end;
+      Assert (Rejected, "schema migration ignored its configured history limit");
+   end;
+   Improve.Storage.Open (Store, Path, Writable => True, Limits => Limits);
    Assert
      (Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).Length = 2 and then
       Improve.Storage.Verifications (Store, To_String (Stored.Plan_Id)).Length = 2,
       "schema migration did not preserve indexed history");
    declare
       Migrated : constant Improve.Model.Plan_Revision :=
-        Improve.Storage.Load_Task (Store, To_String (Stored.Tasks.First_Element.Id));
+        Improve.Storage.Load_Task (Store, To_String (Stored.Tasks.First_Element.Id), Limits => Limits);
       Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-        Improve.Storage.List (Store, Stored.Project);
+        Improve.Storage.List (Store, Stored.Project, Limits => Limits);
    begin
       Assert (Migrated.Revision = Stored.Revision, "migration lost historical task lookup");
       Assert

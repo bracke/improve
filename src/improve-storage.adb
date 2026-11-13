@@ -335,9 +335,14 @@ package body Improve.Storage is
 
    procedure Migrate_To_Version_5
      (Item     : in out Store;
-      Metadata : in out Entity) is separate;
+      Metadata : in out Entity;
+      Limits   : Read_Limits) is separate;
 
-   procedure Open (Item : in out Store; Path : String; Writable : Boolean) is separate;
+   procedure Open
+     (Item     : in out Store;
+      Path     : String;
+      Writable : Boolean;
+      Limits   : Read_Limits := Default_Read_Limits) is separate;
 
    procedure Close (Item : in out Store) is
    begin
@@ -473,7 +478,8 @@ function Save
      (Item     : in out Store;
       Tx       : in out Database.Transactions.Transaction;
       Revision : Entity;
-      Payload  : String) return Stored_Provenance is separate;
+      Payload  : String;
+      Limits   : Read_Limits) return Stored_Provenance is separate;
 
    function Contract_Key (Revision : Positive; Task_Id : String) return String is
      (Number (Revision) & Character'Val (0) & Task_Id);
@@ -482,6 +488,7 @@ function Save
      (Item      : in out Store;
       Plan_Id   : String;
       Revision  : Positive;
+      Limits    : Read_Limits;
       Contracts : in out String_Value_Maps.Map) is separate;
 
    function Load_Revision
@@ -595,21 +602,25 @@ function Save
    function Summary_Of
      (Item        : in out Store;
       Tx          : in out Database.Transactions.Transaction;
-      Revision_Id : Positive) return Plan_Summary is separate;
+      Revision_Id : Positive;
+      Limits      : Read_Limits) return Plan_Summary is separate;
 
    function List_All
      (Item    : in out Store;
-      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector is separate;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector is separate;
 
    function List
      (Item    : in out Store;
       Project : Improve.Model.Project_Reference;
-      Maximum : Positive := Default_Query_Maximum) return Summary_Vectors.Vector is separate;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector is separate;
 
    procedure Record_Publications
      (Item    : in out Store;
       Plan_Id : String;
-      Values  : Publication_Vectors.Vector) is separate;
+      Values  : Publication_Vectors.Vector;
+      Limits  : Read_Limits := Default_Read_Limits) is separate;
 
    function Publications
      (Item       : in out Store;
@@ -620,12 +631,14 @@ function Save
    procedure Update_Publication_States
      (Item   : in out Store;
       Plan_Id : String;
-      Values : Publication_Vectors.Vector) is separate;
+      Values : Publication_Vectors.Vector;
+      Limits : Read_Limits := Default_Read_Limits) is separate;
 
    procedure Record_Verification
      (Item    : in out Store;
       Plan_Id : String;
-      Values  : Verification_Vectors.Vector) is separate;
+      Values  : Verification_Vectors.Vector;
+      Limits  : Read_Limits := Default_Read_Limits) is separate;
 
    function Parse_Outcome (Value : String) return Improve.Model.Quality_Outcome is
    begin
@@ -666,6 +679,7 @@ function Save
    function Begin_Publication
      (Item     : in out Store;
       Plan     : Improve.Model.Plan_Revision;
+      Task_Kind : String;
       Task_Ids : Improve.Model.UString_Vectors.Vector;
       Limits   : Read_Limits := Default_Read_Limits) return Positive is separate;
 

@@ -88,12 +88,15 @@ match, so a subsequent revision requires a separate approval even when some logi
 ## Publication operation journal
 
 Before a non-preview publication opens the harness store, Improve verifies exact-revision approval and appends a
-`started` operation containing the plan identity, immutable revision, fingerprint, and exact ordered task identities.
-Its stable key combines the revision and task selection, so retrying the same selection reuses the entry. After the
-harness transaction commits, Improve records the native task mappings and appends a `completed` child entry in its own
-transaction.
+`started` operation containing the plan identity, immutable revision, fingerprint, resolved native task kind, and exact
+ordered task identities. Its stable key combines the revision, task kind, and task selection, so retrying the same
+authorization reuses the entry. After the harness transaction commits, Improve records the native task mappings and
+appends a `completed` child entry in its own transaction.
 
 The two databases are deliberately not treated as one atomic store. If the process stops between those commits,
 `recover` reads the unmatched `started` entry and republishes through model_runner's origin-aware idempotency contract.
 Only after verified mappings are stored is the operation completed. Planning journal records remain separate and are
 never interpreted as pending publications.
+
+Configured persistence limits apply consistently to full loads, summaries, migrations, contract validation, and
+history writes. Schema migration is bounded by the same limits supplied when writable state is opened.

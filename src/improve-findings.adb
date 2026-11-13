@@ -23,9 +23,7 @@ package body Improve.Findings is
       Bytes  : Natural := 0;
 
       procedure Add (Item : Improve.Model.Finding_Reference) is
-         Key : constant String := Improve.Model.Canonical_Key
-           ([To_Unbounded_String (Positive'Image (Item.Project_Id)),
-             To_Unbounded_String (Image (Item.Indicator)), Item.Rule, Item.Fingerprint, Item.Semantic_Subject]);
+         Key : constant String := Improve.Model.Finding_Key (Item);
       begin
          if not Seen.Contains (Key) then
             declare

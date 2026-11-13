@@ -128,6 +128,12 @@ package Improve.Model is
      (Index_Type => Positive, Element_Type => Finding_Reference);
    --  Deterministically ordered finding references.
 
+   function Finding_Key (Item : Finding_Reference) return String;
+   --  Return the project- and evidence-qualified identity used by task links.
+   --  The Ada Quality fingerprint remains preserved separately as source evidence.
+   --  @param Item Finding reference to qualify.
+   --  @return Canonical task-link identity.
+
    type Task_Specification is record
       Id               : UString;
       Title            : UString;
@@ -163,7 +169,7 @@ package Improve.Model is
    --  @field Acceptance Explicit completion criteria.
    --  @field Verification Independent measurement criteria.
    --  @field Dependencies Improve task prerequisites.
-   --  @field Finding_Keys Linked finding fingerprints.
+   --  @field Finding_Keys Linked canonical finding identities.
    --  @field Confidence Planning confidence percentage.
    --  @field Requires_Review Whether publication requires human review.
    --  @field Kind Candidate classification.

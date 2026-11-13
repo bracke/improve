@@ -81,9 +81,10 @@ Read-only queries never initialize, migrate, or repair Improve state.
 `improve recover` resumes publication operations that committed model_runner tasks but did not finish recording their
 Improve mappings. Recovery verifies each stable Improve origin through the normal native publication adapter, adopts
 the existing harness tasks, records their mappings, and completes the journal entry. Repeating recovery is idempotent.
-If any native task is missing, recovery revalidates exact-revision approval and current source before creating it. A
-stale operation remains pending and creates no work; already committed tasks may still be safely adopted after source
-changes because no obsolete task definition is newly published.
+If any native task is missing, recovery uses the journaled native task kind and revalidates exact-revision approval,
+current source, database-qualified project identity, and the latest quality policy before creating it. A stale operation
+remains pending and creates no work; already committed tasks may still be safely adopted after source changes because
+no obsolete task definition is newly published.
 The command does not create a missing state database and processes at most
 `operations.maximum_recovery_operations` pending entries per invocation.
 

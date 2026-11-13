@@ -45,18 +45,21 @@ package body Improve.Verification is
         ([To_Unbounded_String (Semantic), Fingerprint]));
 
    function Baseline_Finding
-     (Plan      : Improve.Model.Plan_Revision;
-      Indexes   : Finding_Index_Maps.Map;
-      Ambiguous : String_Sets.Set;
-      Key       : Ada.Strings.Unbounded.Unbounded_String) return Improve.Model.Finding_Reference is
+     (Plan           : Improve.Model.Plan_Revision;
+      Indexes        : Finding_Index_Maps.Map;
+      Legacy_Indexes : Finding_Index_Maps.Map;
+      Ambiguous      : String_Sets.Set;
+      Key            : Ada.Strings.Unbounded.Unbounded_String) return Improve.Model.Finding_Reference is
       Identity : constant String := To_String (Key);
    begin
-      if Ambiguous.Contains (Identity) then
+      if Indexes.Contains (Identity) then
+         return Plan.Findings (Indexes.Element (Identity));
+      elsif Ambiguous.Contains (Identity) then
          raise Data_Error with "task finding identity is ambiguous within its plan";
-      elsif not Indexes.Contains (Identity) then
+      elsif not Legacy_Indexes.Contains (Identity) then
          raise Data_Error with "task references an unknown baseline finding";
       end if;
-      return Plan.Findings (Indexes.Element (Identity));
+      return Plan.Findings (Legacy_Indexes.Element (Identity));
    end Baseline_Finding;
 
    function State_Of
@@ -142,6 +145,7 @@ package body Improve.Verification is
            Maximum_Findings => Settings.Maximum_Assessment_Findings,
            Maximum_Bytes => Settings.Maximum_Assessment_Bytes);
       Baseline_Indexes       : Finding_Index_Maps.Map;
+      Legacy_Indexes         : Finding_Index_Maps.Map;
       Ambiguous_Baselines    : String_Sets.Set;
       Baseline_Exact         : String_Sets.Set;
       Current_Exact          : String_Sets.Set;
@@ -182,11 +186,16 @@ package body Improve.Verification is
          declare
             Finding    : Improve.Model.Finding_Reference renames Plan.Findings (Index);
             Fingerprint : constant String := To_String (Finding.Fingerprint);
+            Identity    : constant String := Improve.Model.Finding_Key (Finding);
          begin
-            if Baseline_Indexes.Contains (Fingerprint) then
+            if Baseline_Indexes.Contains (Identity) then
+               raise Data_Error with "plan contains a duplicate canonical finding identity";
+            end if;
+            Baseline_Indexes.Insert (Identity, Index);
+            if Legacy_Indexes.Contains (Fingerprint) then
                Ambiguous_Baselines.Include (Fingerprint);
             else
-               Baseline_Indexes.Insert (Fingerprint, Index);
+               Legacy_Indexes.Insert (Fingerprint, Index);
             end if;
             Baseline_Exact.Include (Exact_Key (Finding.Indicator, Finding.Fingerprint));
          end;
@@ -261,10 +270,13 @@ package body Improve.Verification is
                for Key of Spec.Finding_Keys loop
                   declare
                      Original : constant Improve.Model.Finding_Reference :=
-                       Baseline_Finding (Plan, Baseline_Indexes, Ambiguous_Baselines, Key);
+                       Baseline_Finding
+                         (Plan, Baseline_Indexes, Legacy_Indexes, Ambiguous_Baselines, Key);
                      Semantic : constant String := Semantic_Key (Original);
                   begin
-                     if Current_Semantic_Pairs.Contains (Semantic_Pair (Semantic, Key)) then
+                     if Current_Semantic_Pairs.Contains
+                       (Semantic_Pair (Semantic, Original.Fingerprint))
+                     then
                         Task_Semantic_Matches.Include
                           (Semantic,
                            (if Task_Semantic_Matches.Contains (Semantic)
@@ -275,7 +287,8 @@ package body Improve.Verification is
                end loop;
                for Key of Spec.Finding_Keys loop
                   case State_Of
-                    (Baseline_Finding (Plan, Baseline_Indexes, Ambiguous_Baselines, Key), Current,
+                    (Baseline_Finding
+                       (Plan, Baseline_Indexes, Legacy_Indexes, Ambiguous_Baselines, Key), Current,
                      Current_Exact, Current_Raw_Exact, Semantic_Counts, Task_Semantic_Matches)
                   is
                      when Outstanding_Evidence => Outstanding := Outstanding + 1;

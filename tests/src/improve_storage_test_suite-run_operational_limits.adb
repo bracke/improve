@@ -42,12 +42,54 @@ begin
          Operation : Positive;
       begin
          Task_Ids.Append (Saved.Plan.Tasks.First_Element.Id);
-         Operation := Improve.Storage.Begin_Publication (Store, Saved.Plan, Task_Ids, Limits);
+         Operation := Improve.Storage.Begin_Publication
+           (Store, Saved.Plan, "remediation", Task_Ids, Limits);
          Improve.Storage.Complete_Publication (Store, Operation);
          Assert
            (Improve.Storage.Pending_Publications (Store, Limits => Limits).Is_Empty,
             "publication journaling lost its configured limits");
       end;
+   end;
+   declare
+      Large_Plan : Improve.Model.Plan_Revision := Plan;
+      Saved      : Improve.Storage.Save_Result;
+      Mappings   : Improve.Storage.Publication_Vectors.Vector;
+      Evidence   : Improve.Storage.Verification_Vectors.Vector;
+   begin
+      Large_Plan.Tasks (1).Goal := To_Unbounded_String ([1 .. 600 => 'g']);
+      Large_Plan.Fingerprint := To_Unbounded_String
+        (Improve.Stable_Digest ("large contract recording"));
+      Limits.Maximum_Text_Bytes := 1_024;
+      Limits.Maximum_History := 10;
+      Saved := Improve.Storage.Save (Store, Large_Plan, Limits);
+      History_Records (Saved.Plan, Mappings, Evidence);
+      Limits.Maximum_Text_Bytes := 512;
+      Rejected := False;
+      begin
+         Improve.Storage.Record_Publications
+           (Store, To_String (Saved.Plan.Plan_Id), Mappings, Limits);
+      exception
+         when Improve.Data_Error => Rejected := True;
+      end;
+      Assert (Rejected, "publication recording ignored its configured contract limit");
+      Limits.Maximum_Text_Bytes := 1_024;
+      Improve.Storage.Record_Publications
+        (Store, To_String (Saved.Plan.Plan_Id), Mappings, Limits);
+      Improve.Storage.Record_Verification
+        (Store, To_String (Saved.Plan.Plan_Id), Evidence, Limits);
+      Assert
+        (Improve.Storage.Publications
+           (Store, To_String (Saved.Plan.Plan_Id), Limits => Limits).Length >= 2,
+         "publication recording reloaded a valid large contract with default limits");
+      Limits.Maximum_History := 1;
+      Rejected := False;
+      begin
+         Improve.Storage.Record_Publications
+           (Store, To_String (Saved.Plan.Plan_Id), Mappings, Limits);
+      exception
+         when Improve.Data_Error => Rejected := True;
+      end;
+      Assert (Rejected, "publication recording ignored its configured history limit");
    end;
    Improve.Storage.Close (Store);
    Project_Tools.Files.Delete_Tree (Root);

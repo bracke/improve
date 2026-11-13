@@ -51,6 +51,48 @@ begin
       Invalid.Tasks (1).Relevant_Files.Append (To_Unbounded_String ("src/./unit.adb"));
       Reject (Invalid, "storage accepted a non-normalized task path");
    end;
+   declare
+      Legacy   : Improve.Model.Plan_Revision := Plan;
+      Valid    : Improve.Model.Plan_Revision;
+      Original : constant Improve.Model.Finding_Reference :=
+        (Project_Id       => Legacy.Project.Id,
+         Run_Id           => Legacy.Baseline.Run_Id,
+         Indicator        => Ada_Quality.Types.STR_01,
+         Rule             => To_Unbounded_String ("manifest.same-fingerprint"),
+         Fingerprint      => To_Unbounded_String ("shared-source-fingerprint"),
+         Semantic_Subject => To_Unbounded_String ("manifest subject"),
+         others           => <>);
+      Second   : Improve.Model.Finding_Reference := Original;
+      First    : Improve.Storage.Save_Result;
+      Saved    : Improve.Storage.Save_Result;
+   begin
+      Second.Indicator := Ada_Quality.Types.BLD_01;
+      Second.Rule := To_Unbounded_String ("build.same-fingerprint");
+      Second.Semantic_Subject := To_Unbounded_String ("build subject");
+      Legacy.Findings.Append (Original);
+      Legacy.Tasks (Legacy.Tasks.First_Index).Finding_Keys.Append (Original.Fingerprint);
+      Legacy.Fingerprint := To_Unbounded_String
+        (Improve.Stable_Digest ("legacy raw finding link"));
+      First := Improve.Storage.Save (Store, Legacy);
+      Valid := Legacy;
+      Valid.Tasks (Valid.Tasks.First_Index).Finding_Keys.Replace_Element
+        (1, To_Unbounded_String (Improve.Model.Finding_Key (Original)));
+      Valid.Fingerprint := To_Unbounded_String
+        (Improve.Stable_Digest ("qualified finding link"));
+      Saved := Improve.Storage.Save (Store, Valid);
+      Assert
+        (Saved.Plan.Tasks.First_Element.Id = First.Plan.Tasks.First_Element.Id,
+         "canonical finding links broke logical identity continuity with legacy plans");
+      Valid.Findings.Append (Second);
+      Valid.Tasks (Valid.Tasks.First_Index).Finding_Keys.Append
+        (To_Unbounded_String (Improve.Model.Finding_Key (Second)));
+      Valid.Fingerprint := To_Unbounded_String
+        (Improve.Stable_Digest ("qualified duplicate source fingerprints"));
+      Saved := Improve.Storage.Save (Store, Valid);
+      Assert
+        (not Saved.Existing and then Saved.Plan.Findings.Length = 2,
+         "storage collapsed distinct qualified findings sharing a source fingerprint");
+   end;
    Improve.Storage.Close (Store);
    Project_Tools.Files.Delete_Tree (Root);
 exception

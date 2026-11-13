@@ -76,7 +76,7 @@ package body Improve.Operations.Reconciliation is
             end if;
          end Reconcile_Revision;
       begin
-         Improve.Storage.Open (State, State_Path, Writable => False);
+         Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
          Publications := Improve.Storage.Publications
            (State, Plan_Id, Limits.Maximum_History, Limits);
          for Mapping of Publications loop
@@ -87,8 +87,8 @@ package body Improve.Operations.Reconciliation is
          end loop;
          Improve.Storage.Close (State);
          if not Updates.Is_Empty then
-            Improve.Storage.Open (State, State_Path, Writable => True);
-            Improve.Storage.Update_Publication_States (State, Plan_Id, Updates);
+            Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
+            Improve.Storage.Update_Publication_States (State, Plan_Id, Updates, Limits);
             Improve.Storage.Close (State);
          end if;
       exception
@@ -103,9 +103,9 @@ package body Improve.Operations.Reconciliation is
            Improve.Source.Resolve_Project (Quality, Project_Selector);
          begin
             Improve.Source.Close (Quality);
-            Improve.Storage.Open (State, State_Path, Writable => False);
+            Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
-              Improve.Storage.List (State, Project, Limits.Maximum_History);
+              Improve.Storage.List (State, Project, Limits.Maximum_History, Limits);
             begin
                if Values.Is_Empty then
                   raise Argument_Error with "project has no stored remediation plan";

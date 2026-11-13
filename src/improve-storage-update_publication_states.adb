@@ -2,24 +2,33 @@ separate (Improve.Storage)
 procedure Update_Publication_States
   (Item   : in out Store;
    Plan_Id : String;
-   Values : Publication_Vectors.Vector) is
+   Values : Publication_Vectors.Vector;
+   Limits : Read_Limits := Default_Read_Limits) is
    Tx : Database.Transactions.Transaction;
    Rows : String_Id_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
+   History_Count : Natural := 0;
 
    function Mapping_Key (Task_Id, Contract : String) return String is
      (Task_Id & Character'Val (0) & Contract);
 begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for publication reconciliation";
+   elsif Values.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
+      raise Data_Error with "publication reconciliation exceeds configured task limit";
    end if;
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
+         if History_Count >= Limits.Maximum_History then
+            raise Data_Error with "publication history exceeds configured item limit";
+         end if;
+         History_Count := History_Count + 1;
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
          begin
+            Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             Rows.Include
               (Mapping_Key (S (Row.Kind), Field_Or (Payload, "contract", "")), Row.Id);
          end;
@@ -41,6 +50,7 @@ begin
             Physical_Key (Publications_Table, Rows.Element (Key)), Row);
          Check (Status, "read publication mapping for reconciliation");
          declare Payload : constant String := S (Row.Payload); begin
+            Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             if Field (Payload, "harness_id") /= To_String (Value.Harness_Task_Id) or else
               Field (Payload, "origin") /= To_String (Value.Origin)
             then

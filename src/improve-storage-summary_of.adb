@@ -2,7 +2,8 @@ separate (Improve.Storage)
 function Summary_Of
   (Item        : in out Store;
    Tx          : in out Database.Transactions.Transaction;
-   Revision_Id : Positive) return Plan_Summary is
+   Revision_Id : Positive;
+   Limits      : Read_Limits) return Plan_Summary is
    Revision : Entity;
    Status   : Database.Status.Result;
    Tasks    : Natural := 0;
@@ -13,9 +14,9 @@ begin
    Check (Status, "read plan revision summary");
    declare
       Payload    : constant String := S (Revision.Payload);
-      Provenance : constant Stored_Provenance := Provenance_Of (Item, Tx, Revision, Payload);
+      Provenance : constant Stored_Provenance := Provenance_Of (Item, Tx, Revision, Payload, Limits);
    begin
-      Require_Payload_Limit (Payload, Default_Read_Limits, "plan revision summary payload");
+      Require_Payload_Limit (Payload, Limits, "plan revision summary payload");
       if Item.Schema_Version < 5 and then Has_Field (Payload, "task_count") then
          Tasks := Natural'Value (Field (Payload, "task_count"));
       else
@@ -23,7 +24,7 @@ begin
            Scan_Children (Item, Tx, Tasks_Table, Revision_Id);
          begin
             while Entity_Tables.Has_Element (Cursor) loop
-               if Tasks >= Default_Read_Limits.Maximum_Tasks then
+               if Tasks >= Limits.Maximum_Tasks then
                   raise Data_Error with "plan summary exceeds configured task read limit";
                end if;
                Tasks := Tasks + 1;

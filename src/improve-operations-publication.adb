@@ -25,7 +25,7 @@ package body Improve.Operations.Publication is
       Approved     : Boolean := False;
       Operation_Id : Natural := 0;
    begin
-      Improve.Storage.Open (State, State_Path, Writable => False);
+      Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       Plan := Improve.Storage.Load (State, Plan_Id, Limits);
       Existing := Improve.Storage.Publications
         (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
@@ -79,7 +79,6 @@ package body Improve.Operations.Publication is
               Improve.Workflow.Publish
                 (To_String (Plan.Project.Path), Plan, Task_Kind, Existing,
                  Selected_Task_Ids => Selected, Existing_Only => False, Dry_Run => True);
-            pragma Unreferenced (Preflight);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
          begin
             if Selected.Is_Empty then
@@ -89,8 +88,9 @@ package body Improve.Operations.Publication is
             else
                Task_Ids := Selected;
             end if;
-            Improve.Storage.Open (State, State_Path, Writable => True);
-            Operation_Id := Improve.Storage.Begin_Publication (State, Plan, Task_Ids, Limits);
+            Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
+            Operation_Id := Improve.Storage.Begin_Publication
+              (State, Plan, To_String (Preflight.Task_Kind), Task_Ids, Limits);
             Improve.Storage.Close (State);
          end;
       end if;
@@ -106,8 +106,9 @@ package body Improve.Operations.Publication is
                     (Improve.Storage.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract, Value.State, Plan.Revision));
                end loop;
-               Improve.Storage.Open (State, State_Path, Writable => True);
-               Improve.Storage.Record_Publications (State, To_String (Plan.Plan_Id), Mappings);
+               Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
+               Improve.Storage.Record_Publications
+                 (State, To_String (Plan.Plan_Id), Mappings, Limits);
                Improve.Storage.Complete_Publication (State, Positive (Operation_Id));
                Improve.Storage.Close (State);
             end;

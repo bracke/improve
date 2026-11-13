@@ -1,8 +1,9 @@
 separate (Improve.Storage)
 function Begin_Publication
   (Item     : in out Store;
-   Plan     : Improve.Model.Plan_Revision;
-   Task_Ids : Improve.Model.UString_Vectors.Vector;
+   Plan      : Improve.Model.Plan_Revision;
+   Task_Kind : String;
+   Task_Ids  : Improve.Model.UString_Vectors.Vector;
    Limits   : Read_Limits := Default_Read_Limits) return Positive is
    Stored  : constant Improve.Model.Plan_Revision :=
      Load (Item, To_String (Plan.Plan_Id), Plan.Revision, Limits);
@@ -18,6 +19,8 @@ begin
       raise Data_Error with "Improve state is not open for publication journaling";
    elsif Task_Ids.Is_Empty then
       raise Argument_Error with "publication operation has no tasks";
+   elsif Task_Kind = "" then
+      raise Argument_Error with "publication operation has no resolved task kind";
    elsif Task_Ids.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
       raise Data_Error with "publication operation exceeds configured task limit";
    elsif Stored.Fingerprint /= Plan.Fingerprint then
@@ -45,7 +48,7 @@ begin
    Packed := To_Unbounded_String (Pack (Task_Ids));
    Key := To_Unbounded_String
      ("publish:" & To_String (Plan.Plan_Id) & ":" & Number (Plan.Revision) & ":" &
-      Stable_Digest (To_String (Packed)));
+      Stable_Digest (Task_Kind & Character'Val (0) & To_String (Packed)));
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, To_String (Key)); begin
       while Entity_Tables.Has_Element (Cursor) loop
@@ -66,6 +69,7 @@ begin
           WW (Pair ("plan_id", To_String (Plan.Plan_Id)) & LF &
               Pair ("revision", Number (Plan.Revision)) & LF &
               Pair ("fingerprint", To_String (Plan.Fingerprint)) & LF &
+              Pair ("task_kind", Task_Kind) & LF &
               Pair ("task_ids", To_String (Packed))), True, Operations_Table)),
       "journal publication start");
    Database.Transactions.Commit (Tx);

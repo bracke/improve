@@ -1,7 +1,8 @@
 separate (Improve.Storage)
 procedure Migrate_To_Version_5
   (Item     : in out Store;
-   Metadata : in out Entity) is
+   Metadata : in out Entity;
+   Limits   : Read_Limits) is
    Tx : Database.Transactions.Transaction;
 
    package Id_Vectors is new Ada.Containers.Vectors
@@ -11,7 +12,7 @@ procedure Migrate_To_Version_5
 
    procedure Require_Migration_Payload (Text, Context : String) is
    begin
-      if Text'Length > Default_Read_Limits.Maximum_Text_Bytes then
+      if Text'Length > Limits.Maximum_Text_Bytes then
          raise Data_Error with Context & " exceeds the configured payload limit";
       end if;
    end Require_Migration_Payload;
@@ -34,7 +35,7 @@ begin
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Plans : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table); begin
       while Entity_Tables.Has_Element (Plans) loop
-         if Plan_Rows.Length >= Ada.Containers.Count_Type (Default_Query_Maximum) then
+         if Plan_Rows.Length >= Ada.Containers.Count_Type (Limits.Maximum_History) then
             raise Data_Error with "schema migration exceeds the configured plan limit";
          end if;
          Plan_Rows.Append (Entity_Tables.Element (Plans).Id);
@@ -60,7 +61,7 @@ begin
             Require_Migration_Payload
               (S (Project_Row.Payload), "migration project payload");
             while Entity_Tables.Has_Element (Revisions) loop
-               if Revision_Count >= Default_Read_Limits.Maximum_History then
+               if Revision_Count >= Limits.Maximum_History then
                   raise Data_Error with "schema migration exceeds the configured revision limit";
                end if;
                Revision_Count := Revision_Count + 1;

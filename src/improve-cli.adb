@@ -153,7 +153,8 @@ package body Improve.CLI is
             Values : constant Improve.Storage.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
-                 Settings.Maximum_Output_Items, Improve.Operations.Quality_Load_Limits (Settings));
+                 Settings.Maximum_Output_Items, Improve.Operations.Storage_Read_Limits (Settings),
+                 Improve.Operations.Quality_Load_Limits (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
             return Improve.Presentation.Plans (Values);
@@ -231,8 +232,9 @@ package body Improve.CLI is
    function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Report : constant Improve.Recovery.Recovery_Report :=
         Improve.Recovery.Recover
-          (State_Path (Item), To_String (Settings.Task_Kind), Settings.Maximum_Recovery_Operations,
-           Improve.Operations.Storage_Read_Limits (Settings));
+          (State_Path (Item), Quality_Path (Item, Settings), To_String (Settings.Task_Kind),
+           Settings.Maximum_Recovery_Operations, Improve.Operations.Storage_Read_Limits (Settings),
+           Improve.Operations.Quality_Load_Limits (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
       return Improve.Presentation.Recovery (Report);

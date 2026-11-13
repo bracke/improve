@@ -117,7 +117,7 @@ package body Improve.Operations.Inspection is
                raise;
          end;
       end if;
-      Improve.Storage.Open (State, State_Path, Writable => False);
+      Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       if Task_Id /= "" then
          declare
             Plan : constant Improve.Model.Plan_Revision :=
@@ -146,8 +146,8 @@ package body Improve.Operations.Inspection is
          end;
       else
          declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           (if Has_Project then Improve.Storage.List (State, Selected_Project, Maximum_Items)
-            else Improve.Storage.List_All (State, Maximum_Items));
+           (if Has_Project then Improve.Storage.List (State, Selected_Project, Maximum_Items, Limits)
+            else Improve.Storage.List_All (State, Maximum_Items, Limits));
          begin
             if Summaries.Length > Ada.Containers.Count_Type (Maximum_Items) then
                raise Data_Error with "task query exceeds output.maximum_output_items";
@@ -197,7 +197,7 @@ package body Improve.Operations.Inspection is
 
       procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
          Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
-           Improve.Storage.List (State, Project, Maximum_Items);
+           Improve.Storage.List (State, Project, Maximum_Items, Limits);
          Value     : Improve.Tasks.Project_Status;
          Last_Plan : Improve.Model.Plan_Revision;
          Last_Views : Improve.Tasks.View_Vectors.Vector;
@@ -268,7 +268,7 @@ package body Improve.Operations.Inspection is
       end Add_Resolved_Project;
    begin
       Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
-      Improve.Storage.Open (State, State_Path, Writable => False);
+      Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       if All_Projects then
          declare Projects : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);
          begin

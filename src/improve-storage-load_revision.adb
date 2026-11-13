@@ -54,7 +54,7 @@ function Load_Revision
          Result.Plan_Id := To_Unbounded_String (Id_Image ("PLAN-", Positive (Revision.Parent_Id)));
          Result.Revision := Positive'Value (Field (Payload, "revision"));
          declare
-            Provenance : constant Stored_Provenance := Provenance_Of (Item, Tx, Revision, Payload);
+            Provenance : constant Stored_Provenance := Provenance_Of (Item, Tx, Revision, Payload, Limits);
          begin
             Result.Project := Provenance.Project;
             Result.Baseline := Provenance.Baseline;

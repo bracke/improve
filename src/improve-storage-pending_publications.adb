@@ -34,6 +34,7 @@ begin
                         Plan_Id  => To_Unbounded_String (Field (Payload, "plan_id")),
                         Revision => Positive'Value (Field_Or (Payload, "revision", "1")),
                         Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
+                        Task_Kind => To_Unbounded_String (Field_Or (Payload, "task_kind", "")),
                         Task_Ids =>
                           Unpack
                             (Field (Payload, "task_ids"), Limits.Maximum_Tasks,

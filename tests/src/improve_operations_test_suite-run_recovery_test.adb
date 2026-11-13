@@ -20,7 +20,8 @@ begin
                   Improve.Storage.Open (Improve_State, State, Writable => True);
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
-                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
+                  Operation := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", Task_Ids);
                   Improve.Storage.Close (Improve_State);
                end;
                declare Published : constant Improve.Workflow.Publication_Result :=
@@ -73,7 +74,8 @@ begin
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   Improve.Storage.Approve (Improve_State, "PLAN-000001", Plan.Revision);
                   for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
-                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
+                  Operation := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", Task_Ids);
                   Improve.Storage.Close (Improve_State);
                end;
                Project_Tools.Files.Write_Text_File
@@ -94,6 +96,67 @@ begin
                   Assert
                     (Improve.Storage.Pending_Publications (Improve_State).Length = 1,
                      "stale recovery did not retain its pending operation");
+                  Improve.Storage.Close (Improve_State);
+               end;
+               Remove (Data);
+            end;
+         when Recovery_Rejects_Policy_Change =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("recover_policy");
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Planned   : constant Improve.CLI.Outcome := Prepare_Verification_Plan (Data, State);
+               Plan      : Improve.Model.Plan_Revision;
+               Task_Ids  : Improve.Model.UString_Vectors.Vector;
+               Operation : Positive;
+               Rejected  : Boolean := False;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+               pragma Unreferenced (Operation);
+            begin
+               Assert (Planned.Exit_Code = 0, "policy recovery fixture plan failed");
+               Initialize_Harness (To_String (Data.Target));
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => True);
+                  Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
+                  Improve.Storage.Approve (Improve_State, "PLAN-000001", Plan.Revision);
+                  for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
+                  Operation := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", Task_Ids);
+                  Improve.Storage.Close (Improve_State);
+               end;
+               declare
+                  Ignored : constant Positive := Publish_Followup
+                    (Data,
+                     Source => Ada_Quality.Checks.Source_Fingerprint (To_String (Data.Target)),
+                     Policy => "policy-b");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+               begin
+                  declare Report : constant Improve.Recovery.Recovery_Report :=
+                    Improve.Recovery.Recover
+                      (State, To_String (Data.Database), "auto", Maximum => 10);
+                     pragma Unreferenced (Report);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Rejected and then Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
+                  "recovery created native work after the quality policy changed");
+               Stores.Close (Harness);
+               declare Improve_State : Improve.Storage.Store; begin
+                  Improve.Storage.Open (Improve_State, State, Writable => False);
+                  Assert
+                    (Improve.Storage.Pending_Publications (Improve_State).Length = 1,
+                     "policy-stale recovery did not retain its pending operation");
                   Improve.Storage.Close (Improve_State);
                end;
                Remove (Data);
@@ -182,7 +245,8 @@ begin
                   Improve.Storage.Open (Improve_State, State, Writable => True);
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   for Spec of Plan.Tasks loop Task_Ids.Append (Spec.Id); end loop;
-                  Operation := Improve.Storage.Begin_Publication (Improve_State, Plan, Task_Ids);
+                  Operation := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", Task_Ids);
                   Improve.Storage.Close (Improve_State);
                end;
                declare Published : constant Improve.Workflow.Publication_Result :=
@@ -195,7 +259,8 @@ begin
                  (Args ("plan|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Run) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
                Assert (Replanned.Exit_Code = 0, "newer recovery fixture plan failed");
-               Recovered := Improve.Recovery.Recover (State, "auto", Maximum => 10);
+               Recovered := Improve.Recovery.Recover
+                 (State, To_String (Data.Database), "not-a-current-kind", Maximum => 10);
                Assert
                  (Recovered.Operations_Recovered = 1 and then Recovered.Tasks_Recovered = 3,
                   "recovery substituted a newer plan revision");
@@ -222,15 +287,18 @@ begin
                   Plan := Improve.Storage.Load (Improve_State, "PLAN-000001");
                   for Spec of Plan.Tasks loop All_Tasks.Append (Spec.Id); end loop;
                   One_Task.Append (Plan.Tasks.First_Element.Id);
-                  First := Improve.Storage.Begin_Publication (Improve_State, Plan, All_Tasks);
-                  Second := Improve.Storage.Begin_Publication (Improve_State, Plan, One_Task);
+                  First := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", All_Tasks);
+                  Second := Improve.Storage.Begin_Publication
+                    (Improve_State, Plan, "remediation", One_Task);
                   Assert (First /= Second, "distinct recovery operations reused an identity");
                   Improve.Storage.Close (Improve_State);
                end;
                begin
                   declare
                      Report : constant Improve.Recovery.Recovery_Report :=
-                       Improve.Recovery.Recover (State, "auto", Maximum => 1);
+                       Improve.Recovery.Recover
+                         (State, To_String (Data.Database), "auto", Maximum => 1);
                      pragma Unreferenced (Report);
                   begin
                      null;

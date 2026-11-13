@@ -213,6 +213,7 @@ package body Improve.Tasks is
 
       View_Indexes : Index_Maps.Map;
       States       : Finding_Maps.Map;
+      Legacy_Keys  : Value_Maps.Map;
    begin
       for Index in 1 .. Natural (Views.Length) loop
          declare Identity : constant String := To_String (Views (Index).Improve_Id); begin
@@ -223,11 +224,19 @@ package body Improve.Tasks is
          end;
       end loop;
       for Finding of Plan.Findings loop
-         declare Key : constant String := To_String (Finding.Fingerprint); begin
+         declare
+            Key : constant String := Improve.Model.Finding_Key (Finding);
+            Raw : constant String := To_String (Finding.Fingerprint);
+         begin
             if States.Contains (Key) then
                raise Improve.Data_Error with "duplicate plan finding " & Key;
             end if;
             States.Insert (Key, Finding_State'(others => <>));
+            if Legacy_Keys.Contains (Raw) then
+               Legacy_Keys.Replace (Raw, Null_Unbounded_String);
+            else
+               Legacy_Keys.Insert (Raw, To_Unbounded_String (Key));
+            end if;
          end;
       end loop;
       for Spec of Plan.Tasks loop
@@ -237,7 +246,14 @@ package body Improve.Tasks is
             end if;
             declare View : Task_View renames Views (View_Indexes.Element (Identity)); begin
                for Finding_Key of Spec.Finding_Keys loop
-                  declare Key : constant String := To_String (Finding_Key); begin
+                  declare
+                     Stored_Key : constant String := To_String (Finding_Key);
+                     Key : constant String :=
+                       (if States.Contains (Stored_Key) then Stored_Key
+                        elsif Legacy_Keys.Contains (Stored_Key)
+                        then To_String (Legacy_Keys.Element (Stored_Key))
+                        else "");
+                  begin
                      if States.Contains (Key) then
                         declare State : Finding_State := States.Element (Key); begin
                            State.Linked := State.Linked + 1;
@@ -263,7 +279,7 @@ package body Improve.Tasks is
       end loop;
       for Finding of Plan.Findings loop
          declare
-            State : constant Finding_State := States.Element (To_String (Finding.Fingerprint));
+            State : constant Finding_State := States.Element (Improve.Model.Finding_Key (Finding));
          begin
             if State.Linked = 0 then Result.Outstanding := Result.Outstanding + 1;
             elsif State.Any_Regressed then Result.Regressed := Result.Regressed + 1;
