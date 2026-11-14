@@ -6,6 +6,11 @@ Improve uses `Ada_Quality.Reporting.Open`, `Projects`, `Runs`, `Read_Assessment`
 Selection chooses the greatest persisted identity whose state is `Assessment_Completed`. Every loaded assessment must
 contain each of the 33 registered indicators exactly once and in registry order.
 
+Improve computes an assessment-specific identity from the complete typed run metadata, indicator results,
+measurements, and findings. Planning persists that identity and publication authenticates the exact run against it.
+The reporting snapshot identity is retained only as audit provenance because unrelated projects can change the shared
+database snapshot without changing the selected assessment.
+
 A persisted project identity includes the canonical Ada Quality database path, numeric registry identity, and
 canonical project root. Improve rejects application, refresh, reconciliation, and verification when the selected
 database resolves an equal numeric identity to another project. Plans from independent databases remain separate even

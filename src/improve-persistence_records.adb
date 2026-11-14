@@ -3,6 +3,7 @@ with Improve.Storage_Codec;
 package body Improve.Persistence_Records is
    use Ada.Strings.Unbounded;
    use Improve.Storage_Codec;
+   use type Improve.Model.Verification_Scope;
 
    LF : constant Character := Character'Val (10);
 
@@ -13,20 +14,14 @@ package body Improve.Persistence_Records is
       end if;
    end Require_Value;
 
-   function Image (Value : Verification_Scope) return String is
-     (case Value is
-         when Task_Scope    => "task",
-         when Plan_Scope    => "plan",
-         when Project_Scope => "project");
-
-   function Scope_Value (Value : String) return Verification_Scope is
+   function Scope_Value (Value : String) return Improve.Model.Verification_Scope is
    begin
       if Value = "task" then
-         return Task_Scope;
+         return Improve.Model.Task_Evaluation;
       elsif Value = "plan" then
-         return Plan_Scope;
+         return Improve.Model.Plan_Evaluation;
       elsif Value = "project" then
-         return Project_Scope;
+         return Improve.Model.Project_Evaluation;
       end if;
       raise Data_Error with "stored verification scope is invalid: " & Value;
    end Scope_Value;
@@ -61,7 +56,7 @@ package body Improve.Persistence_Records is
       Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
       Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
       Pair ("contract", To_String (Value.Contract)) & LF &
-      Pair ("scope", Image (Value.Scope)) & LF &
+      Pair ("scope", Improve.Model.Image (Value.Scope)) & LF &
       Pair ("task_id", To_String (Value.Task_Id)) & LF &
       Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
       Pair ("explanation", To_String (Value.Explanation)));
@@ -79,7 +74,7 @@ package body Improve.Persistence_Records is
          Comparable    => Boolean'Value (Field (Payload, "comparable")),
          Explanation   => To_Unbounded_String (Field (Payload, "explanation")));
       Require_Value (To_String (Result.Plan_Id), "verification plan identity");
-      if Result.Scope /= Task_Scope and then Length (Result.Task_Id) > 0 then
+      if Result.Scope /= Improve.Model.Task_Evaluation and then Length (Result.Task_Id) > 0 then
          raise Data_Error with "stored aggregate verification names a task";
       end if;
       return Result;

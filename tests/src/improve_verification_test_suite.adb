@@ -15,7 +15,7 @@ package body Improve_Verification_Test_Suite is
    use AUnit.Assertions;
    use Improve_Test_Support;
    use type Improve.Model.Quality_Outcome;
-   use type Improve.Storage.Verification_Scope;
+   use type Improve.Model.Verification_Scope;
    use type Ada.Containers.Count_Type;
 
    type Test_Id is
@@ -247,11 +247,11 @@ begin
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => False);
                   for Evidence of Improve.Storage.Verifications (Improve_State, "PLAN-000001") loop
-                     if Evidence.Scope = Improve.Storage.Task_Evaluation then
+                     if Evidence.Scope = Improve.Model.Task_Evaluation then
                         Assert
                           (Evidence.Outcome = Improve.Model.Verified,
                            "task verification outcome was not preserved");
-                     elsif Evidence.Scope = Improve.Storage.Plan_Evaluation then
+                     elsif Evidence.Scope = Improve.Model.Plan_Evaluation then
                         Assert
                           (Evidence.Outcome = Improve.Model.Verified,
                            "unrelated project regression changed the resolved plan outcome");
@@ -448,7 +448,7 @@ begin
                   "exact-revision verification was not idempotent");
                Improve.Storage.Open (Store, State, Writable => False);
                for Evidence of Improve.Storage.Verifications (Store, "PLAN-000001") loop
-                  if Evidence.Scope = Improve.Storage.Plan_Evaluation then
+                  if Evidence.Scope = Improve.Model.Plan_Evaluation then
                      Assert
                        (Evidence.Plan_Revision in 1 | 2 and then Length (Evidence.Contract_Fingerprint) > 0,
                         "plan verification lost immutable revision provenance");

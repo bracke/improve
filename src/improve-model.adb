@@ -168,6 +168,12 @@ package body Improve.Model is
          when Inconclusive => "inconclusive",
          when Superseded => "superseded");
 
+   function Image (Item : Verification_Scope) return String is
+     (case Item is
+         when Task_Evaluation    => "task",
+         when Plan_Evaluation    => "plan",
+         when Project_Evaluation => "project");
+
    function Finding_Key (Item : Finding_Reference) return String is
    begin
       return Canonical_Key

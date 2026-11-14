@@ -98,6 +98,8 @@ begin
                     Field (S (Baseline.Payload), "source") /= Field (Payload, "source") or else
                     Field (S (Baseline.Payload), "policy") /= Field (Payload, "policy") or else
                     Field (S (Baseline.Payload), "toolchain") /= Field (Payload, "toolchain") or else
+                    Field_Or (S (Baseline.Payload), "assessment", "") /=
+                      Field_Or (Payload, "assessment", "") or else
                     Field (S (Baseline.Payload), "snapshot") /= Field (Payload, "snapshot")
                   then
                      raise Data_Error with "plan revision disagrees with its assessment baseline";

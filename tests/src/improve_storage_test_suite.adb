@@ -223,6 +223,7 @@ package body Improve_Storage_Test_Suite is
          Source_Id    => To_Unbounded_String ("source"),
          Policy_Id    => To_Unbounded_String ("policy"),
          Toolchain_Id => To_Unbounded_String ("toolchain"),
+         Evidence_Id  => To_Unbounded_String ("assessment"),
          Snapshot_Id  => To_Unbounded_String ("snapshot"));
       Result.Working_Source_Id := To_Unbounded_String ("working");
       Result.Planner_Id := To_Unbounded_String ("planner");
@@ -288,7 +289,7 @@ package body Improve_Storage_Test_Suite is
                   Plan_Revision   => Stored.Revision));
             Evidence.Append
               (Improve.Storage.Verification_Record'
-                 (Scope                => Improve.Storage.Task_Evaluation,
+                 (Scope                => Improve.Model.Task_Evaluation,
                   Task_Id              => Stored.Tasks (Index).Id,
                   Plan_Revision        => Stored.Revision,
                   Contract_Fingerprint => To_Unbounded_String (Contract),

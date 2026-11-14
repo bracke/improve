@@ -30,23 +30,12 @@ package Improve.Persistence_Records is
    --  @param Payload Persisted publication representation.
    --  @return Validated typed payload.
 
-   type Verification_Scope is (Task_Scope, Plan_Scope, Project_Scope);
-   --  Typed identity and aggregation level of persisted verification evidence.
-   --  @enum Task_Scope Evidence for one logical remediation task.
-   --  @enum Plan_Scope Aggregate evidence for one immutable plan revision.
-   --  @enum Project_Scope Aggregate evidence for one project assessment.
-
-   function Image (Value : Verification_Scope) return String;
-   --  Return the canonical persisted image of a verification scope.
-   --  @param Value Typed verification scope.
-   --  @return Canonical lower-case image.
-
    type Verification_Data is record
       Plan_Id       : UString;
       Assessment_Id : Positive;
       Plan_Revision : Positive := 1;
       Contract      : UString;
-      Scope         : Verification_Scope := Task_Scope;
+      Scope         : Improve.Model.Verification_Scope := Improve.Model.Task_Evaluation;
       Task_Id       : UString;
       Comparable    : Boolean;
       Explanation   : UString;

@@ -5,7 +5,7 @@ package body Improve.Tasks is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
-   use type Improve.Storage.Verification_Scope;
+   use type Improve.Model.Verification_Scope;
 
    package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (Key_Type => String, Element_Type => Positive,
@@ -107,7 +107,7 @@ package body Improve.Tasks is
             Verification : Improve.Storage.Verification_Record renames Verifications (Index);
             Identity     : constant String := To_String (Verification.Task_Id);
          begin
-            if Verification.Scope = Improve.Storage.Task_Evaluation and then
+            if Verification.Scope = Improve.Model.Task_Evaluation and then
               Specifications.Contains (Identity) and then
               Verification.Plan_Revision = Plan.Revision and then
               Verification.Contract_Fingerprint = Effective.Element (Identity)

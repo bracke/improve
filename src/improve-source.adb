@@ -256,6 +256,45 @@ package body Improve.Source is
       return To_String (Item.Database_Id);
    end Database_Identity;
 
+   function Assessment_Fingerprint
+     (Value : Ada_Quality.Reporting.Assessment_Record) return String is
+      Material : Unbounded_String;
+
+      procedure Add (Name, Text : String) is
+      begin
+         Append (Material, Natural'Image (Name'Length) & ":" & Name);
+         Append (Material, Natural'Image (Text'Length) & ":" & Text);
+      end Add;
+   begin
+      Add ("run", Positive'Image (Value.Run.Id));
+      Add ("project", Positive'Image (Value.Run.Project_Id));
+      Add ("state", Ada_Quality.Types.Assessment_Status'Image (Value.Run.State));
+      Add ("source", To_String (Value.Run.Source_Id));
+      Add ("policy", To_String (Value.Run.Policy_Id));
+      Add ("toolchain", To_String (Value.Run.Toolchain_Id));
+      Add ("result_count", Natural'Image (Natural (Value.Results.Length)));
+      for Result of Value.Results loop
+         Add ("indicator", Ada_Quality.Types.Image (Result.Indicator));
+         Add ("execution", Ada_Quality.Types.Execution_Status'Image (Result.Execution));
+         Add ("compliance", Ada_Quality.Types.Compliance_Status'Image (Result.Compliance));
+         Add ("applicable", Boolean'Image (Result.Applicable));
+         Add ("summary", To_String (Result.Summary));
+         Add ("evidence", To_String (Result.Evidence));
+         Add ("measurement", Ada_Quality.Types.Image (Result.Measurement));
+         Add ("finding_count", Natural'Image (Natural (Result.Findings.Length)));
+         for Finding of Result.Findings loop
+            Add ("finding.indicator", Ada_Quality.Types.Image (Finding.Indicator));
+            Add ("finding.rule", To_String (Finding.Rule));
+            Add ("finding.severity", Ada_Quality.Types.Severity'Image (Finding.Level));
+            Add ("finding.message", To_String (Finding.Message));
+            Add ("finding.path", To_String (Finding.Relative_Path));
+            Add ("finding.line", Natural'Image (Finding.Line));
+            Add ("finding.fingerprint", To_String (Finding.Fingerprint));
+         end loop;
+      end loop;
+      return Stable_Digest (To_String (Material));
+   end Assessment_Fingerprint;
+
    function Name_Of (Path : String) return String is
    begin
       return Ada.Directories.Simple_Name (Path);
@@ -373,6 +412,7 @@ package body Improve.Source is
                Source_Id    => Assessment.Run.Source_Id,
                Policy_Id    => Assessment.Run.Policy_Id,
                Toolchain_Id => Assessment.Run.Toolchain_Id,
+               Evidence_Id  => To_Unbounded_String (Assessment_Fingerprint (Assessment)),
                Snapshot_Id  => To_Unbounded_String (Identity (Item))));
       end;
    exception

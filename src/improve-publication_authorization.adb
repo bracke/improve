@@ -42,7 +42,8 @@ package body Improve.Publication_Authorization is
          if Baseline.Baseline.Project_Id /= Plan.Baseline.Project_Id or else
            Baseline.Baseline.Source_Id /= Plan.Baseline.Source_Id or else
            Baseline.Baseline.Policy_Id /= Plan.Baseline.Policy_Id or else
-           Baseline.Baseline.Toolchain_Id /= Plan.Baseline.Toolchain_Id
+           Baseline.Baseline.Toolchain_Id /= Plan.Baseline.Toolchain_Id or else
+           Baseline.Baseline.Evidence_Id /= Plan.Baseline.Evidence_Id
          then
             Reject ("stored quality assessment no longer matches the plan baseline");
          end if;

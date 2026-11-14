@@ -8,6 +8,7 @@ with Ada_Quality.Storage;
 with AUnit.Assertions;
 with Database;
 with Database.Catalog;
+with Database.Predicates;
 with Database.Rows;
 with Database.Schema;
 with Database.Status;
@@ -367,10 +368,9 @@ package body Improve_Test_Support is
       return Run;
    end Publish_Followup;
 
-   procedure Replace_Assessment_Source
+   procedure Replace_Assessment_Evidence
      (Database_Path : String;
-      Run_Id        : Positive;
-      Source         : String) is
+      Run_Id        : Positive) is
       type Quality_Entity is record
          Id        : Positive;
          Parent_Id : Natural := 0;
@@ -407,44 +407,52 @@ package body Improve_Test_Support is
       package Quality_Tables is new Database.Tables.Typed
         (Quality_Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
 
-      function Replace_Source (Payload : String) return String is
-         Prefix : constant String := "source=";
+      function Replace_Summary (Payload : String) return String is
+         Prefix : constant String := "summary=";
          First  : constant Natural := Ada.Strings.Fixed.Index (Payload, Prefix);
          Last   : Natural := First + Prefix'Length;
       begin
          if First = 0 then
-            raise Program_Error with "assessment fixture has no source identity";
+            raise Program_Error with "indicator fixture has no summary";
          end if;
          while Last <= Payload'Last and then Payload (Last) /= ASCII.LF loop
             Last := Last + 1;
          end loop;
-         return Payload (Payload'First .. First + Prefix'Length - 1) & Source &
+         return Payload (Payload'First .. First + Prefix'Length - 1) &
+           "mutated assessment evidence" &
            (if Last <= Payload'Last then Payload (Last .. Payload'Last) else "");
-      end Replace_Source;
+      end Replace_Summary;
 
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : Database.Schema.Table_Schema;
-      Row    : Quality_Entity;
-      Status : Database.Status.Result;
+      DB        : Database.Handle;
+      Tx        : Database.Transactions.Transaction;
+      Schema    : Database.Schema.Table_Schema;
+      Cursor    : Quality_Tables.Cursor;
+      Row       : Quality_Entity;
+      Status    : Database.Status.Result;
+      Predicate : constant Database.Predicates.Predicate :=
+        Database.Predicates.Column_Equals
+          (1, Database.Values.From_Integer (Integer (Run_Id)));
    begin
       Database.Open
         (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Database_Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "quality database could not be opened for mutation fixture");
+      Assert (Database.Last_Operation_Succeeded (DB), "quality database could not be opened for evidence fixture");
       Status := Database.Catalog.Find_By_Name
-        (Database.Catalog_State_Key (DB), "assessment_runs", Schema);
-      Assert (Database.Status.Is_Ok (Status), "assessment schema is unavailable for mutation fixture");
+        (Database.Catalog_State_Key (DB), "indicator_results", Schema);
+      Assert (Database.Status.Is_Ok (Status), "indicator schema is unavailable for evidence fixture");
       Database.Transactions.Begin_Write (DB, Tx);
-      Status := Quality_Tables.Find (Tx, DB, Schema, Run_Id, Row);
-      Assert (Database.Status.Is_Ok (Status), "assessment row is unavailable for mutation fixture");
+      Status := Quality_Tables.Scan (Tx, DB, Schema, Predicate, Cursor);
+      Assert
+        (Database.Status.Is_Ok (Status) and then Quality_Tables.Has_Element (Cursor),
+         "indicator result is unavailable for evidence fixture");
+      Row := Quality_Tables.Element (Cursor);
       Row.Payload := To_Unbounded_Wide_Wide_String
         (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode
-           (Replace_Source
+           (Replace_Summary
               (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode
                  (To_Wide_Wide_String (Row.Payload)))));
       Assert
         (Database.Status.Is_Ok (Quality_Tables.Update (Tx, DB, Schema, Row)),
-         "assessment source identity could not be mutated");
+         "assessment evidence could not be mutated");
       Database.Transactions.Commit (Tx);
       Database.Close (DB);
    exception
@@ -452,7 +460,7 @@ package body Improve_Test_Support is
          if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          if Database.Is_Open (DB) then Database.Close (DB); end if;
          raise;
-   end Replace_Assessment_Source;
+   end Replace_Assessment_Evidence;
 
    function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome is
      (Improve.CLI.Execute

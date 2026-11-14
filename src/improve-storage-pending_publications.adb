@@ -17,7 +17,7 @@ begin
          declare
             Row       : constant Entity := Entity_Tables.Element (Starts);
             Completed : Boolean := False;
-            Ends      : Entity_Tables.Cursor := Scan_Children (Item, Tx, Operations_Table, Row.Id);
+            Ends      : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, S (Row.Kind));
             Payload   : constant String := S (Row.Payload);
             Data      : Improve.Persistence_Records.Publication_Operation_Data;
          begin
@@ -33,14 +33,14 @@ begin
                raise Data_Error with "publication operation identity is inconsistent";
             end if;
             while Entity_Tables.Has_Element (Ends) loop
-               if History_Count >= Limits.Maximum_History then
-                  raise Data_Error with "publication operation history exceeds configured item limit";
-               end if;
-               History_Count := History_Count + 1;
                declare Completion : constant Entity := Entity_Tables.Element (Ends); begin
-                  if S (Completion.State) = "completed" and then
-                    S (Completion.Kind) = S (Row.Kind)
+                  if Completion.Parent_Id = Row.Id and then
+                    S (Completion.State) = "completed"
                   then
+                     if History_Count >= Limits.Maximum_History then
+                        raise Data_Error with "publication operation history exceeds configured item limit";
+                     end if;
+                     History_Count := History_Count + 1;
                      if S (Completion.Payload) /= Payload then
                         raise Data_Error with "publication completion does not match its operation";
                      end if;
@@ -48,7 +48,7 @@ begin
                      exit;
                   end if;
                end;
-               Advance_Children (Item, Tx, Operations_Table, Row.Id, Ends);
+               Advance_Kind (Item, Tx, Operations_Table, S (Row.Kind), Ends);
             end loop;
             if not Completed then
                if Result.Length >= Ada.Containers.Count_Type (Maximum) then

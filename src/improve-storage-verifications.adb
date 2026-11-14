@@ -7,7 +7,9 @@ function Verifications
    Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is
    Tx     : Database.Transactions.Transaction;
    Result : Verification_Vectors.Vector;
+   Owners : Improve.Model.UString_Vectors.Vector;
    History_Count : Natural := 0;
+   use type Improve.Model.Verification_Scope;
 
    procedure Count_Row is
    begin
@@ -30,18 +32,16 @@ function Verifications
       Improve.Persistence_Validation.Validate
         (Data, Expected_Plan_Id, Expected_Record_Key => S (Row.Kind));
       declare
-         Scope : constant Verification_Scope :=
-           (case Data.Scope is
-               when Improve.Persistence_Records.Task_Scope    => Task_Evaluation,
-               when Improve.Persistence_Records.Plan_Scope    => Plan_Evaluation,
-               when Improve.Persistence_Records.Project_Scope => Project_Evaluation);
+         Scope : constant Improve.Model.Verification_Scope := Data.Scope;
          Stored_Task : constant String :=
-           (if Scope = Task_Evaluation and then Length (Data.Task_Id) > 0
+           (if Scope = Improve.Model.Task_Evaluation and then Length (Data.Task_Id) > 0
             then To_String (Data.Task_Id)
-            elsif Scope = Task_Evaluation then S (Row.Kind)
+            elsif Scope = Improve.Model.Task_Evaluation then S (Row.Kind)
             else "");
       begin
-         if Task_Id = "" or else (Scope = Task_Evaluation and then Stored_Task = Task_Id) then
+         if Task_Id = "" or else
+           (Scope = Improve.Model.Task_Evaluation and then Stored_Task = Task_Id)
+         then
             if Result.Length >= Ada.Containers.Count_Type (Maximum) then
                raise Data_Error with "verification query exceeds configured item limit";
             end if;
@@ -55,11 +55,38 @@ function Verifications
                   Outcome       => Parse_Outcome (S (Row.State)),
                   Comparable    => Data.Comparable,
                   Explanation   => Data.Explanation));
+            Owners.Append (To_Unbounded_String (Expected_Plan_Id));
          end if;
       end;
    exception
       when Constraint_Error => raise Data_Error with "stored verification evidence is malformed";
    end Append_Row;
+
+   procedure Validate_Contracts is
+      Contracts : String_Value_Maps.Map;
+      Index     : Natural := Owners.First_Index;
+   begin
+      for Evidence of Result loop
+         declare
+            Owner : constant String := To_String (Owners (Index));
+            Key   : constant String :=
+              Contract_Key
+                (Owner,
+                 Evidence.Plan_Revision,
+                 (if Evidence.Scope = Improve.Model.Task_Evaluation
+                  then To_String (Evidence.Task_Id)
+                  else "@plan"));
+         begin
+            Cache_Contracts (Item, Owner, Evidence.Plan_Revision, Limits, Contracts);
+            if not Contracts.Contains (Key) then
+               raise Data_Error with "verification references an unknown persisted task";
+            elsif Evidence.Contract_Fingerprint /= Contracts.Element (Key) then
+               raise Data_Error with "verification does not match the persisted evaluation contract";
+            end if;
+         end;
+         Index := Index + 1;
+      end loop;
+   end Validate_Contracts;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
    if Plan_Id = "" then
@@ -105,6 +132,7 @@ begin
       end if;
    end if;
    Database.Transactions.Rollback (Tx);
+   Validate_Contracts;
    return Result;
 exception
    when others =>

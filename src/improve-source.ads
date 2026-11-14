@@ -48,6 +48,12 @@ package Improve.Source is
    --  @param Item Open repository.
    --  @return Canonical database path used as persistent repository identity.
 
+   function Assessment_Fingerprint
+     (Value : Ada_Quality.Reporting.Assessment_Record) return String;
+   --  Fingerprint one assessment's complete typed evidence independently of unrelated database rows.
+   --  @param Value Completed typed assessment.
+   --  @return Stable assessment-specific content identity.
+
    function Resolve_Project (Item : Repository; Selector : String) return Improve.Model.Project_Reference;
    --  Resolve a positive identity, exact canonical path, or unique path basename.
    --  @param Item Open repository.

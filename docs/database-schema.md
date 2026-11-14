@@ -34,8 +34,8 @@ This is a physical layout choice; the storage API enforces namespace isolation a
 
 ## Transactions and identity
 
-Creating a revision writes the baseline, findings, task specifications, links, dependency edges, and operation journal
-in one write transaction. A stable planner fingerprint is checked first. If it already exists, the stored immutable
+Creating a revision writes the baseline, findings, task specifications, links, and dependency edges in one write
+transaction. A stable planner fingerprint is checked first. If it already exists, the stored immutable
 revision is returned instead of inserting duplicate work.
 
 Plan identities use `PLAN-NNNNNN`; task identities use `IMP-NNNNNN`. Draft dependency identities are translated to the
@@ -55,6 +55,10 @@ Numeric project IDs are never treated as globally unique across independent qual
 Plans and assessment baselines reference the local `projects` row. The project row stores the database-qualified Ada
 Quality identity, while each revision references its normalized baseline. Revision payload provenance is retained for
 auditing and checked against those authoritative relationships when loaded.
+The baseline also stores an assessment-specific fingerprint over the complete typed indicator results, measurements,
+and findings. Publication re-reads the exact run and requires this fingerprint to match, so unchanged run metadata
+cannot conceal replaced evidence. The database-wide reporting snapshot remains audit provenance, not semantic plan
+identity.
 
 Verification identity includes the stable plan ID, immutable plan revision, completed assessment, evaluation scope,
 and acceptance-contract fingerprint. Task-scoped records use the dependency-qualified effective contract; plan and
@@ -80,6 +84,8 @@ assessment. Publication mappings are qualified by a dependency-qualified effecti
 immutable Improve, harness, binding, and origin identities while allowing only their cached harness-owned runtime state
 to be reconciled. Different authored contracts or prerequisite bindings for one continuing logical task therefore
 retain separate historical native mappings.
+Publication and verification readers revalidate the stored plan revision and exact effective contract before exposing
+records. A payload with a valid plan identity but an unknown revision or mismatched contract is rejected as corrupt.
 
 Mandatory review approval is an append-only `operations` event keyed by stable plan identity and exact revision. The
 event also stores the immutable revision fingerprint. Publication accepts the approval only when all three values
@@ -95,8 +101,9 @@ appends a `completed` child entry in its own transaction.
 
 The two databases are deliberately not treated as one atomic store. If the process stops between those commits,
 `recover` reads the unmatched `started` entry and republishes through model_runner's origin-aware idempotency contract.
-Only after verified mappings are stored is the operation completed. Planning journal records remain separate and are
-never interpreted as pending publications.
+Only after verified mappings are stored is the operation completed. Approval events remain separate and are never
+interpreted as pending publications. Plan persistence does not write into the publication-operation namespace;
+completion matching uses both the operation key and explicit parent identity.
 
 Configured persistence limits apply consistently to full loads, summaries, migrations, contract validation, and
 history reads and writes. Schema migration is bounded by the same limits supplied when writable state is opened.

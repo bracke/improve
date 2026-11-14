@@ -23,7 +23,7 @@ begin
       Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Limits, Contracts);
       declare
          Key : constant String :=
-           Contract_Key (Value.Plan_Revision, To_String (Value.Improve_Task_Id));
+           Contract_Key (Plan_Id, Value.Plan_Revision, To_String (Value.Improve_Task_Id));
       begin
          if not Contracts.Contains (Key) then
             raise Data_Error with "publication references an unknown persisted task";

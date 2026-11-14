@@ -5,7 +5,7 @@ with Improve.Findings;
 package body Improve.Operations.Inspection is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
-   use type Improve.Storage.Verification_Scope;
+   use type Improve.Model.Verification_Scope;
 
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
@@ -224,7 +224,7 @@ package body Improve.Operations.Inspection is
                loop
                   if Evidence.Plan_Revision = Plan.Revision and then
                     Evidence.Contract_Fingerprint = Plan.Fingerprint and then
-                    Evidence.Scope = Improve.Storage.Project_Evaluation and then
+                    Evidence.Scope = Improve.Model.Project_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Project_Run
                   then
                      Latest_Project_Run := Evidence.Assessment_Id;
@@ -233,7 +233,7 @@ package body Improve.Operations.Inspection is
                      Value.Project_Verification_Run := Evidence.Assessment_Id;
                   elsif Evidence.Plan_Revision = Plan.Revision and then
                     Evidence.Contract_Fingerprint = Plan.Fingerprint and then
-                    Evidence.Scope = Improve.Storage.Plan_Evaluation and then
+                    Evidence.Scope = Improve.Model.Plan_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Plan_Run
                   then
                      Latest_Plan_Run := Evidence.Assessment_Id;

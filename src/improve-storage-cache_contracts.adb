@@ -5,7 +5,7 @@ procedure Cache_Contracts
    Revision  : Positive;
    Limits    : Read_Limits;
    Contracts : in out String_Value_Maps.Map) is
-   Marker : constant String := Contract_Key (Revision, "@plan");
+   Marker : constant String := Contract_Key (Plan_Id, Revision, "@plan");
 begin
    if Contracts.Contains (Marker) then
       return;
@@ -18,7 +18,10 @@ begin
       Contracts.Insert (Marker, Plan.Fingerprint);
       for Binding of Bindings loop
          Contracts.Insert
-           (Contract_Key (Revision, To_String (Binding.Task_Id)), Binding.Fingerprint);
+           (Contract_Key (Plan_Id, Revision, To_String (Binding.Task_Id)), Binding.Fingerprint);
       end loop;
    end;
+exception
+   when Argument_Error =>
+      raise Data_Error with "persisted history references an unknown plan revision";
 end Cache_Contracts;

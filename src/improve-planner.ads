@@ -6,7 +6,7 @@ with Improve.Source;
 package Improve.Planner is
    --  Evidence-driven grouping, decomposition, prioritization, and task specification.
 
-   Planner_Version : constant String := "deterministic-v1";
+   Planner_Version : constant String := "deterministic-v2";
    --  Stable planner algorithm version included in plan provenance.
 
    function Generate

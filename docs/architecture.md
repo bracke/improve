@@ -18,6 +18,8 @@ assessment. Publication applies a second, harness-state-aware `working-sha256-v3
 changes after planning without treating model_runner's own operational state as a source edit. The working identity is
 a length-delimited SHA-256 stream over sorted relative paths and bounded file contents, so path/content boundaries
 cannot produce the same byte stream accidentally.
+The baseline additionally authenticates the selected assessment's complete typed evidence. Publication therefore
+rejects evidence replacement even when the run, source, policy, and toolchain metadata remain unchanged.
 
 The model_runner repository exposes an explicit source closure through the lightweight `model_runner_framework` crate.
 The publication adapter therefore imports a project with no executable, inference backend, or main-unit target.

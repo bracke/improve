@@ -1,10 +1,11 @@
 with Ada.Strings.Unbounded;
+with Improve.Model;
 with Improve.Storage_Codec;
 
 package body Improve.Persistence_Validation is
    use Ada.Strings.Unbounded;
    use Improve.Storage_Codec;
-   use type Improve.Persistence_Records.Verification_Scope;
+   use type Improve.Model.Verification_Scope;
 
    procedure Validate
      (Value             : Improve.Persistence_Records.Publication_Data;
@@ -25,16 +26,16 @@ package body Improve.Persistence_Validation is
       Expected_Record_Key : String := "") is
       Record_Key : constant String :=
         (case Value.Scope is
-            when Improve.Persistence_Records.Task_Scope =>
+            when Improve.Model.Task_Evaluation =>
               (if Length (Value.Task_Id) > 0 then To_String (Value.Task_Id) else Expected_Record_Key),
-            when Improve.Persistence_Records.Plan_Scope => "@plan",
-            when Improve.Persistence_Records.Project_Scope => "@project");
+            when Improve.Model.Plan_Evaluation => "@plan",
+            when Improve.Model.Project_Evaluation => "@project");
    begin
       if To_String (Value.Plan_Id) /= Expected_Plan_Id then
          raise Data_Error with "verification evidence belongs to another plan";
       elsif Expected_Revision > 0 and then Value.Plan_Revision /= Expected_Revision then
          raise Data_Error with "verification evidence belongs to another plan revision";
-      elsif Value.Scope = Improve.Persistence_Records.Task_Scope and then Record_Key = "" then
+      elsif Value.Scope = Improve.Model.Task_Evaluation and then Record_Key = "" then
          raise Data_Error with "task verification has no persisted task identity";
       elsif Expected_Record_Key /= "" and then Record_Key /= Expected_Record_Key then
          raise Data_Error with "verification evidence key does not match its payload";

@@ -40,16 +40,16 @@ begin
       end if;
    end;
    if not Found then raise Data_Error with "unknown publication operation"; end if;
-   declare Ends : Entity_Tables.Cursor := Scan_Children (Item, Tx, Operations_Table, Operation_Id); begin
+   declare Ends : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, S (Started.Kind)); begin
       while Entity_Tables.Has_Element (Ends) loop
-         if History_Count >= Limits.Maximum_History then
-            raise Data_Error with "publication completion history exceeds configured item limit";
-         end if;
-         History_Count := History_Count + 1;
          declare Completion : constant Entity := Entity_Tables.Element (Ends); begin
-            if S (Completion.State) = "completed" and then
-              S (Completion.Kind) = S (Started.Kind)
+            if Completion.Parent_Id = Operation_Id and then
+              S (Completion.State) = "completed"
             then
+               if History_Count >= Limits.Maximum_History then
+                  raise Data_Error with "publication completion history exceeds configured item limit";
+               end if;
+               History_Count := History_Count + 1;
                if S (Completion.Payload) /= S (Started.Payload) then
                   raise Data_Error with "publication completion does not match its operation";
                end if;
@@ -57,7 +57,7 @@ begin
                return;
             end if;
          end;
-         Advance_Children (Item, Tx, Operations_Table, Operation_Id, Ends);
+         Advance_Kind (Item, Tx, Operations_Table, S (Started.Kind), Ends);
       end loop;
    end;
    if History_Count >= Limits.Maximum_History then

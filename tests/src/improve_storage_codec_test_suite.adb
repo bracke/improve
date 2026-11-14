@@ -92,7 +92,7 @@ package body Improve_Storage_Codec_Test_Suite is
             Assessment_Id => 4,
             Plan_Revision => 2,
             Contract      => To_Unbounded_String ("contract"),
-            Scope         => Improve.Persistence_Records.Task_Scope,
+            Scope         => Improve.Model.Task_Evaluation,
             Task_Id       => To_Unbounded_String ("IMP-000001"),
             Comparable    => True,
             Explanation   => To_Unbounded_String ("evidence remains comparable"));

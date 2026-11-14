@@ -394,6 +394,7 @@ package body Improve.Storage is
       Pair ("working_source", To_String (Value.Working_Source_Id)) & LF &
       Pair ("policy", To_String (Value.Baseline.Policy_Id)) & LF &
       Pair ("toolchain", To_String (Value.Baseline.Toolchain_Id)) & LF &
+      Pair ("assessment", To_String (Value.Baseline.Evidence_Id)) & LF &
       Pair ("snapshot", To_String (Value.Baseline.Snapshot_Id)) & LF &
       Pair ("planner", To_String (Value.Planner_Id)) & LF &
       Pair ("task_count", Number (Natural (Value.Tasks.Length))) & LF &
@@ -481,8 +482,11 @@ function Save
       Payload  : String;
       Limits   : Read_Limits) return Stored_Provenance is separate;
 
-   function Contract_Key (Revision : Positive; Task_Id : String) return String is
-     (Number (Revision) & Character'Val (0) & Task_Id);
+   function Contract_Key
+     (Plan_Id  : String;
+      Revision : Positive;
+      Task_Id  : String) return String is
+     (Plan_Id & Character'Val (0) & Number (Revision) & Character'Val (0) & Task_Id);
 
    procedure Cache_Contracts
      (Item      : in out Store;

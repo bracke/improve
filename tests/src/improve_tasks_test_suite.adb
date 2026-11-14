@@ -77,7 +77,7 @@ package body Improve_Tasks_Test_Suite is
          if Verified then
             Evidence.Append
               (Improve.Storage.Verification_Record'
-                 (Scope                => Improve.Storage.Task_Evaluation,
+                 (Scope                => Improve.Model.Task_Evaluation,
                   Task_Id              => Only.Id,
                   Plan_Revision        => Plan.Revision,
                   Contract_Fingerprint => To_Unbounded_String
@@ -104,7 +104,7 @@ package body Improve_Tasks_Test_Suite is
          Joined.Tasks.Append (Unrelated);
          Evidence.Append
            (Improve.Storage.Verification_Record'
-              (Scope                => Improve.Storage.Task_Evaluation,
+              (Scope                => Improve.Model.Task_Evaluation,
                Task_Id              => Only.Id,
                Plan_Revision        => Joined.Revision,
                Contract_Fingerprint => To_Unbounded_String
@@ -135,7 +135,7 @@ package body Improve_Tasks_Test_Suite is
          Revised.Tasks (1).Goal := To_Unbounded_String ("Changed prerequisite contract");
          Evidence.Append
            (Improve.Storage.Verification_Record'
-              (Scope                => Improve.Storage.Task_Evaluation,
+              (Scope                => Improve.Model.Task_Evaluation,
                Task_Id              => Dependent.Id,
                Plan_Revision        => Revised.Revision,
                Contract_Fingerprint => To_Unbounded_String

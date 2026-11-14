@@ -416,8 +416,7 @@ begin
                Assert (Planned.Exit_Code = 0, "replacement-baseline fixture planning failed");
                Initialize_Harness (To_String (Data.Target));
                Approve_Latest (State);
-               Replace_Assessment_Source
-                 (To_String (Data.Database), Baseline, "mutated-assessment-source");
+               Replace_Assessment_Evidence (To_String (Data.Database), Baseline);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
                         "|--format|json"));

@@ -32,6 +32,7 @@ begin
          To_Unbounded_String (Field (Payload, "source")),
          To_Unbounded_String (Field (Payload, "policy")),
          To_Unbounded_String (Field (Payload, "toolchain")),
+         To_Unbounded_String (Field_Or (Payload, "assessment", "")),
          To_Unbounded_String (Field (Payload, "snapshot")));
       return Result;
    end if;
@@ -58,6 +59,7 @@ begin
          To_Unbounded_String (Field (Baseline_Data, "source")),
          To_Unbounded_String (Field (Baseline_Data, "policy")),
          To_Unbounded_String (Field (Baseline_Data, "toolchain")),
+         To_Unbounded_String (Field_Or (Baseline_Data, "assessment", "")),
          To_Unbounded_String (Field (Baseline_Data, "snapshot")));
       if Baseline_Row.Parent_Id /= Project_Row.Id or else
         S (Plan_Row.Kind) /= S (Project_Row.Kind) or else
@@ -70,6 +72,7 @@ begin
         Field (Payload, "source") /= To_String (Result.Baseline.Source_Id) or else
         Field (Payload, "policy") /= To_String (Result.Baseline.Policy_Id) or else
         Field (Payload, "toolchain") /= To_String (Result.Baseline.Toolchain_Id) or else
+        Field_Or (Payload, "assessment", "") /= To_String (Result.Baseline.Evidence_Id) or else
         Field (Payload, "snapshot") /= To_String (Result.Baseline.Snapshot_Id)
       then
          raise Data_Error with "stored plan provenance relationships are inconsistent";

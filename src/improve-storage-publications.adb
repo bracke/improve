@@ -6,6 +6,7 @@ function Publications
    Limits     : Read_Limits := Default_Read_Limits) return Publication_Vectors.Vector is
    Tx     : Database.Transactions.Transaction;
    Result : Publication_Vectors.Vector;
+   Owners : Improve.Model.UString_Vectors.Vector;
    History_Count : Natural := 0;
 
    procedure Count_Row is
@@ -38,7 +39,30 @@ function Publications
             Contract        => Data.Contract,
             State           => To_Unbounded_String (S (Row.State)),
             Plan_Revision   => Data.Plan_Revision));
+      Owners.Append (To_Unbounded_String (Expected_Plan_Id));
    end Append_Row;
+
+   procedure Validate_Contracts is
+      Contracts : String_Value_Maps.Map;
+      Index     : Natural := Owners.First_Index;
+   begin
+      for Mapping of Result loop
+         declare
+            Owner : constant String := To_String (Owners (Index));
+            Key   : constant String :=
+              Contract_Key
+                (Owner, Mapping.Plan_Revision, To_String (Mapping.Improve_Task_Id));
+         begin
+            Cache_Contracts (Item, Owner, Mapping.Plan_Revision, Limits, Contracts);
+            if not Contracts.Contains (Key) then
+               raise Data_Error with "publication references an unknown persisted task";
+            elsif Mapping.Contract /= Contracts.Element (Key) then
+               raise Data_Error with "publication does not match the persisted task contract";
+            end if;
+         end;
+         Index := Index + 1;
+      end loop;
+   end Validate_Contracts;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
    if Plan_Id = "" then
@@ -84,6 +108,7 @@ begin
       end if;
    end if;
    Database.Transactions.Rollback (Tx);
+   Validate_Contracts;
    return Result;
 exception
    when others =>

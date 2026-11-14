@@ -45,6 +45,7 @@ package Improve.Model is
       Source_Id    : UString;
       Policy_Id    : UString;
       Toolchain_Id : UString;
+      Evidence_Id  : UString;
       Snapshot_Id  : UString;
    end record;
    --  Immutable provenance of the completed assessment used by one revision.
@@ -53,7 +54,14 @@ package Improve.Model is
    --  @field Source_Id Source fingerprint.
    --  @field Policy_Id Policy fingerprint.
    --  @field Toolchain_Id Toolchain fingerprint.
+   --  @field Evidence_Id Assessment-specific typed evidence fingerprint.
    --  @field Snapshot_Id Reporting snapshot identity.
+
+   type Verification_Scope is (Task_Evaluation, Plan_Evaluation, Project_Evaluation);
+   --  Identity and aggregation level of persisted verification evidence.
+   --  @enum Task_Evaluation Outcome for one logical remediation task.
+   --  @enum Plan_Evaluation Aggregate outcome for one complete plan evaluation.
+   --  @enum Project_Evaluation Aggregate quality of the complete assessment.
 
    type Candidate_Kind is (Remediation_Candidate, Investigation_Candidate, Diagnostic_Candidate);
    --  Whether evidence establishes implementation work, investigation work, or only a diagnostic prerequisite.
@@ -92,6 +100,11 @@ package Improve.Model is
    function Image (Item : Quality_Outcome) return String;
    --  Return the stable lowercase quality outcome spelling.
    --  @param Item Quality outcome.
+   --  @return Stable lowercase spelling.
+
+   function Image (Item : Verification_Scope) return String;
+   --  Return the stable lowercase verification scope spelling.
+   --  @param Item Verification scope.
    --  @return Stable lowercase spelling.
 
    type Finding_Reference is record

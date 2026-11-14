@@ -86,14 +86,8 @@ package Improve.Storage is
    package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
    --  Ordered publication mappings.
 
-   type Verification_Scope is (Task_Evaluation, Plan_Evaluation, Project_Evaluation);
-   --  Identity and aggregation level of persisted verification evidence.
-   --  @enum Task_Evaluation Outcome for one logical remediation task.
-   --  @enum Plan_Evaluation Aggregate outcome for one complete plan evaluation.
-   --  @enum Project_Evaluation Aggregate quality of the complete assessment.
-
    type Verification_Record is record
-      Scope         : Verification_Scope := Task_Evaluation;
+      Scope         : Improve.Model.Verification_Scope := Improve.Model.Task_Evaluation;
       Task_Id       : Ada.Strings.Unbounded.Unbounded_String;
       Plan_Revision : Positive := 1;
       Contract_Fingerprint : Ada.Strings.Unbounded.Unbounded_String;

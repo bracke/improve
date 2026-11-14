@@ -116,6 +116,27 @@ begin
       when Improve.Data_Error => Rejected := True;
    end;
    Assert (Rejected, "plan reconstruction ignored its configured task limit");
+   declare
+      Task_Ids  : Improve.Model.UString_Vectors.Vector;
+      Operation : Positive;
+      Candidate : Improve.Model.Plan_Revision := Plan;
+      Limits    : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+   begin
+      Task_Ids.Append (Stored.Tasks.First_Element.Id);
+      Operation := Improve.Storage.Begin_Publication (Store, Stored, "remediation", Task_Ids);
+      Candidate.Fingerprint := To_Unbounded_String
+        (Improve.Stable_Digest ("revision saved after publication start"));
+      declare
+         Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Candidate);
+      begin
+         pragma Unreferenced (Saved);
+      end;
+      Limits.Maximum_History := 1;
+      Assert
+        (Improve.Storage.Pending_Publications (Store, Limits => Limits).Length = 1,
+         "plan revision history contaminated the publication journal namespace");
+      Improve.Storage.Complete_Publication (Store, Operation, Limits);
+   end;
    History_Records (Stored, Mappings, Evidence);
    Improve.Storage.Record_Publications (Store, To_String (Stored.Plan_Id), Mappings);
    Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Evidence);

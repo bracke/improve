@@ -10,19 +10,13 @@ procedure Record_Verification
    Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
    History_Count : Natural := 0;
-
-   function Persisted_Scope
-     (Value : Verification_Scope) return Improve.Persistence_Records.Verification_Scope is
-     (case Value is
-         when Task_Evaluation    => Improve.Persistence_Records.Task_Scope,
-         when Plan_Evaluation    => Improve.Persistence_Records.Plan_Scope,
-         when Project_Evaluation => Improve.Persistence_Records.Project_Scope);
+   use type Improve.Model.Verification_Scope;
 
    function Record_Key (Value : Verification_Record) return String is
      (case Value.Scope is
-         when Task_Evaluation => To_String (Value.Task_Id),
-         when Plan_Evaluation => "@plan",
-         when Project_Evaluation => "@project");
+         when Improve.Model.Task_Evaluation => To_String (Value.Task_Id),
+         when Improve.Model.Plan_Evaluation => "@plan",
+         when Improve.Model.Project_Evaluation => "@project");
 
    function Identity_Key
      (Key, Plan, Assessment, Revision, Contract : String) return String is
@@ -38,16 +32,16 @@ begin
       raise Data_Error with "verification recording exceeds configured item limit";
    end if;
    for Value of Values loop
-      if Value.Scope = Task_Evaluation and then Length (Value.Task_Id) = 0 then
+      if Value.Scope = Improve.Model.Task_Evaluation and then Length (Value.Task_Id) = 0 then
          raise Data_Error with "task verification has no task identity";
-      elsif Value.Scope /= Task_Evaluation and then Length (Value.Task_Id) > 0 then
+      elsif Value.Scope /= Improve.Model.Task_Evaluation and then Length (Value.Task_Id) > 0 then
          raise Data_Error with "aggregate verification must not name a task";
       end if;
       Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Limits, Contracts);
       declare
          Key : constant String := Contract_Key
-           (Value.Plan_Revision,
-            (if Value.Scope = Task_Evaluation then To_String (Value.Task_Id) else "@plan"));
+           (Plan_Id, Value.Plan_Revision,
+            (if Value.Scope = Improve.Model.Task_Evaluation then To_String (Value.Task_Id) else "@plan"));
       begin
          if not Contracts.Contains (Key) then
             raise Data_Error with "verification references an unknown persisted task";
@@ -83,7 +77,7 @@ begin
               (Key,
                To_Unbounded_String
                  (Stored_Value
-                    (S (Row.State), Improve.Persistence_Records.Image (Data.Scope),
+                    (S (Row.State), Improve.Model.Image (Data.Scope),
                      Boolean_Image (Data.Comparable),
                      To_String (Data.Explanation))));
             end;
@@ -99,7 +93,7 @@ begin
             To_String (Value.Contract_Fingerprint));
          Expected : constant String := Stored_Value
            (Improve.Model.Image (Value.Outcome),
-            Improve.Persistence_Records.Image (Persisted_Scope (Value.Scope)), Boolean_Image (Value.Comparable),
+            Improve.Model.Image (Value.Scope), Boolean_Image (Value.Comparable),
             To_String (Value.Explanation));
          Existing : constant Boolean := Stored.Contains (Identity);
          Payload  : constant String := Improve.Persistence_Records.Encode_Verification
@@ -107,7 +101,7 @@ begin
              Assessment_Id => Value.Assessment_Id,
              Plan_Revision => Value.Plan_Revision,
              Contract      => Value.Contract_Fingerprint,
-             Scope         => Persisted_Scope (Value.Scope),
+             Scope         => Value.Scope,
              Task_Id       => Value.Task_Id,
              Comparable    => Value.Comparable,
              Explanation   => Value.Explanation));

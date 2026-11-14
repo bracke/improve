@@ -149,6 +149,7 @@ function Save
                  WW (Pair ("source", To_String (Stored.Baseline.Source_Id)) & LF &
                      Pair ("policy", To_String (Stored.Baseline.Policy_Id)) & LF &
                      Pair ("toolchain", To_String (Stored.Baseline.Toolchain_Id)) & LF &
+                     Pair ("assessment", To_String (Stored.Baseline.Evidence_Id)) & LF &
                      Pair ("snapshot", To_String (Stored.Baseline.Snapshot_Id))), True, Baselines_Table)),
                 "store baseline");
          Stored.Plan_Id := To_Unbounded_String (Id_Image ("PLAN-", Plan_Row));
@@ -361,12 +362,6 @@ function Save
                   end loop;
                end;
             end loop;
-         end;
-         declare Operation_Row : constant Positive := Next_Id (Item, Tx, Operations_Table); begin
-            Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Operations_Table),
-                   (Operation_Row, Revision_Row, WW ("plan:" & To_String (Stored.Fingerprint)), WW ("committed"),
-                    WW (Pair ("plan_id", To_String (Stored.Plan_Id))), True, Operations_Table)),
-                   "journal plan operation");
          end;
       end;
       Database.Transactions.Commit (Tx);

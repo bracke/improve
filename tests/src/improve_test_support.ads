@@ -49,11 +49,10 @@ package Improve_Test_Support is
       Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High;
       New_Critical       : Boolean := False) return Positive;
 
-   procedure Replace_Assessment_Source
+   procedure Replace_Assessment_Evidence
      (Database_Path : String;
-      Run_Id        : Positive;
-      Source         : String);
-   --  Corrupt one completed assessment source identity for integrity regression testing.
+      Run_Id        : Positive);
+   --  Mutate one indicator result without changing assessment provenance metadata.
 
    function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome;
 

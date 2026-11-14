@@ -41,7 +41,7 @@ begin
       Improve.Storage.Approve (Store, "PLAN-000001", 1);
       Improve.Storage.Close (Store);
       Replace_Row_Payload
-        (Path, 12, 2,
+        (Path, 12, 1,
          Improve.Persistence_Records.Encode_Approval
            ((Plan_Id     => To_Unbounded_String ("PLAN-999999"),
              Revision    => 1,
@@ -49,6 +49,37 @@ begin
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error
         (Read_Approval'Access, "approval payload was not bound to its plan row context");
+      Improve.Storage.Close (Store);
+   end;
+   declare
+      Path     : constant String := Root & "/publication-contract.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.Storage.Publication_Vectors.Vector;
+      Evidence : Improve.Storage.Verification_Vectors.Vector;
+
+      procedure Read_Publications is
+         Values : constant Improve.Storage.Publication_Vectors.Vector :=
+           Improve.Storage.Publications (Store, "PLAN-000001");
+      begin
+         pragma Unreferenced (Values);
+      end Read_Publications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Publications (Store, "PLAN-000001", Mappings);
+      Improve.Storage.Close (Store);
+      Replace_Row_Payload
+        (Path, 10, 1,
+         Improve.Persistence_Records.Encode_Publication
+           ((Plan_Id       => To_Unbounded_String ("PLAN-000001"),
+             Harness_Id    => Mappings (1).Harness_Task_Id,
+             Origin        => Mappings (1).Origin,
+             Contract      => To_Unbounded_String ("unrelated-contract"),
+             Plan_Revision => Mappings (1).Plan_Revision)));
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Publications'Access, "publication read accepted an unrelated task contract");
       Improve.Storage.Close (Store);
    end;
    declare
@@ -83,6 +114,40 @@ begin
       Improve.Storage.Close (Store);
    end;
    declare
+      Path     : constant String := Root & "/verification-revision.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.Storage.Publication_Vectors.Vector;
+      Evidence : Improve.Storage.Verification_Vectors.Vector;
+
+      procedure Read_Verifications is
+         Values : constant Improve.Storage.Verification_Vectors.Vector :=
+           Improve.Storage.Verifications (Store, "PLAN-000001");
+      begin
+         pragma Unreferenced (Values);
+      end Read_Verifications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Verification (Store, "PLAN-000001", Evidence);
+      Improve.Storage.Close (Store);
+      Replace_Row_Payload
+        (Path, 11, 1,
+         Improve.Persistence_Records.Encode_Verification
+           ((Plan_Id       => To_Unbounded_String ("PLAN-000001"),
+             Assessment_Id => Evidence (1).Assessment_Id,
+             Plan_Revision => Evidence (1).Plan_Revision + 1,
+             Contract      => Evidence (1).Contract_Fingerprint,
+             Scope         => Improve.Model.Task_Evaluation,
+             Task_Id       => Evidence (1).Task_Id,
+             Comparable    => Evidence (1).Comparable,
+             Explanation   => Evidence (1).Explanation)));
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Verifications'Access, "verification read accepted an unknown plan revision");
+      Improve.Storage.Close (Store);
+   end;
+   declare
       Path     : constant String := Root & "/verification.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
@@ -107,7 +172,7 @@ begin
              Assessment_Id => Evidence (1).Assessment_Id,
              Plan_Revision => Evidence (1).Plan_Revision,
              Contract      => Evidence (1).Contract_Fingerprint,
-             Scope         => Improve.Persistence_Records.Task_Scope,
+             Scope         => Improve.Model.Task_Evaluation,
              Task_Id       => Evidence (1).Task_Id,
              Comparable    => Evidence (1).Comparable,
              Explanation   => Evidence (1).Explanation)));

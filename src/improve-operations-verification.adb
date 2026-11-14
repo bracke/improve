@@ -9,7 +9,7 @@ with Improve.Storage;
 package body Improve.Operations.Verification is
    use Ada.Strings.Unbounded;
    use type Improve.Model.Quality_Outcome;
-   use type Improve.Storage.Verification_Scope;
+   use type Improve.Model.Verification_Scope;
 
    package Contract_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (Key_Type        => String,
@@ -94,7 +94,7 @@ package body Improve.Operations.Verification is
               (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
             loop
                declare Identity : constant String := To_String (Record_Value.Task_Id); begin
-                  if Record_Value.Scope = Improve.Storage.Task_Evaluation and then
+                  if Record_Value.Scope = Improve.Model.Task_Evaluation and then
                     Contracts.Contains (Identity) and then
                     Record_Value.Contract_Fingerprint = Contracts.Element (Identity) and then
                     Record_Value.Assessment_Id < Current.Baseline.Run_Id and then
@@ -122,7 +122,7 @@ package body Improve.Operations.Verification is
                      end if;
                      Records.Append
                        (Improve.Storage.Verification_Record'
-                          (Scope                => Improve.Storage.Task_Evaluation,
+                          (Scope                => Improve.Model.Task_Evaluation,
                            Task_Id              => Task_Result.Task_Id,
                            Plan_Revision        => Plan.Revision,
                            Contract_Fingerprint => Contracts.Element (Identity),
@@ -135,7 +135,7 @@ package body Improve.Operations.Verification is
                if Task_Id = "" then
                   Records.Append
                     (Improve.Storage.Verification_Record'
-                       (Scope                => Improve.Storage.Plan_Evaluation,
+                       (Scope                => Improve.Model.Plan_Evaluation,
                         Task_Id              => Null_Unbounded_String,
                         Plan_Revision        => Plan.Revision,
                         Contract_Fingerprint => Plan.Fingerprint,
@@ -145,7 +145,7 @@ package body Improve.Operations.Verification is
                         Explanation          => Report.Explanation));
                   Records.Append
                     (Improve.Storage.Verification_Record'
-                       (Scope                => Improve.Storage.Project_Evaluation,
+                       (Scope                => Improve.Model.Project_Evaluation,
                         Task_Id              => Null_Unbounded_String,
                         Plan_Revision        => Plan.Revision,
                         Contract_Fingerprint => Plan.Fingerprint,
