@@ -58,28 +58,34 @@ package body Improve.Operations.Inspection is
    end Findings;
 
    type View_Snapshot is record
+      Plan    : Improve.Model.Plan_Revision;
       Views   : Improve.Tasks.View_Vectors.Vector;
       History : Improve.Storage.Inspection_History;
    end record;
 
    function Snapshot_For
      (State              : in out Improve.Storage.Store;
-      Plan               : Improve.Model.Plan_Revision;
+      Plan_Id            : String;
+      Revision           : Natural;
       Current_Assessment : Natural;
       Maximum_Items      : Positive;
       Limits             : Improve.Storage.Read_Limits) return View_Snapshot is
+      History : constant Improve.Storage.Inspection_History :=
+        Improve.Storage.History
+          (State, Plan_Id, Revision, Limits.Maximum_History, Limits);
+      Plan : constant Improve.Model.Plan_Revision :=
+        Improve.Storage.Load (State, Plan_Id, History.Selected_Revision, Limits);
    begin
       if Plan.Tasks.Length > Ada.Containers.Count_Type (Maximum_Items) then
          raise Data_Error with "task query exceeds output.maximum_output_items";
       end if;
       declare
-         History : constant Improve.Storage.Inspection_History :=
-           Improve.Storage.History
-             (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
+         Views : constant Improve.Tasks.View_Vectors.Vector :=
+           Improve.Tasks.Build
+             (Plan, History.Publications, History.Verifications, Current_Assessment, Maximum_Items);
       begin
          return
-           (Views => Improve.Tasks.Build
-              (Plan, History.Publications, History.Verifications, Current_Assessment, Maximum_Items),
+           (Plan => Plan, Views => Views,
             History => History);
       end;
    end Snapshot_For;
@@ -149,7 +155,9 @@ package body Improve.Operations.Inspection is
             end if;
             declare
                Snapshot : constant View_Snapshot :=
-                 Snapshot_For (State, Plan, Current_Assessment, Maximum_Items, Limits);
+                 Snapshot_For
+                   (State, To_String (Plan.Plan_Id), Plan.Revision,
+                    Current_Assessment, Maximum_Items, Limits);
             begin
                for View of Snapshot.Views loop
                   if To_String (View.Improve_Id) = Task_Id then
@@ -174,15 +182,15 @@ package body Improve.Operations.Inspection is
             end if;
             for Summary of Summaries loop
                declare
-                  Plan : constant Improve.Model.Plan_Revision :=
-                    Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                   Remaining : constant Natural := Maximum_Items - Natural (Result.Length);
                   Snapshot : constant View_Snapshot :=
-                    (if Remaining = 0 and then not Plan.Tasks.Is_Empty
-                     then raise Data_Error with "task query exceeds output.maximum_output_items"
-                     else Snapshot_For
-                       (State, Plan, Current_Assessment, Positive'Max (1, Remaining), Limits));
+                    Snapshot_For
+                      (State, To_String (Summary.Plan_Id), Summary.Revision,
+                       Current_Assessment, Positive'Max (1, Remaining), Limits);
                begin
+                  if Remaining = 0 and then not Snapshot.Plan.Tasks.Is_Empty then
+                     raise Data_Error with "task query exceeds output.maximum_output_items";
+                  end if;
                   for View of Snapshot.Views loop
                      if Improve.Tasks.Matches (View, Filter) then
                         if Result.Length >= Ada.Containers.Count_Type (Maximum_Items) then
@@ -230,19 +238,20 @@ package body Improve.Operations.Inspection is
          Value.Plan_Count := Natural (Summaries.Length);
          for Summary of Summaries loop
             declare
-               Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                Remaining : constant Natural := Maximum_Items - Total_Items;
                Snapshot : constant View_Snapshot :=
-                 (if Remaining = 0 and then not Plan.Tasks.Is_Empty
-                  then raise Data_Error with "status query exceeds output.maximum_output_items"
-                  else Snapshot_For (State, Plan, Latest_Run, Positive'Max (1, Remaining), Limits));
+                 Snapshot_For
+                   (State, To_String (Summary.Plan_Id), Summary.Revision,
+                    Latest_Run, Positive'Max (1, Remaining), Limits);
                Latest_Project_Run : Natural := 0;
                Latest_Plan_Run : Natural := 0;
             begin
+               if Remaining = 0 and then not Snapshot.Plan.Tasks.Is_Empty then
+                  raise Data_Error with "status query exceeds output.maximum_output_items";
+               end if;
                for Evidence of Snapshot.History.Verifications loop
-                  if Evidence.Plan_Revision = Plan.Revision and then
-                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
+                  if Evidence.Plan_Revision = Snapshot.Plan.Revision and then
+                    Evidence.Contract_Fingerprint = Snapshot.Plan.Fingerprint and then
                     Evidence.Scope = Improve.Model.Project_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Project_Run
                   then
@@ -250,8 +259,8 @@ package body Improve.Operations.Inspection is
                      Value.Project_Quality := Evidence.Outcome;
                      Value.Has_Project_Verification := True;
                      Value.Project_Verification_Run := Evidence.Assessment_Id;
-                  elsif Evidence.Plan_Revision = Plan.Revision and then
-                    Evidence.Contract_Fingerprint = Plan.Fingerprint and then
+                  elsif Evidence.Plan_Revision = Snapshot.Plan.Revision and then
+                    Evidence.Contract_Fingerprint = Snapshot.Plan.Fingerprint and then
                     Evidence.Scope = Improve.Model.Plan_Evaluation and then
                     Evidence.Assessment_Id >= Latest_Plan_Run
                   then
@@ -265,9 +274,9 @@ package body Improve.Operations.Inspection is
                   raise Data_Error with "status query exceeds output.maximum_output_items";
                end if;
                Value.Tasks.Append_Vector (Snapshot.Views);
-               Last_Plan := Plan;
+               Last_Plan := Snapshot.Plan;
                Last_Views := Snapshot.Views;
-               Value.Baseline_Run := Plan.Baseline.Run_Id;
+               Value.Baseline_Run := Snapshot.Plan.Baseline.Run_Id;
                Has_Plan := True;
                Total_Items := Total_Items + Natural (Snapshot.Views.Length);
             end;

@@ -10,6 +10,7 @@ with Database.Status;
 with Database.Tables;
 with Database.Transactions;
 with Database.Types;
+with Database.UUIDs;
 with Database.Values;
 with Improve.Persistence_Records;
 with Improve.Persistence_Validation;
@@ -338,27 +339,21 @@ package body Improve.Storage is
       Metadata : in out Entity;
       Limits   : Read_Limits) is separate;
 
+   procedure Migrate_To_Version_6
+     (Item     : in out Store;
+      Metadata : in out Entity) is separate;
+
    procedure Open
      (Item     : in out Store;
       Path     : String;
       Writable : Boolean;
       Limits   : Read_Limits := Default_Read_Limits) is separate;
 
-   procedure Close (Item : in out Store) is
-   begin
-      if Item.Opened then Database.Close (Item.DB); end if;
-      Item.Opened := False;
-      Item.Writable := False;
-      Item.Schema_Version := 0;
-      Item.Next_Ids := [others => 0];
-   end Close;
+   procedure Close (Item : in out Store) is separate;
 
-   overriding procedure Finalize (Item : in out Store) is
-   begin
-      Close (Item);
-   exception
-      when others => null;
-   end Finalize;
+   function Identity (Item : Store) return String is separate;
+
+   overriding procedure Finalize (Item : in out Store) is separate;
 
    function Finding_Payload (Value : Improve.Model.Finding_Reference) return String is
      (Pair ("indicator", Ada_Quality.Types.Image (Value.Indicator)) & LF & Pair ("rule", To_String (Value.Rule)) & LF &
@@ -664,7 +659,7 @@ function Save
       Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is separate;
 
    function History
-     (Item : in out Store; Plan_Id : String;
+     (Item : in out Store; Plan_Id : String; Revision : Natural := 0;
       Maximum : Positive := Default_Query_Maximum;
       Limits  : Read_Limits := Default_Read_Limits) return Inspection_History is separate;
 

@@ -21,6 +21,7 @@ package body Improve.Operations.Publication is
       Selected     : Improve.Model.UString_Vectors.Vector;
       Approved     : Boolean := False;
       Operation_Id : Natural := 0;
+      Namespace    : Unbounded_String;
    begin
       Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       Plan := Improve.Storage.Load (State, Plan_Id, Limits);
@@ -43,11 +44,14 @@ package body Improve.Operations.Publication is
       end if;
       Improve.Publication_Authorization.Validate
         (Plan, State_Path, Quality_Path, Quality_Limits, Evidence_Limits);
+      Namespace := To_Unbounded_String
+        (Improve.Operations.Publication_Namespace
+           (State_Path, Limits, Initialize => not Dry_Run));
       if not Dry_Run then
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=
               Improve.Workflow.Publish
-                (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                (To_String (Plan.Project.Path), To_String (Namespace),
                  Plan, Task_Kind, Existing,
                  Selected_Task_Ids => Selected, Existing_Only => False, Dry_Run => True);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
@@ -68,7 +72,7 @@ package body Improve.Operations.Publication is
       declare
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
-             (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+             (To_String (Plan.Project.Path), To_String (Namespace),
               Plan, Task_Kind, Existing, Selected, False, Dry_Run);
       begin
          if not Dry_Run then

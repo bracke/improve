@@ -1,6 +1,6 @@
 # Improve state schema
 
-Improve owns schema version 5 of its state database. It uses the existing `database` crate and its typed rows,
+Improve owns schema version 6 of its state database. It uses the existing `database` crate and its typed rows,
 transactions, write-ahead recovery, process locking, and read-only open mode. Ada Quality and model runner state are
 never stored here.
 

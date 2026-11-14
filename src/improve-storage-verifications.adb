@@ -1,3 +1,4 @@
+--  Read verification evidence through the canonical joined-history decoder.
 separate (Improve.Storage)
 function Verifications
   (Item    : in out Store;
@@ -5,147 +6,31 @@ function Verifications
    Task_Id : String := "";
    Maximum : Positive := Default_Query_Maximum;
    Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is
-   Tx     : Database.Transactions.Transaction;
    Result : Verification_Vectors.Vector;
-   Owners : Improve.Model.UString_Vectors.Vector;
-   History_Count : Natural := 0;
    use type Improve.Model.Verification_Scope;
 
-   procedure Count_Row is
+   procedure Append_Plan (Id : String; Revision : Natural) is
+      Snapshot : constant Inspection_History :=
+        History (Item, Id, Revision, Limits.Maximum_History, Limits);
    begin
-      if History_Count >= Limits.Maximum_History then
-         raise Data_Error with "verification history exceeds configured item limit";
-      end if;
-      History_Count := History_Count + 1;
-   end Count_Row;
-
-   procedure Append_Row
-     (Row              : Entity;
-      Expected_Plan_Id : String;
-      Already_Counted  : Boolean := False) is
-      Payload : constant String := S (Row.Payload);
-      Data    : Improve.Persistence_Records.Verification_Data;
-   begin
-      if not Already_Counted then Count_Row; end if;
-      Require_Payload_Limit (Payload, Limits, "verification evidence payload");
-      Data := Improve.Persistence_Records.Decode_Verification (Payload);
-      Improve.Persistence_Validation.Validate
-        (Data, Expected_Plan_Id, Expected_Record_Key => S (Row.Kind));
-      declare
-         Scope : constant Improve.Model.Verification_Scope := Data.Scope;
-         Stored_Task : constant String :=
-           (if Scope = Improve.Model.Task_Evaluation and then Length (Data.Task_Id) > 0
-            then To_String (Data.Task_Id)
-            elsif Scope = Improve.Model.Task_Evaluation then S (Row.Kind)
-            else "");
-      begin
+      for Evidence of Snapshot.Verifications loop
          if Task_Id = "" or else
-           (Scope = Improve.Model.Task_Evaluation and then Stored_Task = Task_Id)
+           (Evidence.Scope = Improve.Model.Task_Evaluation and then To_String (Evidence.Task_Id) = Task_Id)
          then
             if Result.Length >= Ada.Containers.Count_Type (Maximum) then
                raise Data_Error with "verification query exceeds configured item limit";
             end if;
-            Result.Append
-              (Verification_Record'
-                 (Scope         => Scope,
-                  Task_Id       => To_Unbounded_String (Stored_Task),
-                  Plan_Revision => Data.Plan_Revision,
-                  Contract_Fingerprint => Data.Contract,
-                  Assessment_Id => Data.Assessment_Id,
-                  Outcome       => Parse_Outcome (S (Row.State)),
-                  Comparable    => Data.Comparable,
-                  Explanation   => Data.Explanation));
-            Owners.Append (To_Unbounded_String (Expected_Plan_Id));
+            Result.Append (Evidence);
          end if;
-      end;
-   exception
-      when Constraint_Error => raise Data_Error with "stored verification evidence is malformed";
-   end Append_Row;
-
-   procedure Validate_Contracts is
-      Contracts : String_Value_Maps.Map;
-      Identities : String_Value_Maps.Map;
-      Index     : Natural := Owners.First_Index;
-   begin
-      for Evidence of Result loop
-         declare
-            Owner : constant String := To_String (Owners (Index));
-            Key   : constant String :=
-              Contract_Key
-                (Owner,
-                 Evidence.Plan_Revision,
-                 (if Evidence.Scope = Improve.Model.Task_Evaluation
-                  then To_String (Evidence.Task_Id)
-                  else "@plan"));
-            Identity : constant String :=
-              Owner & Character'Val (0) & Number (Evidence.Plan_Revision) &
-              Character'Val (0) & Improve.Model.Image (Evidence.Scope) &
-              Character'Val (0) & To_String (Evidence.Task_Id) &
-              Character'Val (0) & Number (Evidence.Assessment_Id) &
-              Character'Val (0) & To_String (Evidence.Contract_Fingerprint);
-         begin
-            Cache_Contracts (Item, Owner, Evidence.Plan_Revision, Limits, Contracts);
-            if not Contracts.Contains (Key) then
-               raise Data_Error with "verification references an unknown persisted task";
-            elsif Evidence.Contract_Fingerprint /= Contracts.Element (Key) then
-               raise Data_Error with "verification does not match the persisted evaluation contract";
-            elsif Identities.Contains (Identity) then
-               raise Data_Error with "duplicate persisted verification evidence";
-            end if;
-            Identities.Insert (Identity, Evidence.Explanation);
-         end;
-         Index := Index + 1;
       end loop;
-   end Validate_Contracts;
+   end Append_Plan;
 begin
-   Database.Transactions.Begin_Read (Item.DB, Tx);
-   if Plan_Id = "" then
-      declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
-         while Entity_Tables.Has_Element (Cursor) loop
-            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-               if Row.Parent_Id = 0 then
-                  raise Data_Error with "verification evidence has no owning plan";
-               end if;
-               Append_Row (Row, Id_Image ("PLAN-", Positive (Row.Parent_Id)));
-            end;
-            Advance (Item, Tx, Verifications_Table, Cursor);
-         end loop;
-      end;
+   if Plan_Id /= "" then
+      Append_Plan (Plan_Id, 0);
    else
-      declare
-         Parent : constant Positive := Plan_Row_Id (Plan_Id);
-         Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Parent);
-      begin
-         while Entity_Tables.Has_Element (Cursor) loop
-            Append_Row (Entity_Tables.Element (Cursor), Plan_Id);
-            Advance_Children (Item, Tx, Verifications_Table, Parent, Cursor);
-         end loop;
-      end;
-      if Item.Schema_Version < 3 then
-         declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               declare
-                  Row : constant Entity := Entity_Tables.Element (Cursor);
-                  Payload : constant String := S (Row.Payload);
-               begin
-                  Count_Row;
-                  Require_Payload_Limit (Payload, Limits, "verification evidence payload");
-                  if Row.Parent_Id = 0 and then
-                    To_String (Improve.Persistence_Records.Decode_Verification (Payload).Plan_Id) = Plan_Id
-                  then
-                     Append_Row (Row, Plan_Id, Already_Counted => True);
-                  end if;
-               end;
-               Advance (Item, Tx, Verifications_Table, Cursor);
-            end loop;
-         end;
-      end if;
+      for Summary of List_All (Item, Limits.Maximum_History, Limits) loop
+         Append_Plan (To_String (Summary.Plan_Id), Summary.Revision);
+      end loop;
    end if;
-   Database.Transactions.Rollback (Tx);
-   Validate_Contracts;
    return Result;
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
 end Verifications;

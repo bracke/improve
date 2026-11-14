@@ -32,6 +32,19 @@ begin
                     (Improve.Presentation.Header ("Improve") /= "" and then
                      Terminal_Styles.Current_Color_Policy = Terminal_Styles.Color_Always,
                      "scoped terminal style was not applied");
+                  declare
+                     Nested : Improve.Presentation.Styling_Scope :=
+                       Improve.Presentation.Configure
+                         (Improve.Config.Terminal_Format, Improve.Config.Color_Never);
+                     pragma Unreferenced (Nested);
+                  begin
+                     Assert
+                       (Terminal_Styles.Current_Color_Policy = Terminal_Styles.Color_Never,
+                        "nested terminal style was not applied");
+                  end;
+                  Assert
+                    (Terminal_Styles.Current_Color_Policy = Terminal_Styles.Color_Always,
+                     "nested terminal style did not restore its owner scope");
                end;
                Assert
                  (Terminal_Styles.Current_Color_Policy = Previous,

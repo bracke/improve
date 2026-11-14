@@ -18,6 +18,8 @@ package body Improve.Operations.Reconciliation is
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) is
       State : Improve.Storage.Store;
+      Namespace : constant String := Improve.Operations.Publication_Namespace
+        (State_Path, Limits, Initialize => True);
 
       procedure Reconcile_Plan
         (Project : Improve.Model.Project_Reference;
@@ -59,7 +61,7 @@ package body Improve.Operations.Reconciliation is
                declare
                   Reconciled : constant Improve.Workflow.Publication_Result :=
                     Improve.Workflow.Publish
-                      (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                      (To_String (Plan.Project.Path), Namespace,
                        Plan, Requested_Kind,
                        Existing => Publications, Selected_Task_Ids => Selected,
                        Existing_Only => True);

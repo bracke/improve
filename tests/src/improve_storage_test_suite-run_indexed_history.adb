@@ -3,6 +3,7 @@ procedure Run_Indexed_History is
    Root        : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-storage-history");
    Path        : constant String := Root & "/state.db";
    Store       : Improve.Storage.Store;
+   Store_Id    : Unbounded_String;
    Plan        : Improve.Model.Plan_Revision := Fixture (Root);
    Stored      : Improve.Model.Plan_Revision;
    Mappings    : Improve.Storage.Publication_Vectors.Vector;
@@ -10,6 +11,8 @@ procedure Run_Indexed_History is
    Rejected    : Boolean := False;
 begin
    Improve.Storage.Open (Store, Path, Writable => True);
+   Store_Id := To_Unbounded_String (Improve.Storage.Identity (Store));
+   Assert (Length (Store_Id) > 0, "state store has no persistent identity");
    Seed (Store, Plan, 4, Stored);
    declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
      Improve.Storage.List (Store, Plan.Project);
@@ -168,9 +171,12 @@ begin
    declare
       Snapshot : constant Improve.Storage.Inspection_History :=
         Improve.Storage.History (Store, To_String (Stored.Plan_Id));
+      Historical : constant Improve.Storage.Inspection_History :=
+        Improve.Storage.History (Store, To_String (Stored.Plan_Id), Stored.Revision);
    begin
       Assert
-        (Snapshot.Publications.Length = 2 and then Snapshot.Verifications.Length = 2,
+        (Snapshot.Selected_Revision = 5 and then Historical.Selected_Revision = Stored.Revision and then
+         Snapshot.Publications.Length = 2 and then Snapshot.Verifications.Length = 2,
          "joined inspection history omitted persisted records");
    end;
    Rejected := False;
@@ -185,6 +191,14 @@ begin
    end;
    Assert (Rejected, "publication query ignored its materialization limit");
    Improve.Storage.Close (Store);
+   declare Moved : constant String := Root & "/moved-state.db"; begin
+      Ada.Directories.Rename (Path, Moved);
+      Improve.Storage.Open (Store, Moved, Writable => False);
+      Assert
+        (Improve.Storage.Identity (Store) = To_String (Store_Id),
+         "moving the state database changed its persistent identity");
+      Improve.Storage.Close (Store);
+   end;
    Project_Tools.Files.Delete_Tree (Root);
 exception
    when others =>

@@ -18,6 +18,8 @@ package body Improve.Operations.Recovery is
       State   : Improve.Storage.Store;
       Pending : Improve.Storage.Operation_Vectors.Vector;
       Value   : Result;
+      Namespace : constant String := Improve.Operations.Publication_Namespace
+        (State_Path, Limits, Initialize => True);
    begin
       if not Project_Tools.Files.File_Exists (State_Path) then
          raise Dependency_Error with "Improve state database is unavailable: " & State_Path;
@@ -52,7 +54,7 @@ package body Improve.Operations.Recovery is
                   else Requested_Kind);
                Existing_Result : constant Improve.Workflow.Publication_Result :=
                  Improve.Workflow.Publish
-                   (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                   (To_String (Plan.Project.Path), Namespace,
                     Plan, Kind, Existing => Existing,
                     Selected_Task_Ids => Operation.Task_Ids, Existing_Only => True, Dry_Run => True);
                All_Existing : constant Boolean :=
@@ -75,7 +77,7 @@ package body Improve.Operations.Recovery is
                      Evidence_Limits,
                      Retain_On_Failure => True);
                   Published := Improve.Workflow.Publish
-                    (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                    (To_String (Plan.Project.Path), Namespace,
                      Plan, Kind, Existing => Existing,
                      Selected_Task_Ids => Operation.Task_Ids);
                end if;

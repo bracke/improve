@@ -207,8 +207,8 @@ package Improve.Refinement is
       Provider       : not null access Adapter'Class;
       Existing_Tasks : Improve.Model.Task_Vectors.Vector := Improve.Model.Task_Vectors.Empty_Vector)
       return Refinement_Result;
-   --  Request and validate optional refinement. Every adapter failure or
-   --  rejected proposal returns the unchanged deterministic draft.
+   --  Request and validate optional refinement. Documented Adapter_Error failures and rejected proposals return
+   --  the unchanged deterministic draft; programming and resource failures propagate to the caller.
    --  @param Draft Deterministic plan draft.
    --  @param Settings Validated refinement limits.
    --  @param Provider Noninteractive adapter.

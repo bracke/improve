@@ -3,6 +3,7 @@ with Ada.Strings.UTF_Encoding;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Types;
+with Ada.Task_Identification;
 with Improve.Text;
 
 package body Improve.Presentation is
@@ -10,25 +11,53 @@ package body Improve.Presentation is
    use Improve.Text;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Tasks.Operational_Status;
+   use type Ada.Task_Identification.Task_Id;
 
    LF : constant Character := Character'Val (10);
 
    protected Styling_Lock is
-      entry Acquire;
-      procedure Release;
+      procedure Try_Acquire
+        (Owner    : Ada.Task_Identification.Task_Id;
+         Acquired : out Boolean);
+      entry Wait_Acquire (Owner : Ada.Task_Identification.Task_Id);
+      procedure Release (Owner : Ada.Task_Identification.Task_Id);
    private
-      Busy : Boolean := False;
+      Current_Owner : Ada.Task_Identification.Task_Id := Ada.Task_Identification.Null_Task_Id;
+      Depth         : Natural := 0;
    end Styling_Lock;
 
    protected body Styling_Lock is
-      entry Acquire when not Busy is
+      procedure Try_Acquire
+        (Owner    : Ada.Task_Identification.Task_Id;
+         Acquired : out Boolean) is
       begin
-         Busy := True;
-      end Acquire;
+         if Depth = 0 then
+            Current_Owner := Owner;
+            Depth := 1;
+            Acquired := True;
+         elsif Current_Owner = Owner then
+            Depth := Depth + 1;
+            Acquired := True;
+         else
+            Acquired := False;
+         end if;
+      end Try_Acquire;
 
-      procedure Release is
+      entry Wait_Acquire (Owner : Ada.Task_Identification.Task_Id) when Depth = 0 is
       begin
-         Busy := False;
+         Current_Owner := Owner;
+         Depth := 1;
+      end Wait_Acquire;
+
+      procedure Release (Owner : Ada.Task_Identification.Task_Id) is
+      begin
+         if Depth = 0 or else Current_Owner /= Owner then
+            raise Program_Error with "terminal styling scope ownership is inconsistent";
+         end if;
+         Depth := Depth - 1;
+         if Depth = 0 then
+            Current_Owner := Ada.Task_Identification.Null_Task_Id;
+         end if;
       end Release;
    end Styling_Lock;
 
@@ -39,9 +68,14 @@ package body Improve.Presentation is
      (Format : Improve.Config.Output_Format;
       Color  : Improve.Config.Color_Mode) return Styling_Scope is
       use Improve.Config;
+      Owner    : constant Ada.Task_Identification.Task_Id := Ada.Task_Identification.Current_Task;
+      Acquired : Boolean;
    begin
       return Result : Styling_Scope do
-         Styling_Lock.Acquire;
+         Styling_Lock.Try_Acquire (Owner, Acquired);
+         if not Acquired then
+            Styling_Lock.Wait_Acquire (Owner);
+         end if;
          Result.Acquired := True;
          Result.Previous := Terminal_Styles.Current_Color_Policy;
          if Format = JSON_Format then
@@ -64,7 +98,7 @@ package body Improve.Presentation is
          exception
             when others => null;
          end;
-         Styling_Lock.Release;
+         Styling_Lock.Release (Ada.Task_Identification.Current_Task);
          Item.Acquired := False;
       end if;
    end Finalize;

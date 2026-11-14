@@ -10,7 +10,7 @@ with Improve.Model;
 package Improve.Storage is
    --  Improve-owned transactional persistence for immutable plans and append-only evidence.
 
-   Current_Schema_Version : constant Positive := 5;
+   Current_Schema_Version : constant Positive := 6;
    --  Supported Improve state schema version.
 
    type Store is limited private;
@@ -110,10 +110,12 @@ package Improve.Storage is
    --  Ordered verification records.
 
    type Inspection_History is record
+      Selected_Revision : Positive := 1;
       Publications  : Publication_Vectors.Vector;
       Verifications : Verification_Vectors.Vector;
    end record;
    --  Publication and verification history read from one database snapshot.
+   --  @field Selected_Revision Exact immutable plan revision selected in the history transaction.
    --  @field Publications Native task mappings visible in the snapshot.
    --  @field Verifications Quality evidence visible in the same snapshot.
 
@@ -153,6 +155,11 @@ package Improve.Storage is
    procedure Close (Item : in out Store);
    --  Close a store; closing an already closed store is harmless.
    --  @param Item Store handle.
+
+   function Identity (Item : Store) return String;
+   --  Return the persistent UUID of this Improve state store, or empty for a legacy read-only store.
+   --  @param Item Open store.
+   --  @return Persistent state-store identity.
 
    function Save
      (Item   : in out Store;
@@ -288,11 +295,13 @@ package Improve.Storage is
    function History
      (Item    : in out Store;
       Plan_Id : String;
+      Revision : Natural := 0;
       Maximum : Positive := Default_Query_Maximum;
       Limits  : Read_Limits := Default_Read_Limits) return Inspection_History;
    --  Read publication and verification history in one database transaction.
    --  @param Item Open store.
    --  @param Plan_Id Owning plan identity.
+   --  @param Revision Exact revision to select, or zero for the latest visible revision.
    --  @param Maximum Maximum records of each kind to materialize.
    --  @param Limits Hard limits for persisted history and payloads.
    --  @return Consistent joined-history snapshot.
@@ -367,6 +376,7 @@ private
       Opened   : Boolean := False;
       Writable : Boolean := False;
       Schema_Version : Natural := 0;
+      Store_Id : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    overriding procedure Finalize (Item : in out Store);

@@ -4,12 +4,24 @@ with Ada.Strings.Unbounded;
 package body Improve.Operations is
    use type Ada.Strings.Unbounded.Unbounded_String;
 
-   function Publication_Namespace (State_Path : String) return String is
+   function Publication_Namespace
+     (State_Path : String;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Initialize : Boolean := False) return String is
+      State : Improve.Storage.Store;
    begin
       if State_Path = "" then
          raise Argument_Error with "Improve state path must not be empty";
+      elsif not Ada.Directories.Exists (State_Path) then
+         raise Dependency_Error with "Improve state database not found: " & State_Path;
       end if;
-      return Ada.Directories.Full_Name (State_Path);
+      Improve.Storage.Open (State, State_Path, Writable => Initialize, Limits => Limits);
+      declare Store_Id : constant String := Improve.Storage.Identity (State); begin
+         Improve.Storage.Close (State);
+         return
+           (if Store_Id /= "" then "store:" & Store_Id
+            else "legacy-preview:" & Ada.Directories.Full_Name (State_Path));
+      end;
    exception
       when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
          raise Argument_Error with "Improve state path is invalid: " & State_Path;

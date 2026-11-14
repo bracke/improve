@@ -3,6 +3,7 @@ separate (Improve.Storage)
 function History
   (Item    : in out Store;
    Plan_Id : String;
+   Revision : Natural := 0;
    Maximum : Positive := Default_Query_Maximum;
    Limits  : Read_Limits := Default_Read_Limits) return Inspection_History is
    Tx              : Database.Transactions.Transaction;
@@ -11,6 +12,37 @@ function History
    Publication_Count  : Natural := 0;
    Verification_Count : Natural := 0;
    use type Improve.Model.Verification_Scope;
+
+   procedure Select_Revision is
+      Cursor   : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Parent);
+      Scanned  : Natural := 0;
+      Selected : Natural := 0;
+   begin
+      while Entity_Tables.Has_Element (Cursor) loop
+         if Scanned >= Limits.Maximum_History then
+            raise Data_Error with "plan revision history exceeds configured item limit";
+         end if;
+         Scanned := Scanned + 1;
+         declare
+            Payload : constant String := S (Entity_Tables.Element (Cursor).Payload);
+            Value   : Positive;
+         begin
+            Require_Payload_Limit (Payload, Limits, "plan revision payload");
+            Value := Positive'Value (Field (Payload, "revision"));
+            if (Revision = 0 and then Value > Selected) or else Value = Revision then
+               Selected := Value;
+            end if;
+         end;
+         Advance_Children (Item, Tx, Revisions_Table, Parent, Cursor);
+      end loop;
+      if Selected = 0 or else (Revision > 0 and then Selected /= Revision) then
+         raise Argument_Error with "unknown plan revision " & Plan_Id;
+      end if;
+      Result.Selected_Revision := Positive (Selected);
+   exception
+      when Constraint_Error =>
+         raise Data_Error with "stored plan revision index is malformed";
+   end Select_Revision;
 
    procedure Count_Row (Count : in out Natural; Context : String) is
    begin
@@ -168,6 +200,7 @@ function History
    end Validate_Contracts;
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
+   Select_Revision;
    Read_Current (Publications_Table);
    Read_Current (Verifications_Table);
    if Item.Schema_Version < 3 then

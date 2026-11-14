@@ -16,10 +16,15 @@ package Improve.Operations is
    --  @param Expected Database-qualified identity stored with remediation state.
    --  @param Actual Identity resolved from the selected Ada Quality database.
 
-   function Publication_Namespace (State_Path : String) return String;
-   --  Return the canonical namespace used to authenticate native task ownership.
+   function Publication_Namespace
+     (State_Path : String;
+      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Initialize : Boolean := False) return String;
+   --  Return the persistent namespace used to authenticate native task ownership.
    --  @param State_Path Improve-owned state database path.
-   --  @return Stable canonical state-store identity.
+   --  @param Limits Hard limits for an authorized schema migration.
+   --  @param Initialize Whether a writable command may establish a missing legacy identity.
+   --  @return Persistent identity, or a path-qualified preview identity for legacy read-only state.
 
    function Storage_Read_Limits
      (Settings : Improve.Config.Settings) return Improve.Storage.Read_Limits;

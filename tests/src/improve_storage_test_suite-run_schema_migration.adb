@@ -30,7 +30,8 @@ begin
    end;
    Improve.Storage.Open (Store, Path, Writable => True, Limits => Limits);
    Assert
-     (Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).Length = 2 and then
+     (Improve.Storage.Identity (Store) /= "" and then
+      Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).Length = 2 and then
       Improve.Storage.Verifications (Store, To_String (Stored.Plan_Id)).Length = 2,
       "schema migration did not preserve indexed history");
    declare

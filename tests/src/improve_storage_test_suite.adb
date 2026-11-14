@@ -1,4 +1,5 @@
 with Ada.Containers;
+with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
