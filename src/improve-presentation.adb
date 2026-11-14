@@ -228,7 +228,8 @@ package body Improve.Presentation is
             Append
               (Result, To_String (Value.Improve_Id) & "  " &
                (if Length (Value.Harness_Id) = 0 then "-" else To_String (Value.Harness_Id)) & "  " &
-               Improve.Tasks.Image (Value.Status) & "  " & Safe_Text (To_String (Value.Title)) & LF);
+               Improve.Tasks.Image (Improve.Tasks.Status (Value)) & "  " &
+               Safe_Text (To_String (Value.Title)) & LF);
          end loop;
       end if;
       return To_String (Result);
@@ -289,7 +290,7 @@ package body Improve.Presentation is
          for Item in Improve.Tasks.Operational_Status loop
             declare Count : Natural := 0; begin
                for View of Value.Tasks loop
-                  if View.Status = Item then Count := Count + 1; end if;
+                  if Improve.Tasks.Status (View) = Item then Count := Count + 1; end if;
                end loop;
                if Count > 0 then
                   Append

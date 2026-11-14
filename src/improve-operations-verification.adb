@@ -8,6 +8,7 @@ with Improve.Storage;
 
 package body Improve.Operations.Verification is
    use Ada.Strings.Unbounded;
+   use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Model.Verification_Scope;
 
@@ -59,12 +60,14 @@ package body Improve.Operations.Verification is
             begin
                if Values.Is_Empty then
                   raise Argument_Error with "project has no stored remediation plan";
+               elsif Values.Length /= 1 then
+                  raise Data_Error with "project has ambiguous stored remediation plans";
                end if;
                Plan :=
                  (if Revision > 0 then
                      Improve.Storage.Load
-                       (State, To_String (Values.Last_Element.Plan_Id), Positive (Revision), Limits)
-                  else Improve.Storage.Load (State, To_String (Values.Last_Element.Plan_Id), Limits));
+                       (State, To_String (Values.First_Element.Plan_Id), Positive (Revision), Limits)
+                  else Improve.Storage.Load (State, To_String (Values.First_Element.Plan_Id), Limits));
             end;
          end;
       end if;
@@ -115,7 +118,9 @@ package body Improve.Operations.Verification is
             Improve.Storage.Close (State);
             declare
                Report : constant Improve.Verification.Report :=
-                 Improve.Verification.Evaluate (Plan, Current, Settings, Task_Id, Previously_Verified);
+                 Improve.Verification.Evaluate
+                   (Plan, Current, Improve.Operations.Verification_Policy (Settings),
+                    Task_Id, Previously_Verified);
                Records : Improve.Storage.Verification_Vectors.Vector;
             begin
                for Task_Result of Report.Tasks loop

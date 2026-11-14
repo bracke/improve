@@ -14,9 +14,11 @@ begin
                Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
                Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
                First    : constant Improve.Model.Plan_Revision :=
-                 Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+                 Improve.Planner.Generate
+                   (Selected, Findings, Improve.Operations.Planning_Policy (Improve.Config.Defaults));
                Second   : constant Improve.Model.Plan_Revision :=
-                 Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+                 Improve.Planner.Generate
+                   (Selected, Findings, Improve.Operations.Planning_Policy (Improve.Config.Defaults));
             begin
                Assert (First.Fingerprint = Second.Fingerprint, "equivalent planning was not deterministic");
                Assert (First.Tasks.Length = 3, "fixture did not create three bounded tasks");
@@ -61,9 +63,11 @@ begin
                Limited_Settings.Maximum_Tasks_Per_Plan := 1;
                declare
                   Grouped : constant Improve.Model.Plan_Revision :=
-                    Improve.Planner.Generate (Selected, Values, Grouped_Settings);
+                    Improve.Planner.Generate
+                      (Selected, Values, Improve.Operations.Planning_Policy (Grouped_Settings));
                   Split : constant Improve.Model.Plan_Revision :=
-                    Improve.Planner.Generate (Selected, Values, Split_Settings);
+                    Improve.Planner.Generate
+                      (Selected, Values, Improve.Operations.Planning_Policy (Split_Settings));
                begin
                   Assert (Grouped.Tasks.Length = 1, "related findings were not consolidated");
                   Assert (Grouped.Tasks.First_Element.Finding_Keys.Length = 2,
@@ -88,7 +92,8 @@ begin
                   begin
                      declare
                         Plan : constant Improve.Model.Plan_Revision :=
-                          Improve.Planner.Generate (Selected, Values, Limited_Settings);
+                          Improve.Planner.Generate
+                            (Selected, Values, Improve.Operations.Planning_Policy (Limited_Settings));
                         pragma Unreferenced (Plan);
                      begin
                         null;
@@ -128,9 +133,11 @@ begin
                High_Findings : constant Improve.Model.Finding_Vectors.Vector :=
                  Improve.Findings.Normalize (Selected, Ada_Quality.Types.High, True);
                Low_Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Planner.Generate (Selected, Low_Findings, Low_Settings);
+                 Improve.Planner.Generate
+                   (Selected, Low_Findings, Improve.Operations.Planning_Policy (Low_Settings));
                High_Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Planner.Generate (Selected, High_Findings, High_Settings);
+                 Improve.Planner.Generate
+                   (Selected, High_Findings, Improve.Operations.Planning_Policy (High_Settings));
                Limit_Plan : Improve.Model.Plan_Revision;
             begin
                Limit_Settings.Maximum_Quality_Database_Bytes := 2_000_000_000;
@@ -140,7 +147,8 @@ begin
                Limit_Settings.Maximum_Source_Total_Bytes := 2_000_000_000;
                Limit_Settings.Maximum_Assessment_Findings := 1_000_000;
                Limit_Settings.Maximum_Tasks_Per_Plan := 10_000;
-               Limit_Plan := Improve.Planner.Generate (Selected, Low_Findings, Limit_Settings);
+               Limit_Plan := Improve.Planner.Generate
+                 (Selected, Low_Findings, Improve.Operations.Planning_Policy (Limit_Settings));
                Improve.Source.Close (Quality);
                Assert
                  (Low_Findings.Length > High_Findings.Length and then
@@ -178,7 +186,8 @@ begin
                  Improve.Source.Select_Assessment (Quality, Project, Data.Run);
                Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
             begin
-               First_Plan := Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+               First_Plan := Improve.Planner.Generate
+                 (Selected, Findings, Improve.Operations.Planning_Policy (Improve.Config.Defaults));
                First_Snapshot := Selected.Baseline.Snapshot_Id;
             end;
             Improve.Source.Close (Quality);
@@ -198,7 +207,8 @@ begin
                  Improve.Source.Select_Assessment (Quality, Project, Data.Run);
                Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
                Second_Plan : constant Improve.Model.Plan_Revision :=
-                 Improve.Planner.Generate (Selected, Findings, Improve.Config.Defaults);
+                 Improve.Planner.Generate
+                   (Selected, Findings, Improve.Operations.Planning_Policy (Improve.Config.Defaults));
             begin
                Assert
                  (Selected.Baseline.Snapshot_Id /= First_Snapshot and then

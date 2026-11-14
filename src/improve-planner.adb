@@ -6,7 +6,6 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Checks;
-with Ada_Quality.Types;
 with Improve.Rules;
 
 package body Improve.Planner is
@@ -36,11 +35,11 @@ package body Improve.Planner is
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
 
-   function Semantic_Configuration_Fingerprint (Settings : Improve.Config.Settings) return String is
+   function Semantic_Configuration_Fingerprint (Settings : Policy) return String is
      (Stable_Digest
-        (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
+        (Ada_Quality.Types.Severity'Image (Settings.Minimum_Severity) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
-         Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &
+         Boolean_Image (Settings.Allow_Investigation) & "|" &
          Boolean_Image (Settings.Require_Review)));
 
    function Group_Key (Item : Improve.Model.Finding_Reference) return String is
@@ -75,7 +74,7 @@ package body Improve.Planner is
    function Make_Task
      (Item     : Group;
       Sequence : Positive;
-      Settings : Improve.Config.Settings) return Improve.Model.Task_Specification is
+      Settings : Policy) return Improve.Model.Task_Specification is
       First    : constant Improve.Model.Finding_Reference := Item.Findings.First_Element;
       Strategy : constant Improve.Rules.Remediation_Strategy := Improve.Rules.Strategy_For (First.Indicator);
       Aggregate_Coverage : constant Boolean :=
@@ -138,7 +137,7 @@ package body Improve.Planner is
    function Generate
      (Selected : Improve.Source.Selection;
       Findings : Improve.Model.Finding_Vectors.Vector;
-      Settings : Improve.Config.Settings;
+      Settings : Policy;
       Working_Source_Id : String := "") return Improve.Model.Plan_Revision is
       Groups : Group_Vectors.Vector;
       Group_Indexes : Group_Index_Maps.Map;
@@ -161,7 +160,7 @@ package body Improve.Planner is
             then
                Groups (Group_Indexes.Element (Key)).Findings.Append (Finding);
             else
-               if Groups.Length >= Ada.Containers.Count_Type (Settings.Maximum_Tasks_Per_Plan) then
+               if Groups.Length >= Ada.Containers.Count_Type (Settings.Maximum_Tasks) then
                   raise Data_Error with "planned task count exceeds planning.maximum_tasks_per_plan";
                end if;
                declare New_Group : Group; begin

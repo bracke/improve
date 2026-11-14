@@ -38,25 +38,24 @@ package body Improve.Tasks is
          when Freshness_Current => "current",
          when Freshness_Historical => "historical");
 
-   function Status_Of
-     (Harness          : String;
-      Quality          : Improve.Model.Quality_Outcome;
-      Has_Verification : Boolean) return Operational_Status is
+   function Status (Value : Task_View) return Operational_Status is
+      Harness : constant String := To_String (Value.Harness_State);
+      Current : constant Boolean := Value.Freshness = Freshness_Current;
    begin
-      if Has_Verification and then Quality = Improve.Model.Verified and then
+      if Current and then Value.Quality = Improve.Model.Verified and then
         Harness in "complete" | "verification"
       then
          return Verified;
-      elsif Has_Verification and then Quality = Improve.Model.Regressed then return Regressed;
-      elsif Has_Verification and then Quality = Improve.Model.Superseded then return Superseded;
+      elsif Current and then Value.Quality = Improve.Model.Regressed then return Regressed;
+      elsif Current and then Value.Quality = Improve.Model.Superseded then return Superseded;
       elsif Harness = "" then return Proposed;
       elsif Harness = "running" then return In_Progress;
       elsif Harness = "blocked" then return Blocked;
       elsif Harness = "failed" then return Failed;
       elsif Harness = "cancelled" then return Cancelled;
       elsif Harness = "rejected" then return Rejected;
-      elsif Harness in "complete" | "verification" and then Has_Verification then
-         case Quality is
+      elsif Harness in "complete" | "verification" and then Current then
+         case Value.Quality is
             when Improve.Model.Partially_Resolved => return Partially_Resolved;
             when Improve.Model.Still_Failing => return Still_Failing;
             when Improve.Model.Inconclusive => return Inconclusive;
@@ -67,7 +66,7 @@ package body Improve.Tasks is
       else
          return Published;
       end if;
-   end Status_Of;
+   end Status;
 
    function Build
      (Plan          : Improve.Model.Plan_Revision;
@@ -162,8 +161,6 @@ package body Improve.Tasks is
               (if not View.Has_Verification or else Current_Assessment = 0 then Freshness_Unknown
                elsif View.Verification_Run = Current_Assessment then Freshness_Current
                else Freshness_Historical);
-            View.Status := Status_Of
-              (To_String (View.Harness_State), View.Quality, View.Freshness = Freshness_Current);
             Result.Append (View);
          end;
       end loop;
@@ -195,8 +192,8 @@ package body Improve.Tasks is
    function Matches (Value : Task_View; Filter : String) return Boolean is
    begin
       if Filter in "" | "all" then return True;
-      elsif Filter = "unresolved" then return Value.Status not in Verified | Superseded;
-      else return Image (Value.Status) = Filter;
+      elsif Filter = "unresolved" then return Status (Value) not in Verified | Superseded;
+      else return Image (Status (Value)) = Filter;
       end if;
    end Matches;
 

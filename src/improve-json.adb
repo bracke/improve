@@ -266,7 +266,8 @@ package body Improve.JSON is
       Doc.Insert
         (Item, "verification_current",
          Doc.New_Boolean (Value.Freshness = Improve.Tasks.Freshness_Current));
-      Doc.Insert (Item, "status", Doc.New_String (Improve.Tasks.Image (Value.Status)));
+      Doc.Insert
+        (Item, "status", Doc.New_String (Improve.Tasks.Image (Improve.Tasks.Status (Value))));
       Doc.Append (List, Item);
    end Append_Task;
 

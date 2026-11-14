@@ -120,9 +120,33 @@ begin
                         "typed evidence limits did not preserve validated configuration");
                   end;
                   Project_Tools.Files.Write_Text_File (Path, Improve.Config.Image (Value));
-                  Assert
-                    (Improve.Config.Load (Path).Maximum_Quality_Findings = 7_000,
-                     "rendered configuration was not parseable");
+                  declare
+                     Reloaded : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                     Planning : constant Improve.Planner.Policy :=
+                       Improve.Operations.Planning_Policy (Reloaded);
+                     Verification : constant Improve.Verification.Policy :=
+                       Improve.Operations.Verification_Policy (Reloaded);
+                     Refinement : constant Improve.Refinement.Limits :=
+                       Improve.Operations.Refinement_Limits (Reloaded);
+                  begin
+                     Assert
+                       (Improve.Config.Image (Reloaded) = Improve.Config.Image (Value),
+                        "rendered configuration did not round-trip every setting");
+                     Assert
+                       (Planning.Maximum_Tasks = 7 and then
+                        Planning.Maximum_Findings_Per_Task = 6 and then
+                        not Planning.Allow_Investigation and then not Planning.Require_Review and then
+                        Verification.Maximum_Assessment_Findings = 77 and then
+                        not Verification.Require_Fresh_Measurement and then
+                        not Verification.Require_Same_Policy and then
+                        Verification.Require_Same_Toolchain and then
+                        not Verification.Require_No_New_Critical_Findings and then
+                        Refinement.Maximum_Context_Bytes = 4_096 and then
+                        Refinement.Maximum_File_Bytes = 2_048 and then
+                        Refinement.Maximum_Response_Bytes = 1_024 and then
+                        Refinement.Timeout_Seconds = 2,
+                        "domain policy translation lost validated configuration");
+                  end;
                   declare
                      Escaped : Improve.Config.Settings := Value;
                   begin

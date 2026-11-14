@@ -34,7 +34,7 @@ package body Improve.Operations.Planning is
               Settings.Maximum_Normalized_Finding_Bytes);
          Draft : constant Improve.Model.Plan_Revision :=
            Improve.Planner.Generate
-             (Selected, Findings, Settings,
+             (Selected, Findings, Improve.Operations.Planning_Policy (Settings),
               Improve.Source.Working_Fingerprint
                 (To_String (Selected.Project.Path), State_Path,
                  Settings.Maximum_Source_File_Bytes, Settings.Maximum_Source_Total_Bytes));

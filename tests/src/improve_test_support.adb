@@ -17,6 +17,7 @@ with Database.Transactions;
 with Database.Values;
 with Improve.Config;
 with Improve.Findings;
+with Improve.Operations;
 with Improve.Planner;
 with Improve.Source;
 with Hostkit.Fs;
@@ -487,7 +488,9 @@ package body Improve_Test_Support is
            Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
          Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
          Findings : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Selected);
-         Result   : constant Improve.Model.Plan_Revision := Improve.Planner.Generate (Selected, Findings, Settings);
+         Result   : constant Improve.Model.Plan_Revision :=
+           Improve.Planner.Generate
+             (Selected, Findings, Improve.Operations.Planning_Policy (Settings));
       begin
          Improve.Source.Close (Quality);
          return Result;

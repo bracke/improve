@@ -128,7 +128,9 @@ begin
                     Improve.Source.Resolve_Project (Quality, Id_Image (Data.Project));
                   Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Quality, Project);
                   Draft    : Improve.Model.Plan_Revision :=
-                    Improve.Planner.Generate (Selected, Improve.Findings.Normalize (Selected), Improve.Config.Defaults);
+                    Improve.Planner.Generate
+                      (Selected, Improve.Findings.Normalize (Selected),
+                       Improve.Operations.Planning_Policy (Improve.Config.Defaults));
                begin
                   Draft.Tasks (2).Dependencies.Append (Draft.Tasks (1).Id);
                   Improve.Storage.Open (Store, State, Writable => True);

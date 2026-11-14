@@ -213,6 +213,42 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Duplicate_Row;
 
+   procedure Duplicate_Plan (Path : String; Task_Count : Positive) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Raw_Entity;
+      Status : Database.Status.Result;
+
+      procedure Clone
+        (Table, Source_Id, New_Id, Parent_Id : Positive) is
+      begin
+         Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Source_Id), Row);
+         Assert (Status.Code = Database.Status.Ok, "ambiguous-plan source row is missing");
+         Row.Id := New_Id;
+         Row.Parent_Id := Parent_Id;
+         Assert
+           (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+            "ambiguous-plan fixture row could not be inserted");
+      end Clone;
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for plan duplication");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Clone (5, 1, 2, 1);
+      Clone (6, 1, 2, 2);
+      for Index in 1 .. Task_Count loop
+         Clone (7, Index, 100 + Index, 2);
+      end loop;
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Duplicate_Plan;
+
    procedure Exhaust_Project_Identities (Path : String) is separate;
 
    procedure Insert_Unknown_Finding_Link
@@ -222,7 +258,7 @@ package body Improve_Storage_Test_Suite is
      (Path : String; Task_Row : Positive) is separate;
 
    type Test_Id is
-     (Invariant_Validation, Indexed_History, Schema_Migration, Operational_Limits,
+     (Invariant_Validation, Indexed_History, Ambiguous_Plans, Schema_Migration, Operational_Limits,
       Identity_Exhaustion, Corrupt_Links, Corrupt_Revision_Data,
       Corrupt_Task_Detail, Corrupt_Provenance, Corrupt_Persistence_Context);
 
@@ -332,6 +368,7 @@ package body Improve_Storage_Test_Suite is
 
    procedure Run_Invariant_Validation is separate;
    procedure Run_Indexed_History is separate;
+   procedure Run_Ambiguous_Plans is separate;
    procedure Run_Schema_Migration is separate;
    procedure Run_Operational_Limits is separate;
    procedure Run_Identity_Exhaustion is separate;
@@ -346,6 +383,7 @@ package body Improve_Storage_Test_Suite is
       case Item.Id is
          when Invariant_Validation => Run_Invariant_Validation;
          when Indexed_History => Run_Indexed_History;
+         when Ambiguous_Plans => Run_Ambiguous_Plans;
          when Schema_Migration => Run_Schema_Migration;
          when Operational_Limits => Run_Operational_Limits;
          when Identity_Exhaustion => Run_Identity_Exhaustion;

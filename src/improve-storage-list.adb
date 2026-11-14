@@ -57,7 +57,10 @@ function List
 begin
    Database.Transactions.Begin_Read (Item.DB, Tx);
    Read (Current_Key);
-   if Legacy_Key /= Current_Key then Read (Legacy_Key); end if;
+   if Result.Is_Empty and then Legacy_Key /= Current_Key then Read (Legacy_Key); end if;
+   if Result.Length > 1 then
+      raise Data_Error with "project has ambiguous persisted remediation plans";
+   end if;
    Database.Transactions.Rollback (Tx);
    return Result;
 exception

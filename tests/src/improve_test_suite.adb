@@ -217,7 +217,8 @@ package body Improve_Test_Suite is
          Provider : aliased Fake_Adapter :=
            (Mode => Mode, Draft => Draft, Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
          Result : constant Improve.Refinement.Refinement_Result :=
-           Improve.Refinement.Refine (Draft, Settings, Provider'Access);
+           Improve.Refinement.Refine
+             (Draft, Improve.Operations.Refinement_Limits (Settings), Provider'Access);
       begin
          Assert (Result.Status = Expected, "unexpected agent fallback status for " & Label);
          Assert

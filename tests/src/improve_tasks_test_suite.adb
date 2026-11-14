@@ -89,7 +89,9 @@ package body Improve_Tasks_Test_Suite is
                   Explanation          => To_Unbounded_String ("matrix")));
          end if;
          Views := Improve.Tasks.Build (Plan, Publications, Evidence, Current_Assessment => Current_Run);
-         Assert (Views.First_Element.Status = Expected, "unexpected operational task status");
+         Assert
+           (Improve.Tasks.Status (Views.First_Element) = Expected,
+            "unexpected operational task status");
       end Check;
    begin
       declare

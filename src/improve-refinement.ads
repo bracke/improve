@@ -1,6 +1,5 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Improve.Config;
 with Improve.Model;
 
 --  Optional agent refinement behind a bounded, typed, noninteractive adapter.
@@ -9,6 +8,22 @@ package Improve.Refinement is
 
    subtype UString is Ada.Strings.Unbounded.Unbounded_String;
    --  Dynamically sized refinement text.
+
+   type Limits is record
+      Maximum_Context_Bytes     : Positive := 131_072;
+      Maximum_File_Bytes        : Positive := 32_768;
+      Maximum_Response_Bytes    : Positive := 131_072;
+      Timeout_Seconds           : Positive := 60;
+      Maximum_Findings_Per_Task : Positive := 50;
+      Maximum_Tasks             : Positive := 100;
+   end record;
+   --  Bounded refinement inputs independent of application configuration.
+   --  @field Maximum_Context_Bytes Maximum context supplied to an adapter.
+   --  @field Maximum_File_Bytes Maximum bytes read from one source file.
+   --  @field Maximum_Response_Bytes Maximum accepted structured response bytes.
+   --  @field Timeout_Seconds Adapter request deadline.
+   --  @field Maximum_Findings_Per_Task Maximum proposed evidence and file references.
+   --  @field Maximum_Tasks Maximum proposal and dependency count.
 
    type Source_State is
      (Source_Available, Source_Missing, Source_Outside, Source_Too_Large, Source_Not_File, Source_Read_Failed);
@@ -172,7 +187,7 @@ package Improve.Refinement is
 
    function Build_Context
      (Draft          : Improve.Model.Plan_Revision;
-      Settings       : Improve.Config.Settings;
+      Settings       : Limits;
       Existing_Tasks : Improve.Model.Task_Vectors.Vector := Improve.Model.Task_Vectors.Empty_Vector)
       return Planning_Context;
    --  Build bounded evidence and source context. Source reads are rooted,
@@ -184,7 +199,7 @@ package Improve.Refinement is
 
    function Refine
      (Draft          : Improve.Model.Plan_Revision;
-      Settings       : Improve.Config.Settings;
+      Settings       : Limits;
       Provider       : not null access Adapter'Class;
       Existing_Tasks : Improve.Model.Task_Vectors.Vector := Improve.Model.Task_Vectors.Empty_Vector)
       return Refinement_Result;

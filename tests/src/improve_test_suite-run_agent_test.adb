@@ -14,7 +14,8 @@ begin
             Draft.Findings (Draft.Findings.First_Index).Message := To_Unbounded_String (Injected);
             declare
                Context : constant Improve.Refinement.Planning_Context :=
-                 Improve.Refinement.Build_Context (Draft, Settings, Existing_Tasks => Draft.Tasks);
+                 Improve.Refinement.Build_Context
+                   (Draft, Improve.Operations.Refinement_Limits (Settings), Existing_Tasks => Draft.Tasks);
             begin
                Assert
                  (Context.Byte_Count <= Settings.Agent_Max_Context_Bytes,
@@ -37,7 +38,8 @@ begin
                Large.Findings (Large.Findings.First_Index).Evidence := To_Unbounded_String ([1 .. 8_000 => 'x']);
                declare
                   Context : constant Improve.Refinement.Planning_Context :=
-                    Improve.Refinement.Build_Context (Large, Settings);
+                    Improve.Refinement.Build_Context
+                      (Large, Improve.Operations.Refinement_Limits (Settings));
                begin
                   Assert
                     (not Context.Draft_Tasks.Is_Empty and then Context.Evidence_Truncated,
@@ -75,7 +77,8 @@ begin
               (Mode => Valid_Agent, Draft => Draft,
                Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
             Result : constant Improve.Refinement.Refinement_Result :=
-              Improve.Refinement.Refine (Draft, Settings, Provider'Access);
+              Improve.Refinement.Refine
+                (Draft, Improve.Operations.Refinement_Limits (Settings), Provider'Access);
          begin
             Assert (Result.Status = Improve.Refinement.Refined, "valid agent refinement was not applied");
             Assert
@@ -95,7 +98,8 @@ begin
                  (Mode => Valid_Agent, Draft => Draft,
                   Expected_Limit => Settings.Agent_Max_Context_Bytes, others => <>);
                Again : constant Improve.Refinement.Refinement_Result :=
-                 Improve.Refinement.Refine (Draft, Settings, Again_Provider'Access);
+                 Improve.Refinement.Refine
+                   (Draft, Improve.Operations.Refinement_Limits (Settings), Again_Provider'Access);
                State : Improve.Storage.Store;
                Saved : Improve.Storage.Save_Result;
             begin

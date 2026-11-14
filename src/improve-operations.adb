@@ -31,4 +31,32 @@ package body Improve.Operations is
      ((Max_Projects => Settings.Maximum_Quality_Projects,
        Max_Runs     => Settings.Maximum_Quality_Runs,
        Max_Findings => Settings.Maximum_Quality_Findings));
+
+   function Planning_Policy
+     (Settings : Improve.Config.Settings) return Improve.Planner.Policy is
+     ((Minimum_Severity           => Improve.Config.Quality_Severity (Settings.Minimum_Severity),
+       Maximum_Tasks              => Settings.Maximum_Tasks_Per_Plan,
+       Maximum_Findings_Per_Task  => Settings.Maximum_Findings_Per_Task,
+       Allow_Investigation        => Settings.Allow_Investigation_Tasks,
+       Require_Review             => Settings.Require_Review,
+       Maximum_Source_File_Bytes  => Settings.Maximum_Source_File_Bytes,
+       Maximum_Source_Total_Bytes => Settings.Maximum_Source_Total_Bytes));
+
+   function Verification_Policy
+     (Settings : Improve.Config.Settings) return Improve.Verification.Policy is
+     ((Maximum_Assessment_Findings      => Settings.Maximum_Assessment_Findings,
+       Maximum_Normalized_Finding_Bytes => Settings.Maximum_Normalized_Finding_Bytes,
+       Require_Fresh_Measurement        => Settings.Require_Fresh_Measurement,
+       Require_Same_Policy              => Settings.Require_Same_Policy,
+       Require_Same_Toolchain           => Settings.Require_Same_Toolchain,
+       Require_No_New_Critical_Findings => Settings.Require_No_New_Critical));
+
+   function Refinement_Limits
+     (Settings : Improve.Config.Settings) return Improve.Refinement.Limits is
+     ((Maximum_Context_Bytes     => Settings.Agent_Max_Context_Bytes,
+       Maximum_File_Bytes        => Settings.Agent_Max_File_Bytes,
+       Maximum_Response_Bytes    => Settings.Agent_Max_Response_Bytes,
+       Timeout_Seconds           => Settings.Agent_Timeout_Seconds,
+       Maximum_Findings_Per_Task => Settings.Maximum_Findings_Per_Task,
+       Maximum_Tasks             => Settings.Maximum_Tasks_Per_Plan));
 end Improve.Operations;

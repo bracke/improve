@@ -309,6 +309,75 @@ package body Improve.Config is
             return Parsed.Value;
          end Boolean_Setting;
 
+         procedure Apply (Id : Setting_Id) is
+         begin
+            case Id is
+               when Schema_Version | Quality_Selection | Workflow_Publication => null;
+               when Quality_Database =>
+                  Result.Quality_Database := To_Unbounded_String (String_Setting (Id));
+               when Maximum_Quality_Projects =>
+                  Result.Maximum_Quality_Projects := Positive_Setting (Id);
+               when Maximum_Quality_Runs =>
+                  Result.Maximum_Quality_Runs := Positive_Setting (Id);
+               when Maximum_Quality_Findings =>
+                  Result.Maximum_Quality_Findings := Positive_Setting (Id);
+               when Maximum_Quality_Database_Bytes =>
+                  Result.Maximum_Quality_Database_Bytes := Positive_Setting (Id);
+               when Maximum_Assessment_Findings =>
+                  Result.Maximum_Assessment_Findings := Positive_Setting (Id);
+               when Maximum_Assessment_Bytes =>
+                  Result.Maximum_Assessment_Bytes := Positive_Setting (Id);
+               when Maximum_Normalized_Finding_Bytes =>
+                  Result.Maximum_Normalized_Finding_Bytes := Positive_Setting (Id);
+               when Maximum_Source_File_Bytes =>
+                  Result.Maximum_Source_File_Bytes := Positive_Setting (Id);
+               when Maximum_Source_Total_Bytes =>
+                  Result.Maximum_Source_Total_Bytes := Positive_Setting (Id);
+               when Minimum_Severity =>
+                  Result.Minimum_Severity := Severity_Of (String_Setting (Id));
+               when Maximum_Tasks_Per_Plan =>
+                  Result.Maximum_Tasks_Per_Plan := Positive_Setting (Id);
+               when Maximum_Findings_Per_Task =>
+                  Result.Maximum_Findings_Per_Task := Positive_Setting (Id);
+               when Allow_Investigation_Tasks =>
+                  Result.Allow_Investigation_Tasks := Boolean_Setting (Id);
+               when Require_Review =>
+                  Result.Require_Review := Boolean_Setting (Id);
+               when Agent_Max_Context_Bytes =>
+                  Result.Agent_Max_Context_Bytes := Positive_Setting (Id);
+               when Agent_Max_File_Bytes =>
+                  Result.Agent_Max_File_Bytes := Positive_Setting (Id);
+               when Agent_Max_Response_Bytes =>
+                  Result.Agent_Max_Response_Bytes := Positive_Setting (Id);
+               when Agent_Timeout_Seconds =>
+                  Result.Agent_Timeout_Seconds := Positive_Setting (Id);
+               when Maximum_Recovery_Operations =>
+                  Result.Maximum_Recovery_Operations := Positive_Setting (Id);
+               when Maximum_History_Items =>
+                  Result.Maximum_History_Items := Positive_Setting (Id);
+               when Maximum_Persisted_Text_Bytes =>
+                  Result.Maximum_Persisted_Text_Bytes := Positive_Setting (Id);
+               when Workflow_Task_Kind =>
+                  Result.Task_Kind := To_Unbounded_String (String_Setting (Id));
+               when Require_Initialized_Project =>
+                  Result.Require_Initialized := Boolean_Setting (Id);
+               when Require_Fresh_Measurement =>
+                  Result.Require_Fresh_Measurement := Boolean_Setting (Id);
+               when Require_Same_Policy =>
+                  Result.Require_Same_Policy := Boolean_Setting (Id);
+               when Require_Same_Toolchain =>
+                  Result.Require_Same_Toolchain := Boolean_Setting (Id);
+               when Require_No_New_Critical_Findings =>
+                  Result.Require_No_New_Critical := Boolean_Setting (Id);
+               when Maximum_Output_Items =>
+                  Result.Maximum_Output_Items := Positive_Setting (Id);
+               when Output_Format_Setting =>
+                  Result.Format := Format_Of (String_Setting (Id));
+               when Output_Color =>
+                  Result.Color := Color_Of (String_Setting (Id));
+            end case;
+         end Apply;
+
       begin
          TOML_Codec.Parse (Text, Entries, Present);
          if not Present (Schema_Version) then
@@ -328,50 +397,22 @@ package body Improve.Config is
             raise Argument_Error with "workflow.publication must be candidate";
          end if;
 
-         Result.Quality_Database := To_Unbounded_String (String_Setting (Quality_Database));
          Result.Source_Path := To_Unbounded_String (Path);
+         for Id in Setting_Id loop
+            Apply (Id);
+         end loop;
          Validate_Operational_Text
            ("quality.database", To_String (Result.Quality_Database), Maximum_Length => 4_096);
-         Result.Maximum_Quality_Projects := Positive_Setting (Maximum_Quality_Projects);
-         Result.Maximum_Quality_Runs := Positive_Setting (Maximum_Quality_Runs);
-         Result.Maximum_Quality_Findings := Positive_Setting (Maximum_Quality_Findings);
-         Result.Maximum_Quality_Database_Bytes := Positive_Setting (Maximum_Quality_Database_Bytes);
-         Result.Maximum_Assessment_Findings := Positive_Setting (Maximum_Assessment_Findings);
-         Result.Maximum_Assessment_Bytes := Positive_Setting (Maximum_Assessment_Bytes);
-         Result.Maximum_Normalized_Finding_Bytes := Positive_Setting (Maximum_Normalized_Finding_Bytes);
-         Result.Maximum_Source_File_Bytes := Positive_Setting (Maximum_Source_File_Bytes);
-         Result.Maximum_Source_Total_Bytes := Positive_Setting (Maximum_Source_Total_Bytes);
          if Result.Maximum_Source_File_Bytes > Result.Maximum_Source_Total_Bytes then
             raise Argument_Error with "quality.maximum_source_file_bytes exceeds the total source limit";
          end if;
-         Result.Minimum_Severity := Severity_Of (String_Setting (Minimum_Severity));
-         Result.Maximum_Tasks_Per_Plan := Positive_Setting (Maximum_Tasks_Per_Plan);
-         Result.Maximum_Findings_Per_Task := Positive_Setting (Maximum_Findings_Per_Task);
-         Result.Allow_Investigation_Tasks := Boolean_Setting (Allow_Investigation_Tasks);
-         Result.Require_Review := Boolean_Setting (Require_Review);
-         Result.Agent_Max_Context_Bytes := Positive_Setting (Agent_Max_Context_Bytes);
-         Result.Agent_Max_File_Bytes := Positive_Setting (Agent_Max_File_Bytes);
-         Result.Agent_Max_Response_Bytes := Positive_Setting (Agent_Max_Response_Bytes);
-         Result.Agent_Timeout_Seconds := Positive_Setting (Agent_Timeout_Seconds);
-         Result.Maximum_Recovery_Operations := Positive_Setting (Maximum_Recovery_Operations);
-         Result.Maximum_History_Items := Positive_Setting (Maximum_History_Items);
-         Result.Maximum_Persisted_Text_Bytes := Positive_Setting (Maximum_Persisted_Text_Bytes);
-         Result.Maximum_Output_Items := Positive_Setting (Maximum_Output_Items);
          if Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
             raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
          end if;
-         Result.Task_Kind := To_Unbounded_String (String_Setting (Workflow_Task_Kind));
          Validate_Operational_Text ("workflow.task_kind", To_String (Result.Task_Kind), Maximum_Length => 128);
-         Result.Require_Initialized := Boolean_Setting (Require_Initialized_Project);
          if not Result.Require_Initialized then
             raise Argument_Error with "workflow.require_initialized_project must be true";
          end if;
-         Result.Require_Fresh_Measurement := Boolean_Setting (Require_Fresh_Measurement);
-         Result.Require_Same_Policy := Boolean_Setting (Require_Same_Policy);
-         Result.Require_Same_Toolchain := Boolean_Setting (Require_Same_Toolchain);
-         Result.Require_No_New_Critical := Boolean_Setting (Require_No_New_Critical_Findings);
-         Result.Format := Format_Of (String_Setting (Output_Format_Setting));
-         Result.Color := Color_Of (String_Setting (Output_Color));
       end;
       return Result;
    end Load;

@@ -134,7 +134,7 @@ package body Improve.Verification is
    function Evaluate
      (Plan     : Improve.Model.Plan_Revision;
       Current  : Improve.Source.Selection;
-      Settings : Improve.Config.Settings;
+      Settings : Policy;
       Task_Id  : String := "";
       Previously_Verified : Improve.Model.UString_Vectors.Vector :=
         Improve.Model.UString_Vectors.Empty_Vector) return Report is
@@ -330,7 +330,7 @@ package body Improve.Verification is
          end if;
       end loop;
       if Result.Tasks.Is_Empty then raise Argument_Error with "task does not belong to plan: " & Task_Id; end if;
-      if Settings.Require_No_New_Critical then
+      if Settings.Require_No_New_Critical_Findings then
          for Finding of Current_Findings loop
             if Finding.Level = Critical then
                if not Baseline_Exact.Contains (Exact_Key (Finding.Indicator, Finding.Fingerprint)) then
