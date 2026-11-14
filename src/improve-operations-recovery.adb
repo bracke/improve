@@ -98,9 +98,5 @@ package body Improve.Operations.Recovery is
          end;
       end loop;
       return Value;
-   exception
-      when others =>
-         Improve.Storage.Close (State);
-         raise;
    end Run;
 end Improve.Operations.Recovery;

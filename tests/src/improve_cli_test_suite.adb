@@ -145,19 +145,24 @@ package body Improve_CLI_Test_Suite is
          when Help_Smoke =>
             declare
                Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("help"));
+               Broken_Config : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("help|--config|missing-improve-config.toml"));
             begin
                Assert
-                 (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output), "Usage:") > 0,
-                  "help did not succeed");
+                 (Result.Exit_Code = 0 and then Broken_Config.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), "Usage:") > 0,
+                  "help depended on operational configuration");
             end;
          when Version_Smoke =>
             declare
                Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("version|--format|json"));
+               Broken_Config : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("version|--config|missing-improve-config.toml"));
             begin
                Assert
-                 (Result.Exit_Code = 0 and then
+                 (Result.Exit_Code = 0 and then Broken_Config.Exit_Code = 0 and then
                   Ada.Strings.Fixed.Index (To_String (Result.Output), """schema_version"":1") > 0,
-                  "JSON version output is not versioned");
+                  "version output depended on operational configuration or was not versioned");
             end;
          when Quiet_Smoke =>
             declare Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("version|--quiet")); begin

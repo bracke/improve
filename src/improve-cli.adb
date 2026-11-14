@@ -17,8 +17,6 @@ with Improve.Presentation;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
-with Jsonlib.Documents;
-with Jsonlib.Serializers;
 with Project_Tools.Files;
 
 package body Improve.CLI is
@@ -78,20 +76,6 @@ package body Improve.CLI is
       Append (Result, LF & Message ("help.exit") & LF);
       return To_String (Result);
    end Help_Text;
-
-   function JSON_Output (Command, Kind, Text : String) return String is
-      Doc  : Jsonlib.Documents.Document;
-      Root : constant Jsonlib.Documents.Node := Doc.New_Object;
-      Data : constant Jsonlib.Documents.Node := Doc.New_Object;
-   begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String (Command));
-      Doc.Insert (Data, "kind", Doc.New_String (Kind));
-      Doc.Insert (Data, "text", Doc.New_String (Text));
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
-   end JSON_Output;
 
    function Configuration_Path (Item : Invocation) return String is
      (if Item.Has_Config then To_String (Item.Config)
@@ -321,7 +305,7 @@ package body Improve.CLI is
          when Recover_Command => return Recover_Output (Item, Settings);
       end case;
       if Item.Format = JSON_Format then
-         return JSON_Output (Name (Item.Command), "text", To_String (Plain));
+         return Improve.JSON.Text (Name (Item.Command), "text", To_String (Plain));
       end if;
       return To_String (Plain);
    end Dispatch;
@@ -347,7 +331,9 @@ package body Improve.CLI is
    begin
       Item := Parse (Arguments);
       declare Settings : constant Improve.Config.Settings :=
-        Improve.Config.Load (Configuration_Path (Item));
+        (if Item.Command in Help_Command | Version_Command
+         then Improve.Config.Defaults
+         else Improve.Config.Load (Configuration_Path (Item)));
       begin
          if not Item.Has_Format then Item.Format := Settings.Format; end if;
          if not Item.Has_Color then Item.Color := Settings.Color; end if;

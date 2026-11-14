@@ -27,10 +27,6 @@ package body Improve.Operations.Inspection is
       Result.Snapshot := To_Unbounded_String (Improve.Source.Identity (Quality));
       Improve.Source.Close (Quality);
       return Result;
-   exception
-      when others =>
-         Improve.Source.Close (Quality);
-         raise;
    end Projects;
 
    function Findings
@@ -59,10 +55,6 @@ package body Improve.Operations.Inspection is
       end;
       Improve.Source.Close (Quality);
       return Result;
-   exception
-      when others =>
-         Improve.Source.Close (Quality);
-         raise;
    end Findings;
 
    function Views_For
@@ -117,15 +109,8 @@ package body Improve.Operations.Inspection is
             Improve.Source.Open
               (Quality, Quality_Path, Quality_Limits, Evidence_Limits.Database_Bytes);
             Selected_Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
-            Current_Assessment :=
-              Improve.Source.Select_Assessment
-                (Quality, Selected_Project,
-                 Maximum_Bytes => Evidence_Limits.Assessment_Bytes).Baseline.Run_Id;
+            Current_Assessment := Improve.Source.Latest_Completed_Run (Quality, Selected_Project);
             Improve.Source.Close (Quality);
-         exception
-            when others =>
-               Improve.Source.Close (Quality);
-               raise;
          end;
       end if;
       Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
@@ -151,15 +136,9 @@ package body Improve.Operations.Inspection is
                        Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
                   begin
                      Improve.Operations.Require_Project_Identity (Plan.Project, Project);
-                     Current_Assessment := Improve.Source.Select_Assessment
-                       (Quality, Project,
-                        Maximum_Bytes => Evidence_Limits.Assessment_Bytes).Baseline.Run_Id;
+                     Current_Assessment := Improve.Source.Latest_Completed_Run (Quality, Project);
                   end;
                   Improve.Source.Close (Quality);
-               exception
-                  when others =>
-                     Improve.Source.Close (Quality);
-                     raise;
                end;
             elsif Require_Quality then
                raise Dependency_Error with "Ada Quality database is unavailable: " & Quality_Path;
@@ -323,10 +302,5 @@ package body Improve.Operations.Inspection is
       Improve.Storage.Close (State);
       Improve.Source.Close (Quality);
       return Result;
-   exception
-      when others =>
-         Improve.Storage.Close (State);
-         Improve.Source.Close (Quality);
-         raise;
    end Status;
 end Improve.Operations.Inspection;

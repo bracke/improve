@@ -57,16 +57,8 @@ package body Improve.Operations.Planning is
               (State, Draft, Improve.Operations.Storage_Read_Limits (Settings));
             Improve.Storage.Close (State);
             return (Plan => Saved.Plan, Existing => Saved.Existing);
-         exception
-            when others =>
-               Improve.Storage.Close (State);
-               raise;
          end;
       end;
-   exception
-      when others =>
-         Improve.Source.Close (Quality);
-         raise;
    end Generate;
 
    function Load
@@ -86,10 +78,6 @@ package body Improve.Operations.Planning is
          Improve.Storage.Close (State);
          return Plan;
       end;
-   exception
-      when others =>
-         Improve.Storage.Close (State);
-         raise;
    end Load;
 
    function List
@@ -119,11 +107,6 @@ package body Improve.Operations.Planning is
             return Values;
          end;
       end;
-   exception
-      when others =>
-         Improve.Source.Close (Quality);
-         Improve.Storage.Close (State);
-         raise;
    end List;
 
    function Approve
@@ -139,9 +122,5 @@ package body Improve.Operations.Planning is
       Improve.Storage.Approve (State, To_String (Plan.Plan_Id), Plan.Revision, Limits);
       Improve.Storage.Close (State);
       return Plan;
-   exception
-      when others =>
-         Improve.Storage.Close (State);
-         raise;
    end Approve;
 end Improve.Operations.Planning;

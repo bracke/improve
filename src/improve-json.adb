@@ -11,18 +11,47 @@ package body Improve.JSON is
 
    LF : constant Character := Character'Val (10);
 
+   type Envelope is record
+      Root : Node;
+      Data : Node;
+   end record;
+
+   function Start_Envelope (Doc : in out Document; Command : String) return Envelope is
+      Result : constant Envelope := (Root => Doc.New_Object, Data => Doc.New_Object);
+   begin
+      Doc.Insert (Result.Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
+      Doc.Insert (Result.Root, "command", Doc.New_String (Command));
+      return Result;
+   end Start_Envelope;
+
+   function Finish_Envelope
+     (Doc   : in out Document;
+      Value : Envelope) return String is
+   begin
+      Doc.Insert (Value.Root, "data", Value.Data);
+      Doc.Set_Root (Value.Root);
+      return Jsonlib.Serializers.To_String (Doc) & LF;
+   end Finish_Envelope;
+
+   function Text (Command, Kind, Value : String) return String is
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, Command);
+   begin
+      Doc.Insert (Context.Data, "kind", Doc.New_String (Kind));
+      Doc.Insert (Context.Data, "text", Doc.New_String (Value));
+      return Finish_Envelope (Doc, Context);
+   end Text;
+
    function Lower (Text : String) return String is (Ada.Characters.Handling.To_Lower (Text));
 
    function Projects
      (Values      : Ada_Quality.Reporting.Project_Vectors.Vector;
       Snapshot_Id : String) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "projects");
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("projects"));
       Doc.Insert (Data, "snapshot", Doc.New_String (Snapshot_Id));
       for Value of Values loop
          declare
@@ -36,21 +65,17 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "projects", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Projects;
 
    function Findings
      (Selected : Improve.Source.Selection;
       Values   : Improve.Model.Finding_Vectors.Vector) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "findings");
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("findings"));
       Doc.Insert (Data, "project_id", Doc.New_Integer (Long_Long_Integer (Selected.Project.Id)));
       Doc.Insert (Data, "project", Doc.New_String (To_String (Selected.Project.Name)));
       Doc.Insert (Data, "run_id", Doc.New_Integer (Long_Long_Integer (Selected.Assessment.Run.Id)));
@@ -76,19 +101,15 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "findings", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Findings;
 
    function Plan (Value : Improve.Model.Plan_Revision; Dry_Run : Boolean) return String is
-      Doc   : Document;
-      Root  : constant Node := Doc.New_Object;
-      Data  : constant Node := Doc.New_Object;
-      Tasks : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "plan");
+      Data    : Node renames Context.Data;
+      Tasks   : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("plan"));
       Doc.Insert (Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
       Doc.Insert (Data, "revision", Doc.New_Integer (Long_Long_Integer (Value.Revision)));
       Doc.Insert (Data, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project.Id)));
@@ -134,19 +155,15 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "tasks", Tasks);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Plan;
 
    function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "plan list");
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("plan list"));
       for Value of Values loop
          declare Item : constant Node := Doc.New_Object; begin
             Doc.Insert (Item, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
@@ -160,36 +177,28 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "plans", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Plans;
 
    function Plan_Approval (Value : Improve.Model.Plan_Revision) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "plan approve");
+      Data    : Node renames Context.Data;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("plan approve"));
       Doc.Insert (Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
       Doc.Insert (Data, "revision", Doc.New_Integer (Long_Long_Integer (Value.Revision)));
       Doc.Insert (Data, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
       Doc.Insert (Data, "approved", Doc.New_Boolean (True));
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Plan_Approval;
 
    function Publication
      (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "apply");
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("apply"));
       Doc.Insert (Data, "plan_id", Doc.New_String (Plan_Id));
       Doc.Insert (Data, "task_kind", Doc.New_String (To_String (Value.Task_Kind)));
       Doc.Insert (Data, "dry_run", Doc.New_Boolean (Dry_Run));
@@ -204,21 +213,17 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "tasks", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Publication;
 
    function Verification
      (Value   : Improve.Verification.Report;
       Command : String := "verify") return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, Command);
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String (Command));
       Doc.Insert (Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
       Doc.Insert (Data, "baseline_run", Doc.New_Integer (Long_Long_Integer (Value.Baseline_Run)));
       Doc.Insert (Data, "verification_run", Doc.New_Integer (Long_Long_Integer (Value.Verification_Run)));
@@ -239,9 +244,7 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "tasks", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Verification;
 
    procedure Append_Task
@@ -270,29 +273,23 @@ package body Improve.JSON is
    function Tasks
      (Values : Improve.Tasks.View_Vectors.Vector;
       Filter : String) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
-      List : constant Node := Doc.New_Array;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "tasks");
+      Data    : Node renames Context.Data;
+      List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("tasks"));
       Doc.Insert (Data, "filter", Doc.New_String (if Filter = "" then "all" else Filter));
       for Value of Values loop Append_Task (Doc, List, Value); end loop;
       Doc.Insert (Data, "tasks", List);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Tasks;
 
    function Status (Values : Improve.Tasks.Status_Vectors.Vector) return String is
       Doc      : Document;
-      Root     : constant Node := Doc.New_Object;
-      Data     : constant Node := Doc.New_Object;
+      Context  : constant Envelope := Start_Envelope (Doc, "status");
+      Data     : Node renames Context.Data;
       Projects : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("status"));
       for Value of Values loop
          declare
             Item     : constant Node := Doc.New_Object;
@@ -360,24 +357,18 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "projects", Projects);
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Status;
 
    function Recovery (Value : Improve.Operations.Recovery.Result) return String is
-      Doc  : Document;
-      Root : constant Node := Doc.New_Object;
-      Data : constant Node := Doc.New_Object;
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "recover");
+      Data    : Node renames Context.Data;
    begin
-      Doc.Insert (Root, "schema_version", Doc.New_Integer (JSON_Format_Version));
-      Doc.Insert (Root, "command", Doc.New_String ("recover"));
       Doc.Insert
         (Data, "operations_recovered", Doc.New_Integer (Long_Long_Integer (Value.Operations_Recovered)));
       Doc.Insert (Data, "tasks_recovered", Doc.New_Integer (Long_Long_Integer (Value.Tasks_Recovered)));
-      Doc.Insert (Root, "data", Data);
-      Doc.Set_Root (Root);
-      return Jsonlib.Serializers.To_String (Doc) & LF;
+      return Finish_Envelope (Doc, Context);
    end Recovery;
 end Improve.JSON;
 

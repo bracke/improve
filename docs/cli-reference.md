@@ -11,6 +11,8 @@ command-incompatible options are rejected deterministically with exit code 2.
 `--config PATH` selects an Improve configuration explicitly. Without it, only `config/improve.toml` beneath the
 current working directory is discovered; parent directories are never searched. `config validate` requires an actual
 selected or discovered file rather than validating implicit defaults.
+`help` and `version` never load operational configuration, so they remain available when a configuration file is
+missing or malformed.
 
 `--format json` writes exactly one versioned JSON document to standard output and disables ANSI styling regardless
 of `--color`. Diagnostics are written only to standard error. Inspection commands return zero when inspection

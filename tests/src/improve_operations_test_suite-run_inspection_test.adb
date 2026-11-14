@@ -63,6 +63,25 @@ begin
                          Ada.Strings.Fixed.Index (To_String (Result.Output), "IMP-000002") = 0 and then
                          Ada.Strings.Fixed.Index (To_String (Result.Output), Character'Val (27) & "[") = 0,
                        "task JSON filtering or styling is invalid");
+               declare
+                  Views : constant Improve.Tasks.View_Vectors.Vector :=
+                    Improve.Operations.Inspection.Tasks
+                      (State_Path       => State,
+                       Quality_Path     => To_String (Data.Database),
+                       Project_Selector => "",
+                       Task_Id          => "IMP-000001",
+                       Revision         => 0,
+                       Filter           => "all",
+                       Maximum_Items    => 10,
+                       Require_Quality  => True,
+                       Evidence_Limits  =>
+                         (Improve.Config.Default_Evidence_Limits with delta Assessment_Bytes => 1));
+               begin
+                  Assert
+                    (Views.Length = 1 and then
+                     Views.First_Element.Freshness = Improve.Tasks.Freshness_Unknown,
+                     "task freshness decoded complete assessment evidence");
+               end;
                Result := Improve.CLI.Execute
                  (Args ("tasks|--project|" & Id_Image (Data.Project) & "|--status|not-a-status|--database|" &
                         To_String (Data.Database) & "|--state|" & State));

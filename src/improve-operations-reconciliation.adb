@@ -92,10 +92,6 @@ package body Improve.Operations.Reconciliation is
             Improve.Storage.Update_Publication_States (State, Plan_Id, Updates, Limits);
             Improve.Storage.Close (State);
          end if;
-      exception
-         when others =>
-            Improve.Storage.Close (State);
-            raise;
       end Reconcile_Plan;
    begin
       declare Quality : Improve.Source.Repository; begin
@@ -117,11 +113,6 @@ package body Improve.Operations.Reconciliation is
                end loop;
             end;
          end;
-      exception
-         when others =>
-            Improve.Source.Close (Quality);
-            Improve.Storage.Close (State);
-            raise;
       end;
    end Run;
 end Improve.Operations.Reconciliation;

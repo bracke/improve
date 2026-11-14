@@ -13,6 +13,12 @@ Domain exception types provide stable diagnostic categories. The CLI maps those 
 catalog and supplies escaped technical detail as data; domain and storage packages do not construct terminal or JSON
 presentation.
 
+Task inspection obtains only the latest completed run identity needed for freshness classification. It does not decode
+complete assessment evidence; planning and verification retain responsibility for bounded evidence validation.
+
+Quality repositories and Improve stores are controlled owners. Operations close them explicitly only to release a
+successful phase early; exceptional paths rely on finalization so cleanup cannot replace the originating exception.
+
 The assessment database is never created, migrated, recovered, or written by Improve. Improve's own state database
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.

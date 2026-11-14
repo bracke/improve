@@ -11,6 +11,13 @@ with Improve.Verification;
 package Improve.JSON is
    --  Versioned deterministic JSON encoders for CLI result documents.
 
+   function Text (Command, Kind, Value : String) return String;
+   --  Serialize a generic textual command result.
+   --  @param Command Stable command name.
+   --  @param Kind Stable result kind.
+   --  @param Value Rendered text value.
+   --  @return One versioned JSON document.
+
    function Projects
      (Values      : Ada_Quality.Reporting.Project_Vectors.Vector;
       Snapshot_Id : String) return String;
