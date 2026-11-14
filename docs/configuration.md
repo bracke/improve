@@ -7,6 +7,11 @@ publication is always `candidate`; project harness policy may independently auto
 Settings are section-qualified. Unknown sections, misplaced or duplicate keys, and files larger than 1 MiB are
 rejected.
 
+Use `--config PATH` to select a file explicitly. Otherwise Improve discovers only `config/improve.toml` below the
+current working directory; it never searches a parent directory or silently treats an unrelated parent configuration
+as its own. `config validate` fails when no configuration file is selected or discovered. Commands other than
+validation may use built-in defaults when no file is present.
+
 The reporting snapshot is bounded before it is loaded by `quality.maximum_database_projects`,
 `quality.maximum_database_runs`, and `quality.maximum_database_findings`. Their defaults are 10,000,
 1,000,000, and 2,000,000 respectively.
@@ -29,7 +34,7 @@ and timeout cannot exceed one hour.
 `quality.database` is limited to 4096 bytes and `workflow.task_kind` to 128 bytes. Both must be nonempty and must not
 contain control characters. Configuration tables and settings may each be declared only once.
 
-Command-line database, state, project, format, and color values override effective configuration where applicable.
+Command-line configuration, database, state, project, format, and color values override defaults where applicable.
 Read-only commands do not create, migrate, recover, or repair an external database.
 
 Operational output is bounded by `output.maximum_output_items`, which defaults to 10,000 and may not exceed

@@ -60,6 +60,7 @@ package Improve.Config is
    --  @enum Candidate_Publication Publish candidate tasks without accepting them.
 
    type Settings is record
+      Source_Path               : UString;
       Quality_Database          : UString;
       Selection                 : Selection_Mode := Latest_Completed;
       Maximum_Quality_Projects  : Positive := 10_000;
@@ -95,6 +96,7 @@ package Improve.Config is
       Color                     : Color_Mode := Color_Auto;
    end record;
    --  Validated configuration values.
+   --  @field Source_Path Configuration file that supplied these settings, or empty for defaults.
    --  @field Quality_Database Default Ada Quality database path.
    --  @field Selection Assessment selection policy.
    --  @field Maximum_Quality_Projects Maximum project rows loaded from the quality database.
@@ -130,7 +132,7 @@ package Improve.Config is
    --  @field Color Default color policy.
 
    function Defaults return Settings;
-   --  Return documented schema-version-1 defaults.
+   --  Return documented schema-version-2 defaults.
    --  @return Complete default settings.
 
    function Evidence_Limits_Of (Item : Settings) return Evidence_Limits;

@@ -12,8 +12,11 @@ package body Improve.Text is
    Catalog : constant String :=
      "default_locale=en" & LF &
      "en.error.prefix = improve: {message}" & LF &
+     "en.error.argument = invalid command or configuration: {detail}" & LF &
+     "en.error.dependency = required dependency or evidence unavailable: {detail}" & LF &
+     "en.error.data = storage, integrity, or processing failure: {detail}" & LF &
      "en.error.hint = run improve help for usage" & LF &
-     "en.error.internal = internal error: {message}" & LF &
+     "en.error.internal = internal error: {detail}" & LF &
      "en.error.output = cannot write output: {message}" & LF &
      "en.verbose.context = command {command}; quality database {database}; state {state}" & LF &
      "en.help.usage = Usage: improve <command> [options]" & LF &
@@ -31,6 +34,7 @@ package body Improve.Text is
      "en.help.cmd.help = Display help" & LF &
      "en.help.cmd.version = Display version" & LF &
      "en.help.options = Global options:" & LF &
+     "en.help.opt.config = Improve configuration file" & LF &
      "en.help.opt.database = Ada Quality database" & LF &
      "en.help.opt.state = Improve state database" & LF &
      "en.help.opt.project = Project identity or unique name" & LF &

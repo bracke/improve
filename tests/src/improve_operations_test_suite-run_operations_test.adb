@@ -80,6 +80,7 @@ begin
                declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
                   Assert
                     (Value.Minimum_Severity = Improve.Config.Critical and then
+                     To_String (Value.Source_Path) = Path and then
                      Value.Maximum_Quality_Projects = 70 and then
                      Value.Maximum_Quality_Runs = 700 and then
                      Value.Maximum_Quality_Findings = 7_000 and then

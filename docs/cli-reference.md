@@ -8,6 +8,10 @@ Commands are `projects`, `findings`, `plan`, `apply`, `tasks`, `status`, `refres
 `help`, and `version`. Global options may precede or follow the command. Unknown, repeated, missing, malformed, and
 command-incompatible options are rejected deterministically with exit code 2.
 
+`--config PATH` selects an Improve configuration explicitly. Without it, only `config/improve.toml` beneath the
+current working directory is discovered; parent directories are never searched. `config validate` requires an actual
+selected or discovered file rather than validating implicit defaults.
+
 `--format json` writes exactly one versioned JSON document to standard output and disables ANSI styling regardless
 of `--color`. Diagnostics are written only to standard error. Inspection commands return zero when inspection
 succeeds even when quality findings exist; verification returns one when its requested criteria remain unresolved.
@@ -39,8 +43,9 @@ publication mappings; an unpublished prerequisite is reported explicitly and is 
 ## Operational inspection
 
 `improve tasks --project PROJECT` lists every stored Improve task for the exact database-qualified registered project;
-`improve tasks --task ID` qualifies verification freshness against the selected quality database when it is available,
-while historical inspection remains available without that database and reports freshness as unknown;
+`improve tasks --task ID` qualifies verification freshness against the selected quality database when it is available.
+An unavailable database selected through `--database` or a configuration file is an error. Historical inspection
+without a selected configuration or database reports freshness as unknown;
 equal numeric IDs in independent quality databases never share results. `--task ID` selects one task without requiring
 the Ada Quality registry, while combining `--task` and `--project` validates full ownership. `--status STATUS` filters
 the result. Supported
@@ -69,7 +74,7 @@ verification. Historical resolution is reported as `previously_resolved`; findin
 conclusion are reported as `unverified` rather than silently counted as resolved or outstanding.
 
 Each JSON task view likewise reports `verification_run`, tri-state `verification_freshness`, and the compatibility
-Boolean `verification_current`. Its historical `quality_outcome`
+Boolean `verification_current`, which is derived from the tri-state value. Its historical `quality_outcome`
 is retained for audit, but the derived task status does not treat it as verified when a newer completed assessment is
 current or when the current assessment is unknown. This freshness rule applies to verified, regressed, superseded,
 partially resolved, still failing, and inconclusive measurement outcomes.

@@ -81,6 +81,9 @@ package body Improve.CLI.Parsing is
          elsif Option = "--database" then
             Once (Result.Has_Database, Option);
             Result.Database := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--config" then
+            Once (Result.Has_Config, Option);
+            Result.Config := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
          elsif Option = "--state" then
             Once (Result.Has_State, Option);
             Result.State := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));

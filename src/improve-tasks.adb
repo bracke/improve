@@ -162,9 +162,8 @@ package body Improve.Tasks is
               (if not View.Has_Verification or else Current_Assessment = 0 then Freshness_Unknown
                elsif View.Verification_Run = Current_Assessment then Freshness_Current
                else Freshness_Historical);
-            View.Verification_Current := View.Freshness = Freshness_Current;
             View.Status := Status_Of
-              (To_String (View.Harness_State), View.Quality, View.Verification_Current);
+              (To_String (View.Harness_State), View.Quality, View.Freshness = Freshness_Current);
             Result.Append (View);
          end;
       end loop;
@@ -265,15 +264,15 @@ package body Improve.Tasks is
                      if States.Contains (Key) then
                         declare State : Finding_State := States.Element (Key); begin
                            State.Linked := State.Linked + 1;
-                           State.Any_Current := State.Any_Current or else View.Verification_Current;
+                           State.Any_Current := State.Any_Current or else View.Freshness = Freshness_Current;
                            State.All_Verified := State.All_Verified and then
-                             View.Verification_Current and then View.Quality = Improve.Model.Verified;
+                             View.Freshness = Freshness_Current and then View.Quality = Improve.Model.Verified;
                            State.All_Superseded := State.All_Superseded and then
-                             View.Verification_Current and then View.Quality = Improve.Model.Superseded;
+                             View.Freshness = Freshness_Current and then View.Quality = Improve.Model.Superseded;
                            State.Any_Unknown := State.Any_Unknown or else
-                             (View.Verification_Current and then View.Quality = Improve.Model.Inconclusive);
+                             (View.Freshness = Freshness_Current and then View.Quality = Improve.Model.Inconclusive);
                            State.Any_Regressed := State.Any_Regressed or else
-                             (View.Verification_Current and then View.Quality = Improve.Model.Regressed);
+                             (View.Freshness = Freshness_Current and then View.Quality = Improve.Model.Regressed);
                            State.All_Previously_Verified := State.All_Previously_Verified and then
                              View.Has_Verification and then View.Freshness = Freshness_Historical and then
                              View.Quality = Improve.Model.Verified;

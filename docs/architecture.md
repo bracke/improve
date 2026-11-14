@@ -9,6 +9,10 @@ assembles assessment-aware task/status models, and reconciliation synchronizes c
 own project-identity checks, source and policy preconditions, journaling, and persistence. Terminal and JSON rendering
 do not participate in domain decisions.
 
+Domain exception types provide stable diagnostic categories. The CLI maps those categories through the messages
+catalog and supplies escaped technical detail as data; domain and storage packages do not construct terminal or JSON
+presentation.
+
 The assessment database is never created, migrated, recovered, or written by Improve. Improve's own state database
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.
@@ -23,7 +27,7 @@ Operational rejection limits are not part of semantic plan identity: changing a 
 evidence, task grouping, or review policy does not create a new immutable revision.
 
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
-assessment. Publication applies a second, harness-state-aware `working-sha256-v3` fingerprint to detect authored
+assessment. Publication applies a second, harness-state-aware `working-sha256-v4` fingerprint to detect authored
 changes after planning without treating model_runner's own operational state as a source edit. The working identity is
 a length-delimited SHA-256 stream over sorted relative paths and bounded file contents, so path/content boundaries
 cannot produce the same byte stream accidentally.

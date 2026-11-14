@@ -57,7 +57,6 @@ package Improve.Tasks is
       Has_Verification : Boolean := False;
       Verification_Run : Natural := 0;
       Freshness       : Verification_Freshness := Freshness_Unknown;
-      Verification_Current : Boolean := False;
       Status         : Operational_Status := Proposed;
    end record;
    --  Joined inspection view for one Improve task.
@@ -72,7 +71,6 @@ package Improve.Tasks is
    --  @field Has_Verification Whether quality evidence has been recorded.
    --  @field Verification_Run Assessment evaluated by the historical quality outcome.
    --  @field Freshness Whether verification applicability is current, historical, or unknown.
-   --  @field Verification_Current Whether that assessment is the selected current assessment.
    --  @field Status Derived inspection status.
 
    package View_Vectors is new Ada.Containers.Vectors (Positive, Task_View);

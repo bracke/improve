@@ -74,6 +74,20 @@ begin
                Assert
                  (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0,
                   "explicitly unavailable task quality database was silently ignored");
+               declare
+                  Config_Path : constant String := To_String (Data.Directory) & "/improve.toml";
+               begin
+                  Project_Tools.Files.Write_Text_File
+                    (Config_Path,
+                     "schema_version = 2" & ASCII.LF & "[quality]" & ASCII.LF &
+                     "database = "".ada-quality.db""" & ASCII.LF);
+                  Result := Improve.CLI.Execute
+                    (Args ("tasks|--task|IMP-000001|--config|" & Config_Path &
+                           "|--state|" & State & "|--format|json"));
+                  Assert
+                    (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0,
+                     "configured default quality database was mistaken for an implicit default");
+               end;
                Remove (Data);
             end;
          when Status_Project_And_All =>

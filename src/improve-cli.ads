@@ -42,6 +42,7 @@ package Improve.CLI is
    type Invocation is record
       Command       : Command_Kind := Help_Command;
       Plan_Action   : Plan_Operation := Create_Plan;
+      Config        : Ada.Strings.Unbounded.Unbounded_String;
       Database      : Ada.Strings.Unbounded.Unbounded_String;
       State         : Ada.Strings.Unbounded.Unbounded_String;
       Project       : Ada.Strings.Unbounded.Unbounded_String;
@@ -53,6 +54,7 @@ package Improve.CLI is
       Format        : Improve.Config.Output_Format := Improve.Config.Terminal_Format;
       Color         : Improve.Config.Color_Mode := Improve.Config.Color_Auto;
       Has_Database  : Boolean := False;
+      Has_Config    : Boolean := False;
       Has_State     : Boolean := False;
       Has_Project   : Boolean := False;
       Has_Target    : Boolean := False;
@@ -70,6 +72,7 @@ package Improve.CLI is
    --  Fully parsed and command-validated invocation.
    --  @field Command Selected top-level command.
    --  @field Plan_Action Selected plan subcommand.
+   --  @field Config Explicit Improve configuration path.
    --  @field Database Ada Quality database path.
    --  @field State Improve state database path.
    --  @field Project Project selector.
@@ -81,6 +84,7 @@ package Improve.CLI is
    --  @field Format Selected output format.
    --  @field Color Selected color policy.
    --  @field Has_Database Whether Database was supplied explicitly.
+   --  @field Has_Config Whether Config was supplied explicitly.
    --  @field Has_State Whether State was supplied explicitly.
    --  @field Has_Project Whether Project was supplied.
    --  @field Has_Target Whether Target was supplied.

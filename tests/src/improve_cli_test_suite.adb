@@ -13,6 +13,7 @@ with Improve.Storage;
 with Improve.Tasks;
 with Improve.Verification;
 with Improve.Workflow;
+with Project_Tools.Files;
 
 package body Improve_CLI_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -74,12 +75,14 @@ package body Improve_CLI_Test_Suite is
          when Parse_Plan =>
             declare
                Parsed : constant Improve.CLI.Invocation :=
-                 Improve.CLI.Parse (Args ("--database|q.db|plan|--project|demo|--run=42|--dry-run"));
+                 Improve.CLI.Parse
+                   (Args ("--config|custom.toml|--database|q.db|plan|--project|demo|--run=42|--dry-run"));
             begin
                Assert
                  (Parsed.Command = Improve.CLI.Plan_Command and then
                   Parsed.Plan_Action = Improve.CLI.Create_Plan and then Parsed.Run_Id = 42 and then
-                  Parsed.Dry_Run and then To_String (Parsed.Project) = "demo",
+                  Parsed.Dry_Run and then Parsed.Has_Config and then
+                  To_String (Parsed.Config) = "custom.toml" and then To_String (Parsed.Project) = "demo",
                   "plan options were not parsed");
             end;
          when Reject_Duplicate =>
@@ -169,9 +172,17 @@ package body Improve_CLI_Test_Suite is
             end;
          when Config_Smoke =>
             declare
-               Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("config|validate"));
+               Config_Path : constant String :=
+                 (if Project_Tools.Files.File_Exists ("config/improve.toml")
+                  then "config/improve.toml" else "../config/improve.toml");
+               Result : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("config|validate|--config|" & Config_Path));
+               Missing : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("config|validate|--config|missing-improve-config.toml"));
             begin
-               Assert (Result.Exit_Code = 0, "configuration validation failed: " & To_String (Result.Errors));
+               Assert
+                 (Result.Exit_Code = 0 and then Missing.Exit_Code = Improve.CLI.Argument_Exit,
+                  "configuration validation did not honor its explicit source");
             end;
          when Invalid_Smoke =>
             declare

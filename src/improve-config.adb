@@ -210,7 +210,8 @@ package body Improve.Config is
    end Read_Configuration;
 
    function Defaults return Settings is
-     ((Quality_Database          => To_Unbounded_String (Default_String (Quality_Database)),
+     ((Source_Path               => Null_Unbounded_String,
+       Quality_Database          => To_Unbounded_String (Default_String (Quality_Database)),
        Selection                 => Latest_Completed,
        Maximum_Quality_Projects  => Default_Positive (Maximum_Quality_Projects),
        Maximum_Quality_Runs      => Default_Positive (Maximum_Quality_Runs),
@@ -328,6 +329,7 @@ package body Improve.Config is
          end if;
 
          Result.Quality_Database := To_Unbounded_String (String_Setting (Quality_Database));
+         Result.Source_Path := To_Unbounded_String (Path);
          Validate_Operational_Text
            ("quality.database", To_String (Result.Quality_Database), Maximum_Length => 4_096);
          Result.Maximum_Quality_Projects := Positive_Setting (Maximum_Quality_Projects);

@@ -64,6 +64,7 @@ package body Improve.CLI is
       Line ("verify", "help.cmd.verify"); Line ("recover", "help.cmd.recover");
       Line ("config", "help.cmd.config"); Line ("help", "help.cmd.help"); Line ("version", "help.cmd.version");
       Append (Result, LF & Message ("help.options") & LF);
+      Line ("--config PATH", "help.opt.config", 36);
       Line ("--database PATH", "help.opt.database", 36); Line ("--state PATH", "help.opt.state", 36);
       Line ("--project ID|NAME", "help.opt.project", 36);
       Line ("--format terminal|json", "help.opt.format", 36);
@@ -92,9 +93,9 @@ package body Improve.CLI is
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end JSON_Output;
 
-   function Configuration_Path return String is
-     (if Project_Tools.Files.File_Exists ("config/improve.toml") then "config/improve.toml"
-      elsif Project_Tools.Files.File_Exists ("../config/improve.toml") then "../config/improve.toml"
+   function Configuration_Path (Item : Invocation) return String is
+     (if Item.Has_Config then To_String (Item.Config)
+      elsif Project_Tools.Files.File_Exists ("config/improve.toml") then "config/improve.toml"
       else "");
 
    function Quality_Path (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -211,6 +212,7 @@ package body Improve.CLI is
            Maximum_Items    => Settings.Maximum_Output_Items,
            Require_Quality  =>
              Item.Has_Database or else
+             Length (Settings.Source_Path) > 0 or else
              To_String (Settings.Quality_Database) /= To_String (Improve.Config.Defaults.Quality_Database),
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
@@ -300,6 +302,9 @@ package body Improve.CLI is
             Plain := To_Unbounded_String (Message ("help.version", [Arg ("version", Version)]) & LF);
          when Config_Command =>
             if Item.Has_Target and then To_String (Item.Target) = "validate" then
+               if Length (Settings.Source_Path) = 0 then
+                  raise Argument_Error with "no configuration file was selected";
+               end if;
                Plain := To_Unbounded_String (Message ("config.valid") & LF);
             else
                Plain := To_Unbounded_String
@@ -321,15 +326,29 @@ package body Improve.CLI is
       return To_String (Plain);
    end Dispatch;
 
-   function Diagnostic (Text : String) return String is
-     (Message ("error.prefix", [Arg ("message", Improve.Presentation.Safe_Text (Text))]) & LF);
+   type Error_Category is (Invalid_Input, Unavailable_Dependency, Invalid_State, Internal_Failure);
+
+   function Diagnostic (Category : Error_Category; Detail : String) return String is
+      Key : constant String :=
+        (case Category is
+            when Invalid_Input => "error.argument",
+            when Unavailable_Dependency => "error.dependency",
+            when Invalid_State => "error.data",
+            when Internal_Failure => "error.internal");
+      Rendered : constant String :=
+        Message (Key, [Arg ("detail", Improve.Presentation.Safe_Text (Detail))]);
+   begin
+      return Message ("error.prefix", [Arg ("message", Rendered)]) & LF;
+   end Diagnostic;
 
    function Execute (Arguments : String_Vectors.Vector) return Outcome is
       Item : Invocation;
       Negative : Boolean := False;
    begin
       Item := Parse (Arguments);
-      declare Settings : constant Improve.Config.Settings := Improve.Config.Load (Configuration_Path); begin
+      declare Settings : constant Improve.Config.Settings :=
+        Improve.Config.Load (Configuration_Path (Item));
+      begin
          if not Item.Has_Format then Item.Format := Settings.Format; end if;
          if not Item.Has_Color then Item.Color := Settings.Color; end if;
          if Item.Format = JSON_Format then Item.Color := Color_Never; end if;
@@ -357,17 +376,18 @@ package body Improve.CLI is
       when Error : Argument_Error =>
          return (Argument_Exit, Null_Unbounded_String,
                  To_Unbounded_String
-                   (Diagnostic (Ada.Exceptions.Exception_Message (Error)) & Message ("error.hint") & LF));
+                   (Diagnostic (Invalid_Input, Ada.Exceptions.Exception_Message (Error)) &
+                    Message ("error.hint") & LF));
       when Error : Dependency_Error =>
          return (Unavailable_Exit, Null_Unbounded_String,
-                 To_Unbounded_String (Diagnostic (Ada.Exceptions.Exception_Message (Error))));
+                 To_Unbounded_String
+                   (Diagnostic (Unavailable_Dependency, Ada.Exceptions.Exception_Message (Error))));
       when Error : Data_Error =>
          return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String (Diagnostic (Ada.Exceptions.Exception_Message (Error))));
+                 To_Unbounded_String (Diagnostic (Invalid_State, Ada.Exceptions.Exception_Message (Error))));
       when Error : others =>
          return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String (Diagnostic (Message ("error.internal",
-                   [Arg ("message", Ada.Exceptions.Exception_Message (Error))]))));
+                 To_Unbounded_String (Diagnostic (Internal_Failure, Ada.Exceptions.Exception_Message (Error))));
    end Execute;
 
    procedure Write (Text : String) is
@@ -396,7 +416,8 @@ package body Improve.CLI is
          when Error : Ada.IO_Exceptions.Device_Error | Ada.IO_Exceptions.Use_Error | Ada.IO_Exceptions.End_Error |
               Ada.IO_Exceptions.Status_Error =>
             Ada.Text_IO.Put (Ada.Text_IO.Standard_Error,
-              Diagnostic (Message ("error.output", [Arg ("message", Ada.Exceptions.Exception_Message (Error))])));
+              Diagnostic (Invalid_State,
+                Message ("error.output", [Arg ("message", Ada.Exceptions.Exception_Message (Error))])));
             return Failure_Exit;
       end;
    end Run;
