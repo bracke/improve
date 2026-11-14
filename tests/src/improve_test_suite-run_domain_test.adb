@@ -201,6 +201,33 @@ begin
             Improve.Source.Close (Store);
             Remove (Data);
          end;
+      when Assessment_Evidence_Bounded =>
+         declare
+            Data     : constant Fixture := Build_Fixture ("bounded-assessment");
+            Store    : Improve.Source.Repository;
+            Rejected : Boolean := False;
+         begin
+            Improve.Source.Open (Store, To_String (Data.Database));
+            declare
+               Project : constant Improve.Model.Project_Reference :=
+                 Improve.Source.Resolve_Project (Store, Id_Image (Data.Project));
+            begin
+               begin
+                  declare
+                     Chosen : constant Improve.Source.Selection :=
+                       Improve.Source.Select_Assessment (Store, Project, Maximum_Bytes => 1);
+                     pragma Unreferenced (Chosen);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+            end;
+            Assert (Rejected, "assessment fingerprinting ignored its evidence byte limit");
+            Improve.Source.Close (Store);
+            Remove (Data);
+         end;
       when Normalize_Findings =>
          declare
             Data  : constant Fixture := Build_Fixture ("normalize");

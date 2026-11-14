@@ -50,7 +50,8 @@ package Improve.Operations.Planning is
       Project_Selector : String;
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824)
       return Improve.Storage.Summary_Vectors.Vector;
    --  List stored plans for one database-qualified project.
    --  @param State_Path Existing Improve state database path.
@@ -59,6 +60,7 @@ package Improve.Operations.Planning is
    --  @param Maximum_Items Maximum plan summaries to materialize.
    --  @param Limits Hard persistence reconstruction limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
+   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
    --  @return Latest stored plan summaries for the exact project identity.
 
    function Approve

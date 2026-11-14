@@ -1,6 +1,6 @@
 with Ada_Quality.Reporting;
 with Improve.Model;
-with Improve.Recovery;
+with Improve.Operations.Recovery;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
@@ -72,7 +72,7 @@ package Improve.JSON is
    --  @param Values Project status summaries.
    --  @return One versioned JSON document.
 
-   function Recovery (Value : Improve.Recovery.Recovery_Report) return String;
+   function Recovery (Value : Improve.Operations.Recovery.Result) return String;
    --  Serialize publication recovery results.
    --  @param Value Recovery report.
    --  @return One versioned JSON document.

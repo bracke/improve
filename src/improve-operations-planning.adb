@@ -17,12 +17,14 @@ package body Improve.Operations.Planning is
       Dry_Run          : Boolean) return Generation_Result is
       Quality : Improve.Source.Repository;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+      Improve.Source.Open
+        (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
+         Settings.Maximum_Quality_Database_Bytes);
       declare
          Project  : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
          Selected : constant Improve.Source.Selection :=
-           Improve.Source.Select_Assessment (Quality, Project, Run_Id);
+           Improve.Source.Select_Assessment (Quality, Project, Run_Id, Settings.Maximum_Assessment_Bytes);
          Findings : constant Improve.Model.Finding_Vectors.Vector :=
            Improve.Findings.Normalize
              (Selected,
@@ -94,12 +96,13 @@ package body Improve.Operations.Planning is
       Project_Selector : String;
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824)
       return Improve.Storage.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);

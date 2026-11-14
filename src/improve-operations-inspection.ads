@@ -55,7 +55,9 @@ package Improve.Operations.Inspection is
       Filter           : String;
       Maximum_Items    : Positive;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
+      Maximum_Assessment_Bytes : Positive := 16_777_216)
       return Improve.Tasks.View_Vectors.Vector;
    --  Return filtered task views for an optional database-qualified project or task.
    --  @param State_Path Existing Improve state database.
@@ -67,6 +69,8 @@ package Improve.Operations.Inspection is
    --  @param Maximum_Items Hard result-size limit.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
+   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
+   --  @param Maximum_Assessment_Bytes Maximum typed assessment evidence bytes accepted.
    --  @return Stable, filtered, assessment-aware task views.
 
    function Status
@@ -76,7 +80,8 @@ package Improve.Operations.Inspection is
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824)
       return Improve.Tasks.Status_Vectors.Vector;
    --  Return assessment-aware remediation status for one or every registered project.
    --  @param State_Path Existing Improve state database.
@@ -86,6 +91,7 @@ package Improve.Operations.Inspection is
    --  @param Maximum_Items Hard project and task result-size limit.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
+   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
    --  @return Stable project status models with freshness-qualified evidence.
 
 end Improve.Operations.Inspection;

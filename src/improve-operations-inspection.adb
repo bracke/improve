@@ -16,7 +16,9 @@ package body Improve.Operations.Inspection is
       Quality : Improve.Source.Repository;
       Result  : Project_Result;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+      Improve.Source.Open
+        (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
+         Settings.Maximum_Quality_Database_Bytes);
       Result.Values := Improve.Source.Projects (Quality);
       if Result.Values.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
          raise Data_Error with "project query exceeds output.maximum_output_items";
@@ -38,12 +40,15 @@ package body Improve.Operations.Inspection is
       Quality : Improve.Source.Repository;
       Result  : Finding_Result;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+      Improve.Source.Open
+        (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
+         Settings.Maximum_Quality_Database_Bytes);
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
       begin
-         Result.Selected := Improve.Source.Select_Assessment (Quality, Project, Run_Id);
+         Result.Selected := Improve.Source.Select_Assessment
+           (Quality, Project, Run_Id, Settings.Maximum_Assessment_Bytes);
          Result.Values := Improve.Findings.Normalize
            (Result.Selected,
             Improve.Config.Quality_Severity (Settings.Minimum_Severity),
@@ -91,7 +96,9 @@ package body Improve.Operations.Inspection is
       Filter           : String;
       Maximum_Items    : Positive;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
+      Maximum_Assessment_Bytes : Positive := 16_777_216)
       return Improve.Tasks.View_Vectors.Vector is
       State              : Improve.Storage.Store;
       Selected_Project   : Improve.Model.Project_Reference :=
@@ -106,10 +113,12 @@ package body Improve.Operations.Inspection is
       end if;
       if Has_Project then
          declare Quality : Improve.Source.Repository; begin
-            Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
+            Improve.Source.Open
+              (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
             Selected_Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Current_Assessment :=
-              Improve.Source.Select_Assessment (Quality, Selected_Project).Baseline.Run_Id;
+              Improve.Source.Select_Assessment
+                (Quality, Selected_Project, Maximum_Bytes => Maximum_Assessment_Bytes).Baseline.Run_Id;
             Improve.Source.Close (Quality);
          exception
             when others =>
@@ -188,7 +197,8 @@ package body Improve.Operations.Inspection is
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>))
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824)
       return Improve.Tasks.Status_Vectors.Vector is
       State       : Improve.Storage.Store;
       Quality     : Improve.Source.Repository;
@@ -267,7 +277,7 @@ package body Improve.Operations.Inspection is
          Add_Project (Project, Latest);
       end Add_Resolved_Project;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
       Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       if All_Projects then
          declare Projects : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);

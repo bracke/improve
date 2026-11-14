@@ -23,11 +23,13 @@ package Improve.Source is
    procedure Open
      (Item   : in out Repository;
       Path   : String;
-      Limits : Ada_Quality.Reporting.Load_Limits := (others => <>));
+      Limits : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Database_Bytes : Positive := 1_073_741_824);
    --  Open an existing assessment database through the read-only reporting API.
    --  @param Item Repository handle.
    --  @param Path Existing Ada Quality database path.
    --  @param Limits Bounded reporting load limits.
+   --  @param Maximum_Database_Bytes Maximum database file bytes accepted before snapshot loading.
 
    procedure Close (Item : in out Repository);
    --  Release the in-memory snapshot.
@@ -49,9 +51,11 @@ package Improve.Source is
    --  @return Canonical database path used as persistent repository identity.
 
    function Assessment_Fingerprint
-     (Value : Ada_Quality.Reporting.Assessment_Record) return String;
+     (Value         : Ada_Quality.Reporting.Assessment_Record;
+      Maximum_Bytes : Positive := Positive'Last) return String;
    --  Fingerprint one assessment's complete typed evidence independently of unrelated database rows.
    --  @param Value Completed typed assessment.
+   --  @param Maximum_Bytes Maximum aggregate typed evidence bytes hashed.
    --  @return Stable assessment-specific content identity.
 
    function Resolve_Project (Item : Repository; Selector : String) return Improve.Model.Project_Reference;
@@ -63,11 +67,13 @@ package Improve.Source is
    function Select_Assessment
      (Item       : Repository;
       Project    : Improve.Model.Project_Reference;
-      Run_Id     : Natural := 0) return Selection;
+      Run_Id     : Natural := 0;
+      Maximum_Bytes : Positive := Positive'Last) return Selection;
    --  Select an explicit completed run or the greatest completed run identity.
    --  @param Item Open repository.
    --  @param Project Resolved project.
    --  @param Run_Id Explicit run identity or zero for latest completed.
+   --  @param Maximum_Bytes Maximum aggregate typed evidence bytes accepted.
    --  @return Validated assessment selection.
 
    function Latest_Completed_Run

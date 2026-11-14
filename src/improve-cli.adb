@@ -11,9 +11,9 @@ with Improve.Operations.Inspection;
 with Improve.Operations.Planning;
 with Improve.Operations.Publication;
 with Improve.Operations.Reconciliation;
+with Improve.Operations.Recovery;
 with Improve.Operations.Verification;
 with Improve.Presentation;
-with Improve.Recovery;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Text;
@@ -154,7 +154,8 @@ package body Improve.CLI is
               Improve.Operations.Planning.List
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
                  Settings.Maximum_Output_Items, Improve.Operations.Storage_Read_Limits (Settings),
-                 Improve.Operations.Quality_Load_Limits (Settings));
+                 Improve.Operations.Quality_Load_Limits (Settings),
+                 Settings.Maximum_Quality_Database_Bytes);
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
             return Improve.Presentation.Plans (Values);
@@ -183,7 +184,9 @@ package body Improve.CLI is
            Task_Kind        => To_String (Settings.Task_Kind),
            Dry_Run          => Item.Dry_Run,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
-           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
+           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes,
+           Maximum_Assessment_Bytes => Settings.Maximum_Assessment_Bytes);
    begin
       Require_Output_Items
         (Executed.Published.Tasks.Length, Settings.Maximum_Output_Items, "publication output");
@@ -208,7 +211,9 @@ package body Improve.CLI is
            Filter           => Filter,
            Maximum_Items    => Settings.Maximum_Output_Items,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
-           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
+           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes,
+           Maximum_Assessment_Bytes => Settings.Maximum_Assessment_Bytes);
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
       return Improve.Presentation.Tasks (Filtered);
@@ -223,18 +228,20 @@ package body Improve.CLI is
            All_Projects     => Item.All_Projects,
            Maximum_Items    => Settings.Maximum_Output_Items,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
-           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings));
+           Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
+           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes);
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
       return Improve.Presentation.Status (Values);
    end Status_Output;
 
    function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Report : constant Improve.Recovery.Recovery_Report :=
-        Improve.Recovery.Recover
+      Report : constant Improve.Operations.Recovery.Result :=
+        Improve.Operations.Recovery.Run
           (State_Path (Item), Quality_Path (Item, Settings), To_String (Settings.Task_Kind),
            Settings.Maximum_Recovery_Operations, Improve.Operations.Storage_Read_Limits (Settings),
-           Improve.Operations.Quality_Load_Limits (Settings));
+           Improve.Operations.Quality_Load_Limits (Settings),
+           Settings.Maximum_Quality_Database_Bytes, Settings.Maximum_Assessment_Bytes);
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
       return Improve.Presentation.Recovery (Report);
@@ -273,7 +280,8 @@ package body Improve.CLI is
         (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
          To_String (Settings.Task_Kind),
          Improve.Operations.Storage_Read_Limits (Settings),
-         Improve.Operations.Quality_Load_Limits (Settings));
+         Improve.Operations.Quality_Load_Limits (Settings),
+         Settings.Maximum_Quality_Database_Bytes);
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 

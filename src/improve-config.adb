@@ -17,7 +17,8 @@ package body Improve.Config is
    type Setting_Id is
      (Schema_Version,
       Quality_Database, Quality_Selection, Maximum_Quality_Projects, Maximum_Quality_Runs,
-      Maximum_Quality_Findings, Maximum_Assessment_Findings, Maximum_Assessment_Bytes,
+      Maximum_Quality_Findings, Maximum_Quality_Database_Bytes,
+      Maximum_Assessment_Findings, Maximum_Assessment_Bytes,
       Minimum_Severity, Maximum_Tasks_Per_Plan, Maximum_Findings_Per_Task,
       Allow_Investigation_Tasks, Require_Review, Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
       Agent_Max_Response_Bytes, Agent_Timeout_Seconds,
@@ -55,6 +56,7 @@ package body Improve.Config is
       Define ("quality", "maximum_database_projects", "10000", Positive_Value, 1, 100_000),
       Define ("quality", "maximum_database_runs", "1000000", Positive_Value, 1, 10_000_000),
       Define ("quality", "maximum_database_findings", "2000000", Positive_Value, 1, 10_000_000),
+      Define ("quality", "maximum_database_bytes", "1073741824", Positive_Value, 1, 2_000_000_000),
       Define ("quality", "maximum_assessment_findings", "10000", Positive_Value, 1, 1_000_000),
       Define ("quality", "maximum_assessment_bytes", "16777216", Positive_Value, 1, 268_435_456),
       Define ("planning", "minimum_severity", "low", Enum_Value),
@@ -209,6 +211,7 @@ package body Improve.Config is
        Maximum_Quality_Projects  => Default_Positive (Maximum_Quality_Projects),
        Maximum_Quality_Runs      => Default_Positive (Maximum_Quality_Runs),
        Maximum_Quality_Findings  => Default_Positive (Maximum_Quality_Findings),
+       Maximum_Quality_Database_Bytes => Default_Positive (Maximum_Quality_Database_Bytes),
        Maximum_Assessment_Findings => Default_Positive (Maximum_Assessment_Findings),
        Maximum_Assessment_Bytes  => Default_Positive (Maximum_Assessment_Bytes),
        Minimum_Severity          => Severity_Of (Default_String (Minimum_Severity)),
@@ -313,6 +316,7 @@ package body Improve.Config is
          Result.Maximum_Quality_Projects := Positive_Setting (Maximum_Quality_Projects);
          Result.Maximum_Quality_Runs := Positive_Setting (Maximum_Quality_Runs);
          Result.Maximum_Quality_Findings := Positive_Setting (Maximum_Quality_Findings);
+         Result.Maximum_Quality_Database_Bytes := Positive_Setting (Maximum_Quality_Database_Bytes);
          Result.Maximum_Assessment_Findings := Positive_Setting (Maximum_Assessment_Findings);
          Result.Maximum_Assessment_Bytes := Positive_Setting (Maximum_Assessment_Bytes);
          Result.Minimum_Severity := Severity_Of (String_Setting (Minimum_Severity));
@@ -358,6 +362,7 @@ package body Improve.Config is
          when Maximum_Quality_Projects => return Number (Item.Maximum_Quality_Projects);
          when Maximum_Quality_Runs => return Number (Item.Maximum_Quality_Runs);
          when Maximum_Quality_Findings => return Number (Item.Maximum_Quality_Findings);
+         when Maximum_Quality_Database_Bytes => return Number (Item.Maximum_Quality_Database_Bytes);
          when Maximum_Assessment_Findings => return Number (Item.Maximum_Assessment_Findings);
          when Maximum_Assessment_Bytes => return Number (Item.Maximum_Assessment_Bytes);
          when Minimum_Severity =>

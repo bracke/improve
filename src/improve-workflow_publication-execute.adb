@@ -79,7 +79,8 @@ function Execute
       for Id of Tasks.List (Store) loop
          declare Definition : Records.Item; begin
             Tasks.Definition (Store, Id, Definition, Status);
-            if Errors.Is_Ok (Status) and then Records.Get (Definition, "created_by") = "improve" then
+            Require_Ok (Status, "read listed native task " & Id);
+            if Records.Get (Definition, "created_by") = "improve" then
                declare Origin : constant String := Records.Get (Definition, "origin"); begin
                   if Origin /= "" then
                      if Native_By_Origin.Contains (Origin) and then

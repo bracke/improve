@@ -52,6 +52,30 @@ begin
       Improve.Storage.Close (Store);
    end;
    declare
+      Path     : constant String := Root & "/publication-duplicate.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.Storage.Publication_Vectors.Vector;
+      Evidence : Improve.Storage.Verification_Vectors.Vector;
+
+      procedure Read_Publications is
+         Values : constant Improve.Storage.Publication_Vectors.Vector :=
+           Improve.Storage.Publications (Store, "PLAN-000001");
+      begin
+         pragma Unreferenced (Values);
+      end Read_Publications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Publications (Store, "PLAN-000001", Mappings);
+      Improve.Storage.Close (Store);
+      Duplicate_Row (Path, Table => 10, Source_Id => 1, New_Id => 3);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Publications'Access, "publication read accepted a duplicate complete identity");
+      Improve.Storage.Close (Store);
+   end;
+   declare
       Path     : constant String := Root & "/publication-contract.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
@@ -80,6 +104,30 @@ begin
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error
         (Read_Publications'Access, "publication read accepted an unrelated task contract");
+      Improve.Storage.Close (Store);
+   end;
+   declare
+      Path     : constant String := Root & "/verification-duplicate.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.Storage.Publication_Vectors.Vector;
+      Evidence : Improve.Storage.Verification_Vectors.Vector;
+
+      procedure Read_Verifications is
+         Values : constant Improve.Storage.Verification_Vectors.Vector :=
+           Improve.Storage.Verifications (Store, "PLAN-000001");
+      begin
+         pragma Unreferenced (Values);
+      end Read_Verifications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Verification (Store, "PLAN-000001", Evidence);
+      Improve.Storage.Close (Store);
+      Duplicate_Row (Path, Table => 11, Source_Id => 1, New_Id => 3);
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Verifications'Access, "verification read accepted a duplicate complete identity");
       Improve.Storage.Close (Store);
    end;
    declare

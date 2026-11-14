@@ -16,7 +16,8 @@ package body Improve_Source_Test_Suite is
 
    type Test_Id is
      (Fingerprint_Deterministic, Fingerprint_Boundary_Safe, Authored_Paths_Tracked,
-      Generated_State_Ignored, Symlink_Rejected, Deep_Tree_Rejected, Oversized_File_Rejected);
+      Generated_State_Ignored, Symlink_Rejected, Deep_Tree_Rejected, Oversized_File_Rejected,
+      Quality_Database_Size_Rejected);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -159,6 +160,21 @@ package body Improve_Source_Test_Suite is
                   when Improve.Data_Error => Rejected := True;
                end;
                Assert (Rejected, "oversized source file was read instead of rejected before allocation");
+            end;
+         when Quality_Database_Size_Rejected =>
+            declare
+               Repository : Improve.Source.Repository;
+               Rejected   : Boolean := False;
+               Path       : constant String := Root & "/quality.db";
+            begin
+               Project_Tools.Files.Write_Raw_File (Path, "oversized");
+               begin
+                  Improve.Source.Open
+                    (Repository, Path, Maximum_Database_Bytes => 1);
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "oversized quality database reached the reporting loader");
             end;
       end case;
       Clear_Root;

@@ -44,6 +44,7 @@ function Publications
 
    procedure Validate_Contracts is
       Contracts : String_Value_Maps.Map;
+      Identities : String_Value_Maps.Map;
       Index     : Natural := Owners.First_Index;
    begin
       for Mapping of Result loop
@@ -52,13 +53,19 @@ function Publications
             Key   : constant String :=
               Contract_Key
                 (Owner, Mapping.Plan_Revision, To_String (Mapping.Improve_Task_Id));
+            Identity : constant String :=
+              Owner & Character'Val (0) & To_String (Mapping.Improve_Task_Id) &
+              Character'Val (0) & To_String (Mapping.Contract);
          begin
             Cache_Contracts (Item, Owner, Mapping.Plan_Revision, Limits, Contracts);
             if not Contracts.Contains (Key) then
                raise Data_Error with "publication references an unknown persisted task";
             elsif Mapping.Contract /= Contracts.Element (Key) then
                raise Data_Error with "publication does not match the persisted task contract";
+            elsif Identities.Contains (Identity) then
+               raise Data_Error with "duplicate persisted publication mapping";
             end if;
+            Identities.Insert (Identity, Mapping.Harness_Task_Id);
          end;
          Index := Index + 1;
       end loop;

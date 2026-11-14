@@ -12,8 +12,20 @@ package body Improve.Source is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
    use type Ada.Directories.File_Kind;
+   use type Ada.Directories.File_Size;
    use type Ada_Quality.Types.Assessment_Status;
    use type Ada_Quality.Types.Indicator_Id;
+
+   function Hex (Digest : CryptoLib.Hashes.SHA256_Digest) return String is
+      Hex_Chars : constant String := "0123456789abcdef";
+      Result    : String (1 .. 64);
+   begin
+      for Index in Digest'Range loop
+         Result (2 * Index - 1) := Hex_Chars (Natural (Digest (Index)) / 16 + 1);
+         Result (2 * Index) := Hex_Chars (Natural (Digest (Index)) mod 16 + 1);
+      end loop;
+      return Result;
+   end Hex;
 
    function Working_Fingerprint
      (Root       : String;
@@ -148,17 +160,6 @@ package body Improve.Source is
          Add (Natural'Image (Value) & Character'Val (0));
       end Add_Length;
 
-      function Hex (Digest : CryptoLib.Hashes.SHA256_Digest) return String is
-         Hex_Chars : constant String := "0123456789abcdef";
-         Result : String (1 .. 64);
-      begin
-         for Index in Digest'Range loop
-            Result (2 * Index - 1) := Hex_Chars (Natural (Digest (Index)) / 16 + 1);
-            Result (2 * Index) := Hex_Chars (Natural (Digest (Index)) mod 16 + 1);
-         end loop;
-         return Result;
-      end Hex;
-
       procedure Add_File (Relative : String) is
          Text    : Unbounded_String;
          Outcome : Hostkit.Fs.Read_Beneath_Outcome;
@@ -201,20 +202,36 @@ package body Improve.Source is
    procedure Open
      (Item   : in out Repository;
       Path   : String;
-      Limits : Ada_Quality.Reporting.Load_Limits := (others => <>)) is
+      Limits : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Database_Bytes : Positive := 1_073_741_824) is
    begin
       if Item.Opened then Close (Item); end if;
+      if Ada.Directories.Exists (Path) and then
+        Ada.Directories.Size (Path) > Ada.Directories.File_Size (Maximum_Database_Bytes)
+      then
+         raise Data_Error with "quality database exceeds configured byte limit";
+      end if;
       Ada_Quality.Reporting.Open (Item.Session, Path, Limits);
-      Item.Database_Id := To_Unbounded_String (Ada.Directories.Full_Name (Path));
       Item.Opened := True;
+      if Ada.Directories.Size (Path) > Ada.Directories.File_Size (Maximum_Database_Bytes) then
+         Close (Item);
+         raise Data_Error with "quality database exceeds configured byte limit";
+      end if;
+      Item.Database_Id := To_Unbounded_String (Ada.Directories.Full_Name (Path));
    exception
       when Error : Ada_Quality.Reporting.Reporting_Error | Ada_Quality.Reporting.Busy_Error =>
+         if Item.Opened then Close (Item); end if;
          raise Dependency_Error with Ada.Exceptions.Exception_Message (Error);
       when Error : Ada_Quality.Reporting.Schema_Error | Ada_Quality.Reporting.Integrity_Error =>
+         if Item.Opened then Close (Item); end if;
          raise Data_Error with Ada.Exceptions.Exception_Message (Error);
       when Error : Ada_Quality.Reporting.Limit_Error =>
+         if Item.Opened then Close (Item); end if;
          raise Data_Error with
            "quality snapshot exceeds configured limits: " & Ada.Exceptions.Exception_Message (Error);
+      when others =>
+         if Item.Opened then Close (Item); end if;
+         raise;
    end Open;
 
    procedure Close (Item : in out Repository) is
@@ -257,15 +274,43 @@ package body Improve.Source is
    end Database_Identity;
 
    function Assessment_Fingerprint
-     (Value : Ada_Quality.Reporting.Assessment_Record) return String is
-      Material : Unbounded_String;
+     (Value         : Ada_Quality.Reporting.Assessment_Record;
+      Maximum_Bytes : Positive := Positive'Last) return String is
+      Context : CryptoLib.Hashes.SHA256_Context;
+      Used    : Natural := 0;
+
+      procedure Hash_Text (Text : String) is
+         use Ada.Streams;
+         Buffer : Stream_Element_Array (1 .. 65_536);
+         First  : Natural := Text'First;
+      begin
+         while First <= Text'Last loop
+            declare
+               Count : constant Natural := Natural'Min (Buffer'Length, Text'Last - First + 1);
+            begin
+               for Offset in 0 .. Count - 1 loop
+                  Buffer (Buffer'First + Stream_Element_Offset (Offset)) :=
+                    Stream_Element (Character'Pos (Text (First + Offset)));
+               end loop;
+               CryptoLib.Hashes.Update
+                 (Context, Buffer (Buffer'First .. Buffer'First + Stream_Element_Offset (Count) - 1));
+               First := First + Count;
+            end;
+         end loop;
+      end Hash_Text;
 
       procedure Add (Name, Text : String) is
       begin
-         Append (Material, Natural'Image (Name'Length) & ":" & Name);
-         Append (Material, Natural'Image (Text'Length) & ":" & Text);
+         if Text'Length > Maximum_Bytes - Used then
+            raise Data_Error with "assessment exceeds configured evidence byte limit";
+         end if;
+         Used := Used + Text'Length;
+         Hash_Text (Natural'Image (Name'Length) & ":" & Name);
+         Hash_Text (Natural'Image (Text'Length) & ":" & Text);
       end Add;
    begin
+      CryptoLib.Hashes.Initialize_SHA256 (Context);
+      Hash_Text ("improve-assessment-v1" & Character'Val (0));
       Add ("run", Positive'Image (Value.Run.Id));
       Add ("project", Positive'Image (Value.Run.Project_Id));
       Add ("state", Ada_Quality.Types.Assessment_Status'Image (Value.Run.State));
@@ -292,7 +337,7 @@ package body Improve.Source is
             Add ("finding.fingerprint", To_String (Finding.Fingerprint));
          end loop;
       end loop;
-      return Stable_Digest (To_String (Material));
+      return "assessment-sha256-v1:" & Hex (CryptoLib.Hashes.Finalize (Context));
    end Assessment_Fingerprint;
 
    function Name_Of (Path : String) return String is
@@ -380,7 +425,8 @@ package body Improve.Source is
    function Select_Assessment
      (Item       : Repository;
       Project    : Improve.Model.Project_Reference;
-      Run_Id     : Natural := 0) return Selection is
+      Run_Id     : Natural := 0;
+      Maximum_Bytes : Positive := Positive'Last) return Selection is
       Selected : Natural := (if Run_Id = 0 then Latest_Completed_Run (Item, Project) else 0);
    begin
       Require_Open (Item);
@@ -412,7 +458,7 @@ package body Improve.Source is
                Source_Id    => Assessment.Run.Source_Id,
                Policy_Id    => Assessment.Run.Policy_Id,
                Toolchain_Id => Assessment.Run.Toolchain_Id,
-               Evidence_Id  => To_Unbounded_String (Assessment_Fingerprint (Assessment)),
+               Evidence_Id  => To_Unbounded_String (Assessment_Fingerprint (Assessment, Maximum_Bytes)),
                Snapshot_Id  => To_Unbounded_String (Identity (Item))));
       end;
    exception

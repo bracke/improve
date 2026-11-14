@@ -12,7 +12,9 @@ package body Improve.Operations.Publication is
       Task_Kind        : String;
       Dry_Run          : Boolean;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) return Result
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
+      Maximum_Assessment_Bytes : Positive := 16_777_216) return Result
    is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
@@ -41,7 +43,8 @@ package body Improve.Operations.Publication is
            "plan revision requires approval; run improve plan approve " & To_String (Plan.Plan_Id);
       end if;
       Improve.Publication_Authorization.Validate
-        (Plan, State_Path, Quality_Path, Quality_Limits);
+        (Plan, State_Path, Quality_Path, Quality_Limits,
+         Maximum_Quality_Database_Bytes, Maximum_Assessment_Bytes);
       if not Dry_Run then
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=

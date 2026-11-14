@@ -13,6 +13,10 @@ The assessment database is never created, migrated, recovered, or written by Imp
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.
 
+Quality reads are bounded before the reporting snapshot is materialized by a configurable database-file limit.
+Assessment identity is then computed with a streaming, versioned SHA-256 encoding that enforces the configured
+per-assessment evidence limit without creating another complete copy of the evidence.
+
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
 assessment. Publication applies a second, harness-state-aware `working-sha256-v3` fingerprint to detect authored
 changes after planning without treating model_runner's own operational state as a source edit. The working identity is
@@ -30,6 +34,9 @@ No framework record or transaction behavior is copied here.
 Optional planning assistance sits behind `Improve.Refinement.Adapter`. The adapter receives bounded immutable context
 and returns typed proposals; it owns no plan, quality, project, or harness state. Improve validates and fingerprints the
 result before normal persistence. model_runner's interactive `/work` path remains exclusively the execution workflow.
+
+Recovery orchestration belongs to `Improve.Operations.Recovery`, alongside the other application use cases. The older
+`Improve.Recovery` unit is retained only as a compatibility adapter and contains no recovery policy.
 
 Improve is distributed as a CLI executable, not as an Alire library crate. Its supported external interface is the CLI
 and its versioned JSON documents. The root `Improve` unit provides shared versioning and deterministic identity support;

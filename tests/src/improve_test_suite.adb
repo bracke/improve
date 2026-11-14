@@ -57,7 +57,8 @@ package body Improve_Test_Suite is
 
    type Test_Id is
      (Catalog, Digest,
-      Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Normalize_Findings,
+      Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Assessment_Evidence_Bounded,
+      Normalize_Findings,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Plan_Fingerprint_Severity_Sensitive, Plan_Fingerprint_Ignores_Unrelated_Snapshot,
@@ -236,6 +237,7 @@ package body Improve_Test_Suite is
    begin
       case Item.Id is
          when Catalog | Digest | Project_Discovery | Latest_Completed | Explicit_Incomplete_Rejected |
+           Assessment_Evidence_Bounded |
            Normalize_Findings | Unknown_Project_Rejected | Safe_Path_Validation | Projects_CLI | Findings_CLI |
            Complete_Strategy_Registry =>
             Run_Domain_Test (Item);

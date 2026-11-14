@@ -320,7 +320,7 @@ package body Improve.Presentation is
       return To_String (Result);
    end Status;
 
-   function Recovery (Value : Improve.Recovery.Recovery_Report) return String is
+   function Recovery (Value : Improve.Operations.Recovery.Result) return String is
      (Header (Message ("recover.title")) & LF &
       Message
         ("recover.complete",

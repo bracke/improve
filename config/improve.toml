@@ -6,6 +6,7 @@ selection = "latest_completed"
 maximum_database_projects = 10000
 maximum_database_runs = 1000000
 maximum_database_findings = 2000000
+maximum_database_bytes = 1073741824
 maximum_assessment_findings = 10000
 maximum_assessment_bytes = 16777216
 

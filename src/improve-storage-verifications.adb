@@ -64,6 +64,7 @@ function Verifications
 
    procedure Validate_Contracts is
       Contracts : String_Value_Maps.Map;
+      Identities : String_Value_Maps.Map;
       Index     : Natural := Owners.First_Index;
    begin
       for Evidence of Result loop
@@ -76,13 +77,22 @@ function Verifications
                  (if Evidence.Scope = Improve.Model.Task_Evaluation
                   then To_String (Evidence.Task_Id)
                   else "@plan"));
+            Identity : constant String :=
+              Owner & Character'Val (0) & Number (Evidence.Plan_Revision) &
+              Character'Val (0) & Improve.Model.Image (Evidence.Scope) &
+              Character'Val (0) & To_String (Evidence.Task_Id) &
+              Character'Val (0) & Number (Evidence.Assessment_Id) &
+              Character'Val (0) & To_String (Evidence.Contract_Fingerprint);
          begin
             Cache_Contracts (Item, Owner, Evidence.Plan_Revision, Limits, Contracts);
             if not Contracts.Contains (Key) then
                raise Data_Error with "verification references an unknown persisted task";
             elsif Evidence.Contract_Fingerprint /= Contracts.Element (Key) then
                raise Data_Error with "verification does not match the persisted evaluation contract";
+            elsif Identities.Contains (Identity) then
+               raise Data_Error with "duplicate persisted verification evidence";
             end if;
+            Identities.Insert (Identity, Evidence.Explanation);
          end;
          Index := Index + 1;
       end loop;

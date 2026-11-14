@@ -361,7 +361,7 @@ package body Improve.JSON is
       return Jsonlib.Serializers.To_String (Doc) & LF;
    end Status;
 
-   function Recovery (Value : Improve.Recovery.Recovery_Report) return String is
+   function Recovery (Value : Improve.Operations.Recovery.Result) return String is
       Doc  : Document;
       Root : constant Node := Doc.New_Object;
       Data : constant Node := Doc.New_Object;

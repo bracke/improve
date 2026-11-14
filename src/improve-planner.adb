@@ -41,6 +41,7 @@ package body Improve.Planner is
         (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
          Positive'Image (Settings.Maximum_Assessment_Findings) & "|" &
          Positive'Image (Settings.Maximum_Assessment_Bytes) & "|" &
+         Positive'Image (Settings.Maximum_Quality_Database_Bytes) & "|" &
          Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
          Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &

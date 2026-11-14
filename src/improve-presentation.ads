@@ -1,7 +1,7 @@
 with Improve.Config;
 with Ada_Quality.Reporting;
 with Improve.Model;
-with Improve.Recovery;
+with Improve.Operations.Recovery;
 with Improve.Source;
 with Improve.Storage;
 with Improve.Tasks;
@@ -85,7 +85,7 @@ package Improve.Presentation is
    --  @param Values Project status records.
    --  @return Human-readable status report.
 
-   function Recovery (Value : Improve.Recovery.Recovery_Report) return String;
+   function Recovery (Value : Improve.Operations.Recovery.Result) return String;
    --  Render publication recovery counts.
    --  @param Value Recovery report.
    --  @return Human-readable recovery result.

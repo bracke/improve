@@ -50,7 +50,8 @@ package body Improve.Operations.Verification is
             Project : Improve.Model.Project_Reference;
          begin
             Improve.Source.Open
-              (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+              (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
+               Settings.Maximum_Quality_Database_Bytes);
             Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Improve.Source.Close (Quality);
             declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
@@ -72,12 +73,14 @@ package body Improve.Operations.Verification is
          Quality : Improve.Source.Repository;
       begin
          Improve.Source.Open
-           (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings));
+           (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
+            Settings.Maximum_Quality_Database_Bytes);
          declare
             Project : constant Improve.Model.Project_Reference :=
               Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
             Current : constant Improve.Source.Selection :=
-              Improve.Source.Select_Assessment (Quality, Project, Run_Id);
+              Improve.Source.Select_Assessment
+                (Quality, Project, Run_Id, Settings.Maximum_Assessment_Bytes);
          begin
             Improve.Operations.Require_Project_Identity (Plan.Project, Project);
             Improve.Source.Close (Quality);

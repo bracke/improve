@@ -11,6 +11,10 @@ measurements, and findings. Planning persists that identity and publication auth
 The reporting snapshot identity is retained only as audit provenance because unrelated projects can change the shared
 database snapshot without changing the selected assessment.
 
+Improve rejects a quality database larger than `quality.maximum_database_bytes` before opening the reporting session.
+It also enforces `quality.maximum_assessment_bytes` while streaming the versioned assessment fingerprint, so identity
+calculation cannot bypass the configured evidence bound.
+
 A persisted project identity includes the canonical Ada Quality database path, numeric registry identity, and
 canonical project root. Improve rejects application, refresh, reconciliation, and verification when the selected
 database resolves an equal numeric identity to another project. Plans from independent databases remain separate even

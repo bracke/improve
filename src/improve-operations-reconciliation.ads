@@ -11,7 +11,8 @@ package Improve.Operations.Reconciliation is
       Project_Selector : String;
       Requested_Kind   : String;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>));
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824);
    --  Reconcile every stored publication mapping for one database-qualified project.
    --  @param State_Path Existing Improve state database.
    --  @param Quality_Path Existing read-only Ada Quality database.
@@ -19,4 +20,5 @@ package Improve.Operations.Reconciliation is
    --  @param Requested_Kind Configured native remediation task kind or auto.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
+   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
 end Improve.Operations.Reconciliation;

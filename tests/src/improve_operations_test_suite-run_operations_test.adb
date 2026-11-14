@@ -43,6 +43,7 @@ begin
                   "maximum_database_projects = 70" & ASCII.LF &
                   "maximum_database_runs = 700" & ASCII.LF &
                   "maximum_database_findings = 7000" & ASCII.LF &
+                  "maximum_database_bytes = 1048576" & ASCII.LF &
                   "maximum_assessment_findings = 77" & ASCII.LF &
                   "maximum_assessment_bytes = 65536" & ASCII.LF &
                   "[planning]" & ASCII.LF &
@@ -78,6 +79,7 @@ begin
                      Value.Maximum_Quality_Projects = 70 and then
                      Value.Maximum_Quality_Runs = 700 and then
                      Value.Maximum_Quality_Findings = 7_000 and then
+                     Value.Maximum_Quality_Database_Bytes = 1_048_576 and then
                      Value.Maximum_Assessment_Findings = 77 and then
                      Value.Maximum_Assessment_Bytes = 65_536 and then
                      Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
@@ -170,6 +172,7 @@ begin
                Reject ("maximum_database_projects = 100001", "quality project limit", "quality");
                Reject ("maximum_database_runs = 10000001", "quality run limit", "quality");
                Reject ("maximum_database_findings = 10000001", "quality finding load limit", "quality");
+               Reject ("maximum_database_bytes = 2000000001", "quality database byte limit", "quality");
                Reject ("maximum_assessment_findings = 1000001", "assessment finding limit", "quality");
                Reject ("maximum_assessment_bytes = 268435457", "assessment byte limit", "quality");
                Reject ("minimum_severity = ""urgent""", "severity", "planning");

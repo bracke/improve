@@ -15,7 +15,8 @@ package body Improve.Operations.Reconciliation is
       Project_Selector : String;
       Requested_Kind   : String;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
-      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>)) is
+      Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
+      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824) is
       State : Improve.Storage.Store;
 
       procedure Reconcile_Plan
@@ -98,7 +99,7 @@ package body Improve.Operations.Reconciliation is
       end Reconcile_Plan;
    begin
       declare Quality : Improve.Source.Repository; begin
-         Improve.Source.Open (Quality, Quality_Path, Quality_Limits);
+         Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
          declare Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
          begin

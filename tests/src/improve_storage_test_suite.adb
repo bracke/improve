@@ -184,6 +184,35 @@ package body Improve_Storage_Test_Suite is
          raise;
    end Replace_Row_Payload;
 
+   procedure Duplicate_Row
+     (Path      : String;
+      Table     : Positive;
+      Source_Id : Positive;
+      New_Id    : Positive) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Raw_Entity;
+      Status : Database.Status.Result;
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for duplicate fixture");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Source_Id), Row);
+      Assert (Status.Code = Database.Status.Ok, "duplicate fixture source row is missing");
+      Row.Id := New_Id;
+      Assert
+        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "duplicate fixture row could not be inserted");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Duplicate_Row;
+
    procedure Exhaust_Project_Identities (Path : String) is separate;
 
    procedure Insert_Unknown_Finding_Link
