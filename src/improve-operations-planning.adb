@@ -31,11 +31,13 @@ package body Improve.Operations.Planning is
               Improve.Config.Quality_Severity (Settings.Minimum_Severity),
               Settings.Allow_Investigation_Tasks,
               Settings.Maximum_Assessment_Findings,
-              Settings.Maximum_Assessment_Bytes);
+              Settings.Maximum_Normalized_Finding_Bytes);
          Draft : constant Improve.Model.Plan_Revision :=
            Improve.Planner.Generate
              (Selected, Findings, Settings,
-              Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path), State_Path));
+              Improve.Source.Working_Fingerprint
+                (To_String (Selected.Project.Path), State_Path,
+                 Settings.Maximum_Source_File_Bytes, Settings.Maximum_Source_Total_Bytes));
       begin
          if Draft.Tasks.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
             raise Data_Error with "generated plan exceeds output.maximum_output_items";
@@ -97,12 +99,12 @@ package body Improve.Operations.Planning is
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824)
+      Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Improve.Storage.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
-      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Evidence_Limits.Database_Bytes);
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);

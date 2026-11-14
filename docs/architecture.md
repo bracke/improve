@@ -16,6 +16,9 @@ operations joined by a stable origin identifier and recovery, not as a distribut
 Quality reads are bounded before the reporting snapshot is materialized by a configurable database-file limit.
 Assessment identity is then computed with a streaming, versioned SHA-256 encoding that enforces the configured
 per-assessment evidence limit without creating another complete copy of the evidence.
+Complete assessment evidence, normalized remediation findings, and working-source content have separate limits.
+Application operations receive them through one typed evidence-limit value so publication and recovery cannot drift
+from planning policy.
 
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
 assessment. Publication applies a second, harness-state-aware `working-sha256-v3` fingerprint to detect authored

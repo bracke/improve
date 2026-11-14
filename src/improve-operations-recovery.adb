@@ -14,8 +14,7 @@ package body Improve.Operations.Recovery is
       Maximum         : Positive;
       Limits          : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits  : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
-      Maximum_Assessment_Bytes : Positive := 16_777_216) return Result is
+      Evidence_Limits : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) return Result is
       State   : Improve.Storage.Store;
       Pending : Improve.Storage.Operation_Vectors.Vector;
       Value   : Result;
@@ -72,7 +71,7 @@ package body Improve.Operations.Recovery is
                   end if;
                   Improve.Publication_Authorization.Validate
                     (Plan, State_Path, Quality_Path, Quality_Limits,
-                     Maximum_Quality_Database_Bytes, Maximum_Assessment_Bytes,
+                     Evidence_Limits,
                      Retain_On_Failure => True);
                   Published := Improve.Workflow.Publish
                     (To_String (Plan.Project.Path), Plan, Kind, Existing => Existing,

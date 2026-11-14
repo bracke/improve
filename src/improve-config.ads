@@ -8,6 +8,34 @@ package Improve.Config is
    subtype UString is Ada.Strings.Unbounded.Unbounded_String;
    --  Dynamically sized configuration text.
 
+   Default_Maximum_Quality_Database_Bytes : constant Positive := 1_073_741_824;
+   --  Default maximum size of the Ada Quality database file.
+   Default_Maximum_Assessment_Bytes       : constant Positive := 16_777_216;
+   --  Default maximum complete typed assessment evidence size.
+   Default_Maximum_Normalized_Finding_Bytes : constant Positive := 16_777_216;
+   --  Default maximum normalized remediation finding size.
+   Default_Maximum_Source_File_Bytes      : constant Positive := 16_777_216;
+   --  Default maximum source bytes read from one file.
+   Default_Maximum_Source_Total_Bytes     : constant Positive := 268_435_456;
+   --  Default maximum source bytes read from one project.
+
+   type Evidence_Limits is record
+      Database_Bytes           : Positive := Default_Maximum_Quality_Database_Bytes;
+      Assessment_Bytes         : Positive := Default_Maximum_Assessment_Bytes;
+      Normalized_Finding_Bytes : Positive := Default_Maximum_Normalized_Finding_Bytes;
+      Source_File_Bytes        : Positive := Default_Maximum_Source_File_Bytes;
+      Source_Total_Bytes       : Positive := Default_Maximum_Source_Total_Bytes;
+   end record;
+   --  Shared limits for quality evidence and source identity construction.
+   --  @field Database_Bytes Maximum Ada Quality database file bytes.
+   --  @field Assessment_Bytes Maximum complete typed assessment evidence bytes.
+   --  @field Normalized_Finding_Bytes Maximum normalized remediation finding bytes.
+   --  @field Source_File_Bytes Maximum source bytes read from one file.
+   --  @field Source_Total_Bytes Maximum source bytes read from one project.
+
+   Default_Evidence_Limits : constant Evidence_Limits := (others => <>);
+   --  Shared default evidence limits.
+
    type Output_Format is (Terminal_Format, JSON_Format);
    --  User-visible output encoding.
    --  @enum Terminal_Format Human-readable terminal output.
@@ -37,9 +65,12 @@ package Improve.Config is
       Maximum_Quality_Projects  : Positive := 10_000;
       Maximum_Quality_Runs      : Positive := 1_000_000;
       Maximum_Quality_Findings  : Positive := 2_000_000;
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
+      Maximum_Quality_Database_Bytes : Positive := Default_Maximum_Quality_Database_Bytes;
       Maximum_Assessment_Findings : Positive := 10_000;
-      Maximum_Assessment_Bytes  : Positive := 16_777_216;
+      Maximum_Assessment_Bytes  : Positive := Default_Maximum_Assessment_Bytes;
+      Maximum_Normalized_Finding_Bytes : Positive := Default_Maximum_Normalized_Finding_Bytes;
+      Maximum_Source_File_Bytes : Positive := Default_Maximum_Source_File_Bytes;
+      Maximum_Source_Total_Bytes : Positive := Default_Maximum_Source_Total_Bytes;
       Minimum_Severity          : Severity_Level := Low;
       Maximum_Tasks_Per_Plan    : Positive := 100;
       Maximum_Findings_Per_Task : Positive := 50;
@@ -71,7 +102,10 @@ package Improve.Config is
    --  @field Maximum_Quality_Findings Maximum finding rows loaded from the quality database.
    --  @field Maximum_Quality_Database_Bytes Maximum Ada Quality database file bytes accepted before loading.
    --  @field Maximum_Assessment_Findings Maximum findings normalized from one assessment.
-   --  @field Maximum_Assessment_Bytes Maximum aggregate normalized assessment evidence bytes.
+   --  @field Maximum_Assessment_Bytes Maximum complete typed assessment evidence bytes.
+   --  @field Maximum_Normalized_Finding_Bytes Maximum normalized remediation finding bytes.
+   --  @field Maximum_Source_File_Bytes Maximum bytes read from one source file for identity construction.
+   --  @field Maximum_Source_Total_Bytes Maximum source bytes read for one working-tree identity.
    --  @field Minimum_Severity Minimum planned severity.
    --  @field Maximum_Tasks_Per_Plan Maximum generated tasks.
    --  @field Maximum_Findings_Per_Task Maximum findings grouped into one task.
@@ -98,6 +132,11 @@ package Improve.Config is
    function Defaults return Settings;
    --  Return documented schema-version-1 defaults.
    --  @return Complete default settings.
+
+   function Evidence_Limits_Of (Item : Settings) return Evidence_Limits;
+   --  Return the shared evidence limits from validated settings.
+   --  @param Item Validated Improve settings.
+   --  @return Evidence limits used by planning, inspection, publication, and recovery.
 
    function Quality_Severity (Value : Severity_Level) return Ada_Quality.Types.Severity;
    --  Convert planning severity configuration to the Ada Quality domain type.

@@ -1,4 +1,5 @@
 with Improve.Model;
+with Improve.Config;
 with Improve.Storage;
 with Improve.Workflow;
 with Ada_Quality.Reporting;
@@ -24,8 +25,7 @@ package Improve.Operations.Publication is
       Dry_Run          : Boolean;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
-      Maximum_Assessment_Bytes : Positive := 16_777_216) return Result;
+      Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) return Result;
    --  Validate approval and source/evidence identity, journal the operation,
    --  publish through one native harness transaction, and persist mappings.
    --  @param State_Path Existing Improve state database.
@@ -36,7 +36,6 @@ package Improve.Operations.Publication is
    --  @param Dry_Run Whether to validate without changing either writable store.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
-   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
-   --  @param Maximum_Assessment_Bytes Maximum typed assessment evidence bytes accepted.
+   --  @param Evidence_Limits Shared quality evidence and source identity limits.
    --  @return Exact plan and resulting native publication mappings.
 end Improve.Operations.Publication;

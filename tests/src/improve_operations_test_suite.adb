@@ -33,6 +33,7 @@ package body Improve_Operations_Test_Suite is
    use type Improve.Config.Color_Mode;
    use type Improve.Config.Output_Format;
    use type Improve.Config.Severity_Level;
+   use type Improve.Config.Evidence_Limits;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;
 

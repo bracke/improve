@@ -1,6 +1,4 @@
 with Ada.Directories;
-with Ada.Streams;
-with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with AUnit;
 with AUnit.Assertions;
@@ -143,23 +141,32 @@ package body Improve_Source_Test_Suite is
             end;
          when Oversized_File_Rejected =>
             declare
-               use Ada.Streams;
-               File     : Ada.Streams.Stream_IO.File_Type;
-               Byte     : constant Stream_Element_Array := [1 => 0];
                Rejected : Boolean := False;
             begin
-               Ada.Streams.Stream_IO.Create (File, Ada.Streams.Stream_IO.Out_File, Root & "/oversized.bin");
-               Ada.Streams.Stream_IO.Set_Index (File, 16_777_217);
-               Ada.Streams.Stream_IO.Write (File, Byte);
-               Ada.Streams.Stream_IO.Close (File);
+               Project_Tools.Files.Write_Raw_File (Root & "/oversized.bin", "ab");
                begin
-                  declare Value : constant String := Improve.Source.Working_Fingerprint (Root); begin
+                  declare Value : constant String := Improve.Source.Working_Fingerprint
+                    (Root, Maximum_File_Bytes => 1, Maximum_Total_Bytes => 2);
+                  begin
                      Assert (Value = "", "oversized source unexpectedly produced a fingerprint");
                   end;
                exception
                   when Improve.Data_Error => Rejected := True;
                end;
-               Assert (Rejected, "oversized source file was read instead of rejected before allocation");
+               Assert (Rejected, "configured per-file source limit was not enforced");
+               Project_Tools.Files.Write_Raw_File (Root & "/oversized.bin", "a");
+               Project_Tools.Files.Write_Raw_File (Root & "/second.bin", "b");
+               Rejected := False;
+               begin
+                  declare Value : constant String := Improve.Source.Working_Fingerprint
+                    (Root, Maximum_File_Bytes => 1, Maximum_Total_Bytes => 1);
+                  begin
+                     Assert (Value = "", "oversized source inventory unexpectedly produced a fingerprint");
+                  end;
+               exception
+                  when Improve.Data_Error => Rejected := True;
+               end;
+               Assert (Rejected, "configured total source limit was not enforced");
             end;
          when Quality_Database_Size_Rejected =>
             declare

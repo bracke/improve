@@ -9,6 +9,9 @@ maximum_database_findings = 2000000
 maximum_database_bytes = 1073741824
 maximum_assessment_findings = 10000
 maximum_assessment_bytes = 16777216
+maximum_normalized_finding_bytes = 16777216
+maximum_source_file_bytes = 16777216
+maximum_source_total_bytes = 268435456
 
 [planning]
 minimum_severity = "low"

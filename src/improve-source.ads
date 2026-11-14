@@ -1,6 +1,7 @@
 with Ada.Finalization;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Reporting;
+with Improve.Config;
 with Improve.Model;
 
 --  Read-only Ada Quality project and completed-assessment selection.
@@ -24,7 +25,7 @@ package Improve.Source is
      (Item   : in out Repository;
       Path   : String;
       Limits : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Database_Bytes : Positive := 1_073_741_824);
+      Maximum_Database_Bytes : Positive := Improve.Config.Default_Maximum_Quality_Database_Bytes);
    --  Open an existing assessment database through the read-only reporting API.
    --  @param Item Repository handle.
    --  @param Path Existing Ada Quality database path.
@@ -88,13 +89,17 @@ package Improve.Source is
 
    function Working_Fingerprint
      (Root       : String;
-      State_Path : String := "") return String;
+      State_Path : String := "";
+      Maximum_File_Bytes  : Positive := Improve.Config.Default_Maximum_Source_File_Bytes;
+      Maximum_Total_Bytes : Positive := Improve.Config.Default_Maximum_Source_Total_Bytes) return String;
    --  Fingerprint the current project source without following links. Only
    --  exact generated build paths and the configured Improve state file are
    --  excluded; authored directories with similar basenames and database
    --  fixtures remain part of the identity.
    --  @param Root Canonical project root.
    --  @param State_Path Configured Improve state database, or empty.
+   --  @param Maximum_File_Bytes Maximum bytes read from one authored file.
+   --  @param Maximum_Total_Bytes Maximum authored bytes read across the project.
    --  @return Stable source fingerprint used for publication staleness checks.
 
 private

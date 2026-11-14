@@ -1,4 +1,5 @@
 with Ada_Quality.Types;
+with Improve.Config;
 with Improve.Model;
 with Improve.Source;
 
@@ -11,7 +12,8 @@ package Improve.Findings is
       Minimum_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.Low;
       Allow_Investigation : Boolean := True;
       Maximum_Findings : Positive := 10_000;
-      Maximum_Bytes    : Positive := 16_777_216) return Improve.Model.Finding_Vectors.Vector;
+      Maximum_Bytes    : Positive := Improve.Config.Default_Maximum_Normalized_Finding_Bytes)
+      return Improve.Model.Finding_Vectors.Vector;
    --  Return deterministic candidates from violations and unavailable evidence.
    --  @param Selected Completed assessment and baseline provenance.
    --  @param Minimum_Severity Lowest source finding severity to retain.

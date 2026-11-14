@@ -29,7 +29,9 @@ package body Improve.Source is
 
    function Working_Fingerprint
      (Root       : String;
-      State_Path : String := "") return String is
+      State_Path : String := "";
+      Maximum_File_Bytes  : Positive := Improve.Config.Default_Maximum_Source_File_Bytes;
+      Maximum_Total_Bytes : Positive := Improve.Config.Default_Maximum_Source_Total_Bytes) return String is
       package Paths is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => Ada.Strings.Unbounded.Unbounded_String,
          "=" => Ada.Strings.Unbounded."=");
@@ -164,7 +166,7 @@ package body Improve.Source is
          Text    : Unbounded_String;
          Outcome : Hostkit.Fs.Read_Beneath_Outcome;
       begin
-         Hostkit.Fs.Read_Beneath (Canonical_Root, Relative, 16_777_216, Text, Outcome);
+         Hostkit.Fs.Read_Beneath (Canonical_Root, Relative, Maximum_File_Bytes, Text, Outcome);
          case Outcome is
             when Hostkit.Fs.Read_Done => null;
             when Hostkit.Fs.Read_Too_Large =>
@@ -174,7 +176,7 @@ package body Improve.Source is
             when others =>
                raise Data_Error with "project source changed or cannot be read: " & Relative;
          end case;
-         if Total > 268_435_456 - Length (Text) then
+         if Length (Text) > Maximum_Total_Bytes - Total then
             raise Data_Error with "project source exceeds fingerprint byte limit";
          end if;
          Add_Length (Length (Text));
@@ -203,7 +205,7 @@ package body Improve.Source is
      (Item   : in out Repository;
       Path   : String;
       Limits : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Database_Bytes : Positive := 1_073_741_824) is
+      Maximum_Database_Bytes : Positive := Improve.Config.Default_Maximum_Quality_Database_Bytes) is
    begin
       if Item.Opened then Close (Item); end if;
       if Ada.Directories.Exists (Path) and then

@@ -14,8 +14,7 @@ package body Improve.Publication_Authorization is
       State_Path     : String;
       Quality_Path      : String;
       Quality_Limits    : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
-      Maximum_Assessment_Bytes : Positive := 16_777_216;
+      Evidence_Limits   : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits;
       Retain_On_Failure : Boolean := False) is
       Quality : Improve.Source.Repository;
 
@@ -25,22 +24,25 @@ package body Improve.Publication_Authorization is
            Message & (if Retain_On_Failure then "; operation retained without creating native tasks" else "");
       end Reject;
    begin
-      if Improve.Source.Working_Fingerprint (To_String (Plan.Project.Path), State_Path) /=
+      if Improve.Source.Working_Fingerprint
+        (To_String (Plan.Project.Path), State_Path,
+         Evidence_Limits.Source_File_Bytes, Evidence_Limits.Source_Total_Bytes) /=
         To_String (Plan.Working_Source_Id)
       then
          Reject ("current project source differs from the assessment baseline; remeasure and refresh the plan");
       end if;
-      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Maximum_Quality_Database_Bytes);
+      Improve.Source.Open (Quality, Quality_Path, Quality_Limits, Evidence_Limits.Database_Bytes);
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
          Baseline : Improve.Source.Selection;
          Latest : constant Improve.Source.Selection :=
-           Improve.Source.Select_Assessment (Quality, Project, Maximum_Bytes => Maximum_Assessment_Bytes);
+           Improve.Source.Select_Assessment
+             (Quality, Project, Maximum_Bytes => Evidence_Limits.Assessment_Bytes);
       begin
          Improve.Operations.Require_Project_Identity (Plan.Project, Project);
          Baseline := Improve.Source.Select_Assessment
-           (Quality, Project, Plan.Baseline.Run_Id, Maximum_Assessment_Bytes);
+           (Quality, Project, Plan.Baseline.Run_Id, Evidence_Limits.Assessment_Bytes);
          if Baseline.Baseline.Project_Id /= Plan.Baseline.Project_Id or else
            Baseline.Baseline.Source_Id /= Plan.Baseline.Source_Id or else
            Baseline.Baseline.Policy_Id /= Plan.Baseline.Policy_Id or else

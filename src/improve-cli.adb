@@ -155,7 +155,7 @@ package body Improve.CLI is
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
                  Settings.Maximum_Output_Items, Improve.Operations.Storage_Read_Limits (Settings),
                  Improve.Operations.Quality_Load_Limits (Settings),
-                 Settings.Maximum_Quality_Database_Bytes);
+                 Improve.Config.Evidence_Limits_Of (Settings));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
             return Improve.Presentation.Plans (Values);
@@ -185,8 +185,7 @@ package body Improve.CLI is
            Dry_Run          => Item.Dry_Run,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
-           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes,
-           Maximum_Assessment_Bytes => Settings.Maximum_Assessment_Bytes);
+           Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
    begin
       Require_Output_Items
         (Executed.Published.Tasks.Length, Settings.Maximum_Output_Items, "publication output");
@@ -212,8 +211,7 @@ package body Improve.CLI is
            Maximum_Items    => Settings.Maximum_Output_Items,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
-           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes,
-           Maximum_Assessment_Bytes => Settings.Maximum_Assessment_Bytes);
+           Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
       return Improve.Presentation.Tasks (Filtered);
@@ -229,7 +227,7 @@ package body Improve.CLI is
            Maximum_Items    => Settings.Maximum_Output_Items,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
-           Maximum_Quality_Database_Bytes => Settings.Maximum_Quality_Database_Bytes);
+           Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
       return Improve.Presentation.Status (Values);
@@ -241,7 +239,7 @@ package body Improve.CLI is
           (State_Path (Item), Quality_Path (Item, Settings), To_String (Settings.Task_Kind),
            Settings.Maximum_Recovery_Operations, Improve.Operations.Storage_Read_Limits (Settings),
            Improve.Operations.Quality_Load_Limits (Settings),
-           Settings.Maximum_Quality_Database_Bytes, Settings.Maximum_Assessment_Bytes);
+           Improve.Config.Evidence_Limits_Of (Settings));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
       return Improve.Presentation.Recovery (Report);
@@ -281,7 +279,7 @@ package body Improve.CLI is
          To_String (Settings.Task_Kind),
          Improve.Operations.Storage_Read_Limits (Settings),
          Improve.Operations.Quality_Load_Limits (Settings),
-         Settings.Maximum_Quality_Database_Bytes);
+         Improve.Config.Evidence_Limits_Of (Settings));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 

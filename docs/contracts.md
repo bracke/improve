@@ -14,6 +14,8 @@ database snapshot without changing the selected assessment.
 Improve rejects a quality database larger than `quality.maximum_database_bytes` before opening the reporting session.
 It also enforces `quality.maximum_assessment_bytes` while streaming the versioned assessment fingerprint, so identity
 calculation cannot bypass the configured evidence bound.
+`quality.maximum_normalized_finding_bytes` independently bounds the remediation finding projection. Configurable
+per-file and total source limits apply identically when planning, publishing, or recovering work.
 
 A persisted project identity includes the canonical Ada Quality database path, numeric registry identity, and
 canonical project root. Improve rejects application, refresh, reconciliation, and verification when the selected

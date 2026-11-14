@@ -41,7 +41,10 @@ package body Improve.Planner is
         (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
          Positive'Image (Settings.Maximum_Assessment_Findings) & "|" &
          Positive'Image (Settings.Maximum_Assessment_Bytes) & "|" &
+         Positive'Image (Settings.Maximum_Normalized_Finding_Bytes) & "|" &
          Positive'Image (Settings.Maximum_Quality_Database_Bytes) & "|" &
+         Positive'Image (Settings.Maximum_Source_File_Bytes) & "|" &
+         Positive'Image (Settings.Maximum_Source_Total_Bytes) & "|" &
          Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
          Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &
@@ -181,7 +184,10 @@ package body Improve.Planner is
       Result.Baseline := Selected.Baseline;
       Result.Working_Source_Id := To_Unbounded_String
         (if Working_Source_Id = "" then
-           Improve.Source.Working_Fingerprint (To_String (Selected.Project.Path))
+           Improve.Source.Working_Fingerprint
+             (To_String (Selected.Project.Path),
+              Maximum_File_Bytes  => Settings.Maximum_Source_File_Bytes,
+              Maximum_Total_Bytes => Settings.Maximum_Source_Total_Bytes)
          else Working_Source_Id);
       Result.Planner_Id := To_Unbounded_String (Planner_Version & ":" & Config_Id);
       Result.Created_At := Ada.Calendar.Time_Of (1970, 1, 1);

@@ -10,11 +10,15 @@ The reporting snapshot is bounded before it is loaded by `quality.maximum_databa
 `quality.maximum_database_runs`, and `quality.maximum_database_findings`. Their defaults are 10,000,
 1,000,000, and 2,000,000 respectively.
 
-Assessment normalization is bounded by `quality.maximum_assessment_findings` and
-`quality.maximum_assessment_bytes`. The quality database is rejected before loading when it exceeds
-`quality.maximum_database_bytes` (1 GiB by default). Assessment defaults are 10,000 findings and 16 MiB; accepted
-maxima are 1,000,000 findings and 256 MiB. The database-size maximum is 2,000,000,000 bytes. Limits are enforced while
-the assessment fingerprint is streamed and while deduplicated findings are constructed.
+Complete assessment identity is bounded by `quality.maximum_assessment_bytes`; normalized remediation evidence has a
+separate `quality.maximum_normalized_finding_bytes` budget. Both default to 16 MiB and accept at most 256 MiB. The
+quality database is rejected before loading when it exceeds `quality.maximum_database_bytes` (1 GiB by default,
+2,000,000,000 bytes maximum). `quality.maximum_assessment_findings` defaults to 10,000 and accepts at most 1,000,000.
+
+Working-source identity is bounded by `quality.maximum_source_file_bytes` per file and
+`quality.maximum_source_total_bytes` per project. They default to 16 MiB and 256 MiB. The per-file value must not
+exceed the total. These validated limits are shared by planning, publication, recovery, and inspection through one
+typed evidence-limit contract.
 
 Optional refinement is bounded by `planning.agent_max_context_bytes`, `agent_max_file_bytes`,
 `agent_max_response_bytes`, and `agent_timeout_seconds`. Defaults are 131072, 32768, 131072, and 60 respectively.

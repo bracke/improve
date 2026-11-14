@@ -55,7 +55,8 @@ begin
             begin
                Assert (Planned.Exit_Code = 0, "tasks JSON fixture plan failed");
                Result := Improve.CLI.Execute
-                 (Args ("tasks|--task|IMP-000001|--state|" & State & "|--format|json|--color|always"));
+                 (Args ("tasks|--task|IMP-000001|--database|" & To_String (Data.Database) &
+                        "|--state|" & State & "|--format|json|--color|always"));
                Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                          (To_String (Result.Output), """command"":""tasks""") > 0 and then
                          Ada.Strings.Fixed.Index (To_String (Result.Output), "IMP-000001") > 0 and then
@@ -103,6 +104,7 @@ begin
                Checked    : Improve.CLI.Outcome;
                JSON_View  : Improve.CLI.Outcome;
                Text_View  : Improve.CLI.Outcome;
+               Task_View  : Improve.CLI.Outcome;
             begin
                Assert (Planned.Exit_Code = 0, "status-freshness fixture plan failed");
                Verified := Publish_Followup (Data);
@@ -110,6 +112,15 @@ begin
                  (Args ("verify|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Verified) &
                         "|--database|" & To_String (Data.Database) & "|--state|" & State & "|--format|json"));
                Assert (Checked.Exit_Code = 0, "status-freshness verification failed");
+               Task_View := Improve.CLI.Execute
+                 (Args ("tasks|--task|IMP-000001|--database|" & To_String (Data.Database) &
+                        "|--state|" & State & "|--format|json"));
+               Assert
+                 (Task_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
+                    (To_String (Task_View.Output), """verification_current"":true") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Task_View.Output), """verification_run"":" & Id_Image (Verified)) > 0,
+                  "task-only inspection did not establish current assessment freshness");
                Latest := Publish_Followup (Data, Structure_State => Structure_Failing);
                JSON_View := Improve.CLI.Execute
                  (Args ("status|--project|" & Id_Image (Data.Project) & "|--database|" &

@@ -18,7 +18,8 @@ package body Improve.Config is
      (Schema_Version,
       Quality_Database, Quality_Selection, Maximum_Quality_Projects, Maximum_Quality_Runs,
       Maximum_Quality_Findings, Maximum_Quality_Database_Bytes,
-      Maximum_Assessment_Findings, Maximum_Assessment_Bytes,
+      Maximum_Assessment_Findings, Maximum_Assessment_Bytes, Maximum_Normalized_Finding_Bytes,
+      Maximum_Source_File_Bytes, Maximum_Source_Total_Bytes,
       Minimum_Severity, Maximum_Tasks_Per_Plan, Maximum_Findings_Per_Task,
       Allow_Investigation_Tasks, Require_Review, Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
       Agent_Max_Response_Bytes, Agent_Timeout_Seconds,
@@ -59,6 +60,9 @@ package body Improve.Config is
       Define ("quality", "maximum_database_bytes", "1073741824", Positive_Value, 1, 2_000_000_000),
       Define ("quality", "maximum_assessment_findings", "10000", Positive_Value, 1, 1_000_000),
       Define ("quality", "maximum_assessment_bytes", "16777216", Positive_Value, 1, 268_435_456),
+      Define ("quality", "maximum_normalized_finding_bytes", "16777216", Positive_Value, 1, 268_435_456),
+      Define ("quality", "maximum_source_file_bytes", "16777216", Positive_Value, 1, 1_073_741_824),
+      Define ("quality", "maximum_source_total_bytes", "268435456", Positive_Value, 1, 2_000_000_000),
       Define ("planning", "minimum_severity", "low", Enum_Value),
       Define ("planning", "maximum_tasks_per_plan", "100", Positive_Value, 1, 10_000),
       Define ("planning", "maximum_findings_per_task", "50", Positive_Value, 1, 10_000),
@@ -214,6 +218,9 @@ package body Improve.Config is
        Maximum_Quality_Database_Bytes => Default_Positive (Maximum_Quality_Database_Bytes),
        Maximum_Assessment_Findings => Default_Positive (Maximum_Assessment_Findings),
        Maximum_Assessment_Bytes  => Default_Positive (Maximum_Assessment_Bytes),
+       Maximum_Normalized_Finding_Bytes => Default_Positive (Maximum_Normalized_Finding_Bytes),
+       Maximum_Source_File_Bytes => Default_Positive (Maximum_Source_File_Bytes),
+       Maximum_Source_Total_Bytes => Default_Positive (Maximum_Source_Total_Bytes),
        Minimum_Severity          => Severity_Of (Default_String (Minimum_Severity)),
        Maximum_Tasks_Per_Plan    => Default_Positive (Maximum_Tasks_Per_Plan),
        Maximum_Findings_Per_Task => Default_Positive (Maximum_Findings_Per_Task),
@@ -319,6 +326,12 @@ package body Improve.Config is
          Result.Maximum_Quality_Database_Bytes := Positive_Setting (Maximum_Quality_Database_Bytes);
          Result.Maximum_Assessment_Findings := Positive_Setting (Maximum_Assessment_Findings);
          Result.Maximum_Assessment_Bytes := Positive_Setting (Maximum_Assessment_Bytes);
+         Result.Maximum_Normalized_Finding_Bytes := Positive_Setting (Maximum_Normalized_Finding_Bytes);
+         Result.Maximum_Source_File_Bytes := Positive_Setting (Maximum_Source_File_Bytes);
+         Result.Maximum_Source_Total_Bytes := Positive_Setting (Maximum_Source_Total_Bytes);
+         if Result.Maximum_Source_File_Bytes > Result.Maximum_Source_Total_Bytes then
+            raise Argument_Error with "quality.maximum_source_file_bytes exceeds the total source limit";
+         end if;
          Result.Minimum_Severity := Severity_Of (String_Setting (Minimum_Severity));
          Result.Maximum_Tasks_Per_Plan := Positive_Setting (Maximum_Tasks_Per_Plan);
          Result.Maximum_Findings_Per_Task := Positive_Setting (Maximum_Findings_Per_Task);
@@ -365,6 +378,9 @@ package body Improve.Config is
          when Maximum_Quality_Database_Bytes => return Number (Item.Maximum_Quality_Database_Bytes);
          when Maximum_Assessment_Findings => return Number (Item.Maximum_Assessment_Findings);
          when Maximum_Assessment_Bytes => return Number (Item.Maximum_Assessment_Bytes);
+         when Maximum_Normalized_Finding_Bytes => return Number (Item.Maximum_Normalized_Finding_Bytes);
+         when Maximum_Source_File_Bytes => return Number (Item.Maximum_Source_File_Bytes);
+         when Maximum_Source_Total_Bytes => return Number (Item.Maximum_Source_Total_Bytes);
          when Minimum_Severity =>
             return Ada.Characters.Handling.To_Lower (Severity_Level'Image (Item.Minimum_Severity));
          when Maximum_Tasks_Per_Plan => return Number (Item.Maximum_Tasks_Per_Plan);
@@ -420,4 +436,11 @@ package body Improve.Config is
       end loop;
       return To_String (Result);
    end Image;
+
+   function Evidence_Limits_Of (Item : Settings) return Evidence_Limits is
+     ((Database_Bytes           => Item.Maximum_Quality_Database_Bytes,
+       Assessment_Bytes         => Item.Maximum_Assessment_Bytes,
+       Normalized_Finding_Bytes => Item.Maximum_Normalized_Finding_Bytes,
+       Source_File_Bytes        => Item.Maximum_Source_File_Bytes,
+       Source_Total_Bytes       => Item.Maximum_Source_Total_Bytes));
 end Improve.Config;

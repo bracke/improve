@@ -46,6 +46,9 @@ begin
                   "maximum_database_bytes = 1048576" & ASCII.LF &
                   "maximum_assessment_findings = 77" & ASCII.LF &
                   "maximum_assessment_bytes = 65536" & ASCII.LF &
+                  "maximum_normalized_finding_bytes = 32768" & ASCII.LF &
+                  "maximum_source_file_bytes = 4096" & ASCII.LF &
+                  "maximum_source_total_bytes = 8192" & ASCII.LF &
                   "[planning]" & ASCII.LF &
                   "minimum_severity = ""critical""" & ASCII.LF &
                   "maximum_tasks_per_plan = 7" & ASCII.LF &
@@ -82,6 +85,9 @@ begin
                      Value.Maximum_Quality_Database_Bytes = 1_048_576 and then
                      Value.Maximum_Assessment_Findings = 77 and then
                      Value.Maximum_Assessment_Bytes = 65_536 and then
+                     Value.Maximum_Normalized_Finding_Bytes = 32_768 and then
+                     Value.Maximum_Source_File_Bytes = 4_096 and then
+                     Value.Maximum_Source_Total_Bytes = 8_192 and then
                      Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
                      not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
                      Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
@@ -104,6 +110,12 @@ begin
                         Quality_Limits.Max_Projects = 70 and then Quality_Limits.Max_Runs = 700 and then
                         Quality_Limits.Max_Findings = 7_000,
                         "storage history and payload limits were coupled to presentation output");
+                     Assert
+                       (Improve.Config.Evidence_Limits_Of (Value) =
+                          (Database_Bytes => 1_048_576, Assessment_Bytes => 65_536,
+                           Normalized_Finding_Bytes => 32_768, Source_File_Bytes => 4_096,
+                           Source_Total_Bytes => 8_192),
+                        "typed evidence limits did not preserve validated configuration");
                   end;
                   Project_Tools.Files.Write_Text_File (Path, Improve.Config.Image (Value));
                   Assert
@@ -175,6 +187,12 @@ begin
                Reject ("maximum_database_bytes = 2000000001", "quality database byte limit", "quality");
                Reject ("maximum_assessment_findings = 1000001", "assessment finding limit", "quality");
                Reject ("maximum_assessment_bytes = 268435457", "assessment byte limit", "quality");
+               Reject
+                 ("maximum_normalized_finding_bytes = 268435457",
+                  "normalized finding byte limit", "quality");
+               Reject
+                 ("maximum_source_file_bytes = 3" & ASCII.LF & "maximum_source_total_bytes = 2",
+                  "source file and total relationship", "quality");
                Reject ("minimum_severity = ""urgent""", "severity", "planning");
                Reject ("task_kind = """"", "task kind", "workflow");
                Reject ("publication = ""accepted""", "publication mode", "workflow");

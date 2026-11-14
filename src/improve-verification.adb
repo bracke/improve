@@ -143,7 +143,7 @@ package body Improve.Verification is
         Improve.Findings.Normalize
           (Current, Minimum_Severity => Ada_Quality.Types.Info, Allow_Investigation => True,
            Maximum_Findings => Settings.Maximum_Assessment_Findings,
-           Maximum_Bytes => Settings.Maximum_Assessment_Bytes);
+           Maximum_Bytes => Settings.Maximum_Normalized_Finding_Bytes);
       Baseline_Indexes       : Finding_Index_Maps.Map;
       Legacy_Indexes         : Finding_Index_Maps.Map;
       Ambiguous_Baselines    : String_Sets.Set;

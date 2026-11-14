@@ -17,7 +17,8 @@ package body Improve.Findings is
       Minimum_Severity : Severity := Low;
       Allow_Investigation : Boolean := True;
       Maximum_Findings : Positive := 10_000;
-      Maximum_Bytes    : Positive := 16_777_216) return Improve.Model.Finding_Vectors.Vector is
+      Maximum_Bytes    : Positive := Improve.Config.Default_Maximum_Normalized_Finding_Bytes)
+      return Improve.Model.Finding_Vectors.Vector is
       Result : Improve.Model.Finding_Vectors.Vector;
       Seen   : Seen_Maps.Map;
       Bytes  : Natural := 0;

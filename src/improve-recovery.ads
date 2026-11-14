@@ -1,4 +1,5 @@
 with Ada_Quality.Reporting;
+with Improve.Config;
 with Improve.Operations.Recovery;
 with Improve.Storage;
 
@@ -16,8 +17,7 @@ package Improve.Recovery is
       Maximum         : Positive;
       Limits          : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits  : Ada_Quality.Reporting.Load_Limits := (others => <>);
-      Maximum_Quality_Database_Bytes : Positive := 1_073_741_824;
-      Maximum_Assessment_Bytes : Positive := 16_777_216)
+      Evidence_Limits : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Recovery_Report;
    --  Resume pending publication journal entries through native harness
    --  transactions. No unjournaled draft is ever published.
@@ -27,7 +27,6 @@ package Improve.Recovery is
    --  @param Maximum Maximum journal operations to recover.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
-   --  @param Maximum_Quality_Database_Bytes Maximum quality database file bytes accepted.
-   --  @param Maximum_Assessment_Bytes Maximum typed assessment evidence bytes accepted.
+   --  @param Evidence_Limits Shared quality evidence and source identity limits.
    --  @return Recovery counts.
 end Improve.Recovery;

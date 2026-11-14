@@ -39,6 +39,8 @@ publication mappings; an unpublished prerequisite is reported explicitly and is 
 ## Operational inspection
 
 `improve tasks --project PROJECT` lists every stored Improve task for the exact database-qualified registered project;
+`improve tasks --task ID` qualifies verification freshness against the selected quality database when it is available,
+while historical inspection remains available without that database and reports freshness as unknown;
 equal numeric IDs in independent quality databases never share results. `--task ID` selects one task without requiring
 the Ada Quality registry, while combining `--task` and `--project` validates full ownership. `--status STATUS` filters
 the result. Supported
