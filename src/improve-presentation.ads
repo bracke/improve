@@ -110,6 +110,7 @@ package Improve.Presentation is
 private
    type Styling_Scope is new Ada.Finalization.Limited_Controlled with record
       Previous : Terminal_Styles.Color_Policy := Terminal_Styles.Color_Auto;
+      Acquired : Boolean := False;
    end record;
 
    overriding procedure Finalize (Item : in out Styling_Scope);

@@ -13,6 +13,25 @@ package body Improve.Presentation is
 
    LF : constant Character := Character'Val (10);
 
+   protected Styling_Lock is
+      entry Acquire;
+      procedure Release;
+   private
+      Busy : Boolean := False;
+   end Styling_Lock;
+
+   protected body Styling_Lock is
+      entry Acquire when not Busy is
+      begin
+         Busy := True;
+      end Acquire;
+
+      procedure Release is
+      begin
+         Busy := False;
+      end Release;
+   end Styling_Lock;
+
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
@@ -22,6 +41,8 @@ package body Improve.Presentation is
       use Improve.Config;
    begin
       return Result : Styling_Scope do
+         Styling_Lock.Acquire;
+         Result.Acquired := True;
          Result.Previous := Terminal_Styles.Current_Color_Policy;
          if Format = JSON_Format then
             Terminal_Styles.Set_Color_Policy (Terminal_Styles.Color_Never);
@@ -37,7 +58,15 @@ package body Improve.Presentation is
 
    overriding procedure Finalize (Item : in out Styling_Scope) is
    begin
-      Terminal_Styles.Set_Color_Policy (Item.Previous);
+      if Item.Acquired then
+         begin
+            Terminal_Styles.Set_Color_Policy (Item.Previous);
+         exception
+            when others => null;
+         end;
+         Styling_Lock.Release;
+         Item.Acquired := False;
+      end if;
    end Finalize;
 
    function Header (Text : String) return String is

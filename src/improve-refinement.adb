@@ -452,7 +452,7 @@ package body Improve.Refinement is
          Adapter_Name := To_Unbounded_String (Name (Provider.all));
          Request (Provider.all, Context, Settings.Timeout_Seconds, Response);
       exception
-         when Error : others =>
+         when Error : Adapter_Error =>
             return Fallback
               (Draft, Adapter_Error_Fallback, "agent adapter failed: " & Ada.Exceptions.Exception_Message (Error));
       end;

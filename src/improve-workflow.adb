@@ -3,6 +3,7 @@ with Improve.Workflow_Publication;
 package body Improve.Workflow is
    function Publish
      (Project_Directory : String;
+      Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
       Existing          : Improve.Storage.Publication_Vectors.Vector :=
@@ -13,7 +14,7 @@ package body Improve.Workflow is
       Dry_Run           : Boolean := False) return Publication_Result is
    begin
       return Improve.Workflow_Publication.Execute
-        (Project_Directory, Plan, Requested_Kind, Existing,
+        (Project_Directory, Publication_Namespace, Plan, Requested_Kind, Existing,
          Selected_Task_Ids, Existing_Only, Dry_Run);
    end Publish;
 

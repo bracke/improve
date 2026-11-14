@@ -1,7 +1,20 @@
+with Ada.Directories;
 with Ada.Strings.Unbounded;
 
 package body Improve.Operations is
    use type Ada.Strings.Unbounded.Unbounded_String;
+
+   function Publication_Namespace (State_Path : String) return String is
+   begin
+      if State_Path = "" then
+         raise Argument_Error with "Improve state path must not be empty";
+      end if;
+      return Ada.Directories.Full_Name (State_Path);
+   exception
+      when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
+         raise Argument_Error with "Improve state path is invalid: " & State_Path;
+   end Publication_Namespace;
+
    procedure Require_Project_Identity
      (Expected, Actual : Improve.Model.Project_Reference) is
    begin

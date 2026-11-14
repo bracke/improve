@@ -103,7 +103,7 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                Initialize_Harness (To_String (Data.Target));
-               Published := Improve.Workflow.Publish (To_String (Data.Target), First.Plan, "auto");
+               Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.Storage.Publication_Record'
@@ -130,7 +130,7 @@ begin
                begin
                   begin
                      Republished := Improve.Workflow.Publish
-                       (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings,
+                       (To_String (Data.Target), "aunit", Second.Plan, "auto", Existing => Mappings,
                         Selected_Task_Ids => Selected);
                   exception
                      when Error : Improve.Data_Error =>
@@ -148,7 +148,7 @@ begin
                Stores.Close (Harness);
 
                Republished := Improve.Workflow.Publish
-                 (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+                 (To_String (Data.Target), "aunit", Second.Plan, "auto", Existing => Mappings);
                Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
                declare Definition : Records.Item; begin
                   Tasks.Definition
@@ -203,7 +203,7 @@ begin
                begin
                   begin
                      Republished := Improve.Workflow.Publish
-                       (To_String (Data.Target), Third.Plan, "auto", Existing => Mappings);
+                       (To_String (Data.Target), "aunit", Third.Plan, "auto", Existing => Mappings);
                   exception
                      when Error : Improve.Data_Error =>
                         Detail := To_Unbounded_String (Ada.Exceptions.Exception_Message (Error));

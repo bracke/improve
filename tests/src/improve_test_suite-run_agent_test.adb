@@ -136,6 +136,38 @@ begin
       when Agent_Oversized_Collection_Rejected =>
          Check_Agent_Fallback
            (Oversized_Collection_Agent, Improve.Refinement.Rejected_Fallback, "oversized_collection");
+      when Agent_Error_Boundary =>
+         declare
+            Data     : constant Fixture := Build_Fixture ("agent_error_boundary");
+            Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
+            Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
+            Recoverable : aliased Fake_Adapter :=
+              (Mode => Adapter_Error_Agent, Draft => Draft, others => <>);
+            Broken : aliased Fake_Adapter :=
+              (Mode => Programming_Error_Agent, Draft => Draft, others => <>);
+            Recovered : constant Improve.Refinement.Refinement_Result :=
+              Improve.Refinement.Refine
+                (Draft, Improve.Operations.Refinement_Limits (Settings), Recoverable'Access);
+            Propagated : Boolean := False;
+         begin
+            Assert
+              (Recovered.Status = Improve.Refinement.Adapter_Error_Fallback,
+               "documented adapter failure did not use deterministic fallback");
+            begin
+               declare
+                  Unexpected : constant Improve.Refinement.Refinement_Result :=
+                    Improve.Refinement.Refine
+                      (Draft, Improve.Operations.Refinement_Limits (Settings), Broken'Access);
+                  pragma Unreferenced (Unexpected);
+               begin
+                  null;
+               end;
+            exception
+               when Program_Error => Propagated := True;
+            end;
+            Assert (Propagated, "adapter boundary masked a programming error");
+            Remove (Data);
+         end;
       when others =>
          raise Program_Error with "non-agent case routed to the agent test subunit";
    end case;

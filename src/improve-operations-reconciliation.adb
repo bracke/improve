@@ -59,7 +59,8 @@ package body Improve.Operations.Reconciliation is
                declare
                   Reconciled : constant Improve.Workflow.Publication_Result :=
                     Improve.Workflow.Publish
-                      (To_String (Plan.Project.Path), Plan, Requested_Kind,
+                      (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                       Plan, Requested_Kind,
                        Existing => Publications, Selected_Task_Ids => Selected,
                        Existing_Only => True);
                begin

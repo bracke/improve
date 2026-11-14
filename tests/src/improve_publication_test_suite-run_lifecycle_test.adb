@@ -37,7 +37,7 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                Initialize_Harness (To_String (Data.Target));
-               Published := Improve.Workflow.Publish (To_String (Data.Target), First.Plan, "auto");
+               Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.Storage.Publication_Record'
@@ -73,7 +73,7 @@ begin
                declare Blocked : Boolean := False; begin
                   begin
                      Republished := Improve.Workflow.Publish
-                       (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+                       (To_String (Data.Target), "aunit", Second.Plan, "auto", Existing => Mappings);
                   exception
                      when Error : Improve.Data_Error =>
                         Blocked := Ada.Strings.Fixed.Index
@@ -93,7 +93,7 @@ begin
                Move_Task (To_String (Published.Tasks (2).Harness_Id), "cancelled");
                Stores.Close (Harness);
                Republished := Improve.Workflow.Publish
-                 (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+                 (To_String (Data.Target), "aunit", Second.Plan, "auto", Existing => Mappings);
                Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
                declare Definition : Records.Item; begin
                   Tasks.Definition
@@ -140,7 +140,7 @@ begin
                end Move_Task;
             begin
                Initialize_Harness (To_String (Data.Target));
-               Published := Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+               Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", Plan, "auto");
                Task_Id := Published.Tasks.First_Element.Harness_Id;
                Stores.Open (Store, To_String (Data.Target), Recovery, Status);
                Assert (Errors.Is_Ok (Status), "could not open workspace fail-closed fixture");

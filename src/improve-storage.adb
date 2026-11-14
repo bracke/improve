@@ -663,6 +663,11 @@ function Save
       Maximum : Positive := Default_Query_Maximum;
       Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is separate;
 
+   function History
+     (Item : in out Store; Plan_Id : String;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Inspection_History is separate;
+
    procedure Approve
      (Item     : in out Store;
       Plan_Id  : String;

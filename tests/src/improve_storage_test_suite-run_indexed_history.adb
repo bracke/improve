@@ -165,6 +165,14 @@ begin
      (Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).Length = 2 and then
       Improve.Storage.Verifications (Store, To_String (Stored.Plan_Id)).Length = 2,
       "history records were not plan-scoped");
+   declare
+      Snapshot : constant Improve.Storage.Inspection_History :=
+        Improve.Storage.History (Store, To_String (Stored.Plan_Id));
+   begin
+      Assert
+        (Snapshot.Publications.Length = 2 and then Snapshot.Verifications.Length = 2,
+         "joined inspection history omitted persisted records");
+   end;
    Rejected := False;
    begin
       declare Values : constant Improve.Storage.Publication_Vectors.Vector :=

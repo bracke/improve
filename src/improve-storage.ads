@@ -109,6 +109,14 @@ package Improve.Storage is
    package Verification_Vectors is new Ada.Containers.Vectors (Positive, Verification_Record);
    --  Ordered verification records.
 
+   type Inspection_History is record
+      Publications  : Publication_Vectors.Vector;
+      Verifications : Verification_Vectors.Vector;
+   end record;
+   --  Publication and verification history read from one database snapshot.
+   --  @field Publications Native task mappings visible in the snapshot.
+   --  @field Verifications Quality evidence visible in the same snapshot.
+
    type Operation_Record is record
       Id       : Positive;
       Key      : Ada.Strings.Unbounded.Unbounded_String;
@@ -276,6 +284,18 @@ package Improve.Storage is
    --  @param Maximum Maximum evidence records to materialize.
    --  @param Limits Hard limits for each evidence payload.
    --  @return Historical verification records.
+
+   function History
+     (Item    : in out Store;
+      Plan_Id : String;
+      Maximum : Positive := Default_Query_Maximum;
+      Limits  : Read_Limits := Default_Read_Limits) return Inspection_History;
+   --  Read publication and verification history in one database transaction.
+   --  @param Item Open store.
+   --  @param Plan_Id Owning plan identity.
+   --  @param Maximum Maximum records of each kind to materialize.
+   --  @param Limits Hard limits for persisted history and payloads.
+   --  @return Consistent joined-history snapshot.
 
    procedure Approve
      (Item     : in out Store;

@@ -25,7 +25,9 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                declare Published : constant Improve.Workflow.Publication_Result :=
-                 Improve.Workflow.Publish (To_String (Plan.Project.Path), Plan, "auto");
+                 Improve.Workflow.Publish
+                   (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State),
+                    Plan, "auto");
                begin
                   Assert (Published.Tasks.Length = 3,
                           "interrupted recovery fixture did not commit harness tasks");
@@ -250,7 +252,9 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                declare Published : constant Improve.Workflow.Publication_Result :=
-                 Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+                 Improve.Workflow.Publish
+                   (To_String (Data.Target), Improve.Operations.Publication_Namespace (State),
+                    Plan, "auto");
                begin
                   Assert (Published.Tasks.Length = 3, "interrupted exact-revision publication failed");
                end;

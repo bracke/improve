@@ -36,6 +36,7 @@ package Improve.Workflow is
 
    function Publish
      (Project_Directory : String;
+      Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
       Existing          : Improve.Storage.Publication_Vectors.Vector :=
@@ -52,6 +53,7 @@ package Improve.Workflow is
    --  native edges to the replacement prerequisites; unsafe selective work
    --  is rejected before any harness change.
    --  @param Project_Directory Initialized model_runner project directory.
+   --  @param Publication_Namespace Stable identity of the owning Improve state store.
    --  @param Plan Immutable plan revision to publish.
    --  @param Requested_Kind Configured task kind or `auto`.
    --  @param Existing Previously verified publication mappings for reused logical tasks.

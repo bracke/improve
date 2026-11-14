@@ -1,6 +1,7 @@
 separate (Improve.Workflow_Publication)
 function Execute
   (Project_Directory : String;
+   Publication_Namespace : String;
    Plan              : Improve.Model.Plan_Revision;
    Requested_Kind    : String;
    Existing          : Improve.Storage.Publication_Vectors.Vector :=
@@ -294,6 +295,9 @@ function Execute
 
    procedure Apply_Publication_Changes (Kind : String) is separate;
 begin
+   if Publication_Namespace = "" then
+      raise Data_Error with "publication namespace must not be empty";
+   end if;
    Build_Indexes;
    Prepare_Publication;
    declare Kind : constant String := Resolve_Kind (Store, Requested_Kind); begin

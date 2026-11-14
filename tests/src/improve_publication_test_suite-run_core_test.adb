@@ -24,7 +24,7 @@ begin
                   begin
                      declare
                         Value : constant Improve.Workflow.Publication_Result :=
-                          Improve.Workflow.Publish (To_String (Data.Target), Draft, "auto");
+                          Improve.Workflow.Publish (To_String (Data.Target), "aunit", Draft, "auto");
                         pragma Unreferenced (Value);
                      begin
                         null;
@@ -39,7 +39,7 @@ begin
                      declare
                         Value : constant Improve.Workflow.Publication_Result :=
                           Improve.Workflow.Publish
-                            (To_String (Data.Target), Draft, "auto", Existing_Only => True);
+                            (To_String (Data.Target), "aunit", Draft, "auto", Existing_Only => True);
                         pragma Unreferenced (Value);
                      begin
                         null;
@@ -105,6 +105,26 @@ begin
                end;
                Remove (Data);
             end;
+         when Publication_Namespace_Isolated =>
+            declare
+               Data   : constant Fixture := Build_Fixture ("publication_namespace");
+               Plan   : constant Improve.Model.Plan_Revision := Draft_For (Data);
+               First  : Improve.Workflow.Publication_Result;
+               Second : Improve.Workflow.Publication_Result;
+            begin
+               Initialize_Harness (To_String (Data.Target));
+               First := Improve.Workflow.Publish
+                 (To_String (Data.Target), "state-store-a", Plan, "auto");
+               Second := Improve.Workflow.Publish
+                 (To_String (Data.Target), "state-store-b", Plan, "auto");
+               Assert
+                 (First.Tasks.Length = Second.Tasks.Length and then
+                  First.Tasks.First_Element.Origin /= Second.Tasks.First_Element.Origin and then
+                  First.Tasks.First_Element.Harness_Id /= Second.Tasks.First_Element.Harness_Id and then
+                  not Second.Tasks.First_Element.Recovered,
+                  "independent Improve state stores shared native task provenance");
+               Remove (Data);
+            end;
          when Native_Task_Contract_Fidelity =>
             declare
                package Errors renames Model_Runner.Errors;
@@ -132,7 +152,7 @@ begin
                Spec.Verification := To_Unbounded_String ("contract verification marker");
                Plan.Tasks.Replace_Element (1, Spec);
                Initialize_Harness (To_String (Data.Target));
-               Published := Improve.Workflow.Publish (To_String (Data.Target), Plan, "auto");
+               Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", Plan, "auto");
                Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
                Tasks.Definition
                  (Harness, To_String (Published.Tasks (1).Harness_Id), Definition, Status);
@@ -194,7 +214,9 @@ begin
                   Improve.Storage.Close (Improve_State);
                end;
                Initialize_Harness (To_String (Data.Target));
-               Published := Improve.Workflow.Publish (To_String (Data.Target), First.Plan, "auto");
+               Published := Improve.Workflow.Publish
+                 (To_String (Data.Target), Improve.Operations.Publication_Namespace (State),
+                  First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.Storage.Publication_Record'
@@ -231,7 +253,8 @@ begin
                   Second.Plan.Tasks (2).Id = First.Plan.Tasks (2).Id,
                   "logical task continuity was not preserved across a changed contract");
                Republished := Improve.Workflow.Publish
-                 (To_String (Data.Target), Second.Plan, "auto", Existing => Mappings);
+                 (To_String (Data.Target), Improve.Operations.Publication_Namespace (State),
+                  Second.Plan, "auto", Existing => Mappings);
                Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
                Tasks.Definition
                  (Harness, To_String (Republished.Tasks (1).Harness_Id), Definition, Status);

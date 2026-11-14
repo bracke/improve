@@ -52,7 +52,8 @@ package body Improve.Operations.Recovery is
                   else Requested_Kind);
                Existing_Result : constant Improve.Workflow.Publication_Result :=
                  Improve.Workflow.Publish
-                   (To_String (Plan.Project.Path), Plan, Kind, Existing => Existing,
+                   (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                    Plan, Kind, Existing => Existing,
                     Selected_Task_Ids => Operation.Task_Ids, Existing_Only => True, Dry_Run => True);
                All_Existing : constant Boolean :=
                  (for all Published_Task of Existing_Result.Tasks => Published_Task.Recovered);
@@ -74,7 +75,8 @@ package body Improve.Operations.Recovery is
                      Evidence_Limits,
                      Retain_On_Failure => True);
                   Published := Improve.Workflow.Publish
-                    (To_String (Plan.Project.Path), Plan, Kind, Existing => Existing,
+                    (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                     Plan, Kind, Existing => Existing,
                      Selected_Task_Ids => Operation.Task_Ids);
                end if;
                for Published_Task of Published.Tasks loop

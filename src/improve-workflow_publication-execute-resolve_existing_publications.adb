@@ -5,7 +5,8 @@ begin
       declare
          Contract     : constant Unbounded_String :=
            To_Unbounded_String (Contract_Of (Spec.Id));
-         Origin       : Unbounded_String := To_Unbounded_String (Origin_Of (Plan, Spec, To_String (Contract)));
+         Origin       : Unbounded_String := To_Unbounded_String
+           (Origin_Of (Plan, Spec, To_String (Contract), Publication_Namespace));
          Harness_Id   : Unbounded_String;
          Was_Mapped   : Boolean := False;
          Predecessors : constant Improve.Model.UString_Vectors.Vector := Predecessors_Of (Spec);
@@ -28,7 +29,9 @@ begin
                begin
                   Tasks.Definition (Store, To_String (Mapping.Harness_Task_Id), Definition, Status);
                   Require_Ok (Status, "read previously published harness task " & To_String (Spec.Id));
-                  if Mapping.Origin /= Origin then
+                  if Mapping.Origin /= Origin and then
+                    To_String (Mapping.Origin) /= Legacy_Origin_Of (Plan, Spec, To_String (Contract))
+                  then
                      raise Data_Error with "stored publication mapping has an incompatible stable origin";
                   end if;
                   Require_Compatible_Definition

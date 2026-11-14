@@ -75,7 +75,7 @@ package body Improve_Test_Suite is
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
-      Agent_Oversized_Collection_Rejected);
+      Agent_Oversized_Collection_Rejected, Agent_Error_Boundary);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -113,7 +113,8 @@ package body Improve_Test_Suite is
 
    type Fake_Mode is
      (Valid_Agent, Malformed_Agent, Missing_File_Agent, Invented_Evidence_Agent, Invalid_Category_Agent,
-      Cyclic_Agent, Slow_Agent, Unavailable_Agent, Weakening_Agent, Oversized_Collection_Agent);
+      Cyclic_Agent, Slow_Agent, Unavailable_Agent, Weakening_Agent, Oversized_Collection_Agent,
+      Adapter_Error_Agent, Programming_Error_Agent);
 
    type Fake_Adapter is new Improve.Refinement.Adapter with record
       Mode           : Fake_Mode := Valid_Agent;
@@ -151,6 +152,10 @@ package body Improve_Test_Suite is
          end if;
       end loop;
       case Self.Mode is
+         when Adapter_Error_Agent =>
+            raise Improve.Refinement.Adapter_Error with "fixture adapter error";
+         when Programming_Error_Agent =>
+            raise Program_Error with "fixture programming error";
          when Malformed_Agent =>
             Response.Status := Improve.Refinement.Malformed_Response;
             Response.Diagnostic := To_Unbounded_String ("fixture malformed response");
@@ -258,7 +263,7 @@ package body Improve_Test_Suite is
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
            Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
            Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected |
-           Agent_Oversized_Collection_Rejected =>
+           Agent_Oversized_Collection_Rejected | Agent_Error_Boundary =>
             Run_Agent_Test (Item);
       end case;
    end Run_Test;

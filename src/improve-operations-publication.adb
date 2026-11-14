@@ -47,7 +47,8 @@ package body Improve.Operations.Publication is
          declare
             Preflight : constant Improve.Workflow.Publication_Result :=
               Improve.Workflow.Publish
-                (To_String (Plan.Project.Path), Plan, Task_Kind, Existing,
+                (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+                 Plan, Task_Kind, Existing,
                  Selected_Task_Ids => Selected, Existing_Only => False, Dry_Run => True);
             Task_Ids : Improve.Model.UString_Vectors.Vector;
          begin
@@ -67,7 +68,8 @@ package body Improve.Operations.Publication is
       declare
          Published : constant Improve.Workflow.Publication_Result :=
            Improve.Workflow.Publish
-             (To_String (Plan.Project.Path), Plan, Task_Kind, Existing, Selected, False, Dry_Run);
+             (To_String (Plan.Project.Path), Improve.Operations.Publication_Namespace (State_Path),
+              Plan, Task_Kind, Existing, Selected, False, Dry_Run);
       begin
          if not Dry_Run then
             declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin

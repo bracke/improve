@@ -141,6 +141,9 @@ package Improve.Refinement is
    type Adapter is limited interface;
    --  Noninteractive refinement provider contract.
 
+   Adapter_Error : exception;
+   --  Documented recoverable adapter-boundary failure.
+
    function Name (Self : Adapter) return String is abstract;
    --  Return a stable adapter identity used in plan provenance.
    --  @param Self Adapter instance.
@@ -158,6 +161,7 @@ package Improve.Refinement is
    --  @param Context Bounded immutable planning context.
    --  @param Timeout_Seconds Request deadline.
    --  @param Response Structured response receiver.
+   --  @exception Adapter_Error The provider failed before it could return a structured status.
 
    type Refinement_Status is
      (Refined, Unavailable_Fallback, Timeout_Fallback, Malformed_Fallback, Rejected_Fallback,

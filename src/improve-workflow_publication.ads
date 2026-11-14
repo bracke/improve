@@ -8,6 +8,7 @@ package Improve.Workflow_Publication is
 
    function Execute
      (Project_Directory : String;
+      Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
       Existing          : Improve.Storage.Publication_Vectors.Vector :=
@@ -18,6 +19,7 @@ package Improve.Workflow_Publication is
       Dry_Run           : Boolean := False) return Improve.Workflow.Publication_Result;
    --  Build and apply one validated, dependency-ordered native publication transaction.
    --  @param Project_Directory Canonical initialized model_runner project root.
+   --  @param Publication_Namespace Stable identity of the owning Improve state store.
    --  @param Plan Exact immutable plan revision to publish.
    --  @param Requested_Kind Configured native remediation task kind or auto.
    --  @param Existing Previously authenticated publication mappings.

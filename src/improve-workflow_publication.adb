@@ -75,6 +75,18 @@ package body Improve.Workflow_Publication is
    function Origin_Of
      (Plan : Improve.Model.Plan_Revision;
       Spec : Improve.Model.Task_Specification;
+      Contract : String;
+      Publication_Namespace : String) return String is
+     ("improve:" & Stable_Digest
+        (Improve.Model.Canonical_Key
+           ([Plan.Project.Database_Id, Plan.Project.Path,
+             To_Unbounded_String (Publication_Namespace)])) &
+      ":task:" & To_String (Spec.Id) &
+      ":contract:" & Contract);
+
+   function Legacy_Origin_Of
+     (Plan     : Improve.Model.Plan_Revision;
+      Spec     : Improve.Model.Task_Specification;
       Contract : String) return String is
      ("improve:" & Stable_Digest (To_String (Plan.Project.Path)) & ":task:" & To_String (Spec.Id) &
       ":contract:" & Contract);
@@ -163,6 +175,7 @@ package body Improve.Workflow_Publication is
 
    function Execute
      (Project_Directory : String;
+      Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
       Existing          : Improve.Storage.Publication_Vectors.Vector :=

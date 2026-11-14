@@ -57,28 +57,32 @@ package body Improve.Operations.Inspection is
       return Result;
    end Findings;
 
-   function Views_For
+   type View_Snapshot is record
+      Views   : Improve.Tasks.View_Vectors.Vector;
+      History : Improve.Storage.Inspection_History;
+   end record;
+
+   function Snapshot_For
      (State              : in out Improve.Storage.Store;
       Plan               : Improve.Model.Plan_Revision;
       Current_Assessment : Natural;
       Maximum_Items      : Positive;
-      Limits             : Improve.Storage.Read_Limits) return Improve.Tasks.View_Vectors.Vector is
+      Limits             : Improve.Storage.Read_Limits) return View_Snapshot is
    begin
       if Plan.Tasks.Length > Ada.Containers.Count_Type (Maximum_Items) then
          raise Data_Error with "task query exceeds output.maximum_output_items";
       end if;
       declare
-         Publications : constant Improve.Storage.Publication_Vectors.Vector :=
-           Improve.Storage.Publications
+         History : constant Improve.Storage.Inspection_History :=
+           Improve.Storage.History
              (State, To_String (Plan.Plan_Id), Limits.Maximum_History, Limits);
-         Verifications : constant Improve.Storage.Verification_Vectors.Vector :=
-           Improve.Storage.Verifications
-             (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits);
       begin
-         return Improve.Tasks.Build
-           (Plan, Publications, Verifications, Current_Assessment, Maximum_Items);
+         return
+           (Views => Improve.Tasks.Build
+              (Plan, History.Publications, History.Verifications, Current_Assessment, Maximum_Items),
+            History => History);
       end;
-   end Views_For;
+   end Snapshot_For;
 
    function Tasks
      (State_Path       : String;
@@ -144,10 +148,10 @@ package body Improve.Operations.Inspection is
                raise Dependency_Error with "Ada Quality database is unavailable: " & Quality_Path;
             end if;
             declare
-               Views : constant Improve.Tasks.View_Vectors.Vector :=
-                 Views_For (State, Plan, Current_Assessment, Maximum_Items, Limits);
+               Snapshot : constant View_Snapshot :=
+                 Snapshot_For (State, Plan, Current_Assessment, Maximum_Items, Limits);
             begin
-               for View of Views loop
+               for View of Snapshot.Views loop
                   if To_String (View.Improve_Id) = Task_Id then
                      Found_Task := True;
                      if Improve.Tasks.Matches (View, Filter) then
@@ -173,13 +177,13 @@ package body Improve.Operations.Inspection is
                   Plan : constant Improve.Model.Plan_Revision :=
                     Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                   Remaining : constant Natural := Maximum_Items - Natural (Result.Length);
-                  Views : constant Improve.Tasks.View_Vectors.Vector :=
+                  Snapshot : constant View_Snapshot :=
                     (if Remaining = 0 and then not Plan.Tasks.Is_Empty
                      then raise Data_Error with "task query exceeds output.maximum_output_items"
-                     else Views_For
+                     else Snapshot_For
                        (State, Plan, Current_Assessment, Positive'Max (1, Remaining), Limits));
                begin
-                  for View of Views loop
+                  for View of Snapshot.Views loop
                      if Improve.Tasks.Matches (View, Filter) then
                         if Result.Length >= Ada.Containers.Count_Type (Maximum_Items) then
                            raise Data_Error with "task query exceeds output.maximum_output_items";
@@ -229,16 +233,14 @@ package body Improve.Operations.Inspection is
                Plan : constant Improve.Model.Plan_Revision :=
                  Improve.Storage.Load (State, To_String (Summary.Plan_Id), Limits);
                Remaining : constant Natural := Maximum_Items - Total_Items;
-               Views : constant Improve.Tasks.View_Vectors.Vector :=
+               Snapshot : constant View_Snapshot :=
                  (if Remaining = 0 and then not Plan.Tasks.Is_Empty
                   then raise Data_Error with "status query exceeds output.maximum_output_items"
-                  else Views_For (State, Plan, Latest_Run, Positive'Max (1, Remaining), Limits));
+                  else Snapshot_For (State, Plan, Latest_Run, Positive'Max (1, Remaining), Limits));
                Latest_Project_Run : Natural := 0;
                Latest_Plan_Run : Natural := 0;
             begin
-               for Evidence of Improve.Storage.Verifications
-                 (State, To_String (Plan.Plan_Id), Maximum => Limits.Maximum_History, Limits => Limits)
-               loop
+               for Evidence of Snapshot.History.Verifications loop
                   if Evidence.Plan_Revision = Plan.Revision and then
                     Evidence.Contract_Fingerprint = Plan.Fingerprint and then
                     Evidence.Scope = Improve.Model.Project_Evaluation and then
@@ -259,15 +261,15 @@ package body Improve.Operations.Inspection is
                      Value.Plan_Verification_Run := Evidence.Assessment_Id;
                   end if;
                end loop;
-               if Natural (Views.Length) > Maximum_Items - Total_Items then
+               if Natural (Snapshot.Views.Length) > Maximum_Items - Total_Items then
                   raise Data_Error with "status query exceeds output.maximum_output_items";
                end if;
-               Value.Tasks.Append_Vector (Views);
+               Value.Tasks.Append_Vector (Snapshot.Views);
                Last_Plan := Plan;
-               Last_Views := Views;
+               Last_Views := Snapshot.Views;
                Value.Baseline_Run := Plan.Baseline.Run_Id;
                Has_Plan := True;
-               Total_Items := Total_Items + Natural (Views.Length);
+               Total_Items := Total_Items + Natural (Snapshot.Views.Length);
             end;
          end loop;
          if Has_Plan then Value.Findings := Improve.Tasks.Findings (Last_Plan, Last_Views); end if;
