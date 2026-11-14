@@ -102,9 +102,10 @@ package body Improve.Tasks is
               To_String (Publications (Index).Improve_Task_Id) & Character'Val (0) &
               To_String (Publications (Index).Contract);
          begin
-            if not Published_By_Contract.Contains (Key) then
-               Published_By_Contract.Insert (Key, Index);
+            if Published_By_Contract.Contains (Key) then
+               raise Improve.Data_Error with "duplicate publication mapping for task contract";
             end if;
+            Published_By_Contract.Insert (Key, Index);
          end;
       end loop;
       for Index in 1 .. Natural (Verifications.Length) loop
@@ -121,6 +122,13 @@ package body Improve.Tasks is
                  Verifications (Latest_Verification.Element (Identity)).Assessment_Id <=
                    Verification.Assessment_Id
                then
+                  if Latest_Verification.Contains (Identity) and then
+                    Verifications (Latest_Verification.Element (Identity)).Assessment_Id =
+                      Verification.Assessment_Id
+                  then
+                     raise Improve.Data_Error with
+                       "duplicate verification evidence for task assessment " & Identity;
+                  end if;
                   Latest_Verification.Include (Identity, Index);
                end if;
             end if;

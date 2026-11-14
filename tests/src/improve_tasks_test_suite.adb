@@ -160,6 +160,58 @@ package body Improve_Tasks_Test_Suite is
            (not Views (2).Has_Verification,
             "dependent task reused verification from an obsolete prerequisite contract");
       end;
+      declare
+         Publications : Improve.Storage.Publication_Vectors.Vector;
+         Evidence     : Improve.Storage.Verification_Vectors.Vector;
+         Rejected     : Boolean := False;
+         Mapping      : constant Improve.Storage.Publication_Record :=
+           (Improve_Task_Id => Only.Id,
+            Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
+            Origin          => To_Unbounded_String ("improve:test"),
+            Contract        => To_Unbounded_String
+              (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Only.Id)),
+            State           => To_Unbounded_String ("candidate"),
+            Plan_Revision   => Plan.Revision);
+         Verification : constant Improve.Storage.Verification_Record :=
+           (Scope                => Improve.Model.Task_Evaluation,
+            Task_Id              => Only.Id,
+            Plan_Revision        => Plan.Revision,
+            Contract_Fingerprint => Mapping.Contract,
+            Assessment_Id        => 2,
+            Outcome              => Improve.Model.Verified,
+            Comparable           => True,
+            Explanation          => To_Unbounded_String ("duplicate"));
+      begin
+         Publications.Append (Mapping);
+         Publications.Append (Mapping);
+         begin
+            declare Views : constant Improve.Tasks.View_Vectors.Vector :=
+              Improve.Tasks.Build
+                (Plan, Publications, Improve.Storage.Verification_Vectors.Empty_Vector);
+               pragma Unreferenced (Views);
+            begin
+               null;
+            end;
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "duplicate publication mapping was silently selected");
+         Evidence.Append (Verification);
+         Evidence.Append (Verification);
+         Rejected := False;
+         begin
+            declare Views : constant Improve.Tasks.View_Vectors.Vector :=
+              Improve.Tasks.Build
+                (Plan, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence);
+               pragma Unreferenced (Views);
+            begin
+               null;
+            end;
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "duplicate verification evidence was silently selected");
+      end;
       Check ("", Improve.Tasks.Proposed);
       Check ("candidate", Improve.Tasks.Published);
       Check ("accepted", Improve.Tasks.Published);

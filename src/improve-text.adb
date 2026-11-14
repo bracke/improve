@@ -120,32 +120,69 @@ package body Improve.Text is
       end if;
    end Ensure_Loaded;
 
+   protected Catalog_Access is
+      procedure Render
+        (Key     : String;
+         Values  : Messages.Arguments.Arguments;
+         Output  : out Unbounded_String;
+         Success : out Boolean);
+      procedure Validate (Success : out Boolean);
+   end Catalog_Access;
+
+   protected body Catalog_Access is
+      procedure Render
+        (Key     : String;
+         Values  : Messages.Arguments.Arguments;
+         Output  : out Unbounded_String;
+         Success : out Boolean) is
+      begin
+         Ensure_Loaded;
+         if not Valid then
+            Output := Null_Unbounded_String;
+            Success := False;
+            return;
+         end if;
+         declare
+            Rendered : constant Messages.Result.Render_Result :=
+              Messages.Runtime.Render (Runtime, "en", Key, Values);
+         begin
+            Success := Rendered.Status = Messages.Result.Success;
+            Output :=
+              (if Success then To_Unbounded_String (Messages.Result.Output_Text (Rendered.Text))
+               else Null_Unbounded_String);
+         end;
+      end Render;
+
+      procedure Validate (Success : out Boolean) is
+      begin
+         Ensure_Loaded;
+         Success := Valid;
+      end Validate;
+   end Catalog_Access;
+
    function Arg (Name, Value : String) return Argument is
      ((To_Unbounded_String (Name), To_Unbounded_String (Value)));
 
    function Message (Key : String; Args : Argument_List := No_Arguments) return String is
       Values : Messages.Arguments.Arguments;
+      Output  : Unbounded_String;
+      Success : Boolean;
    begin
-      Ensure_Loaded;
-      if not Valid or else Ada.Strings.Fixed.Index (Catalog, LF & "en." & Key & " = ") = 0 then
+      if Ada.Strings.Fixed.Index (Catalog, LF & "en." & Key & " = ") = 0 then
          raise Data_Error with "missing message " & Key;
       end if;
       for Item of Args loop
          Messages.Arguments.Set (Values, To_String (Item.Name), To_String (Item.Value));
       end loop;
-      declare
-         Rendered : constant Messages.Result.Render_Result := Messages.Runtime.Render (Runtime, "en", Key, Values);
-      begin
-         if Rendered.Status /= Messages.Result.Success then
-            raise Data_Error with "cannot render message " & Key;
-         end if;
-         return Messages.Result.Output_Text (Rendered.Text);
-      end;
+      Catalog_Access.Render (Key, Values, Output, Success);
+      if not Success then raise Data_Error with "cannot render message " & Key; end if;
+      return To_String (Output);
    end Message;
 
    function Catalog_Is_Valid return Boolean is
+      Result : Boolean;
    begin
-      Ensure_Loaded;
-      return Valid;
+      Catalog_Access.Validate (Result);
+      return Result;
    end Catalog_Is_Valid;
 end Improve.Text;

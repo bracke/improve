@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Improve.Config;
 with Ada_Quality.Reporting;
 with Improve.Model;
@@ -7,15 +8,22 @@ with Improve.Storage;
 with Improve.Tasks;
 with Improve.Verification;
 with Improve.Workflow;
+with Terminal_Styles;
 
 --  Terminal styling policy kept separate from command data.
 package Improve.Presentation is
    --  Shared terminal styling boundary for human-readable output.
 
-   procedure Configure (Format : Improve.Config.Output_Format; Color : Improve.Config.Color_Mode);
-   --  Apply output styling policy; JSON always disables ANSI formatting.
+   type Styling_Scope is limited private;
+   --  Scoped terminal styling policy restored automatically after rendering.
+
+   function Configure
+     (Format : Improve.Config.Output_Format;
+      Color  : Improve.Config.Color_Mode) return Styling_Scope;
+   --  Apply output styling policy for the lifetime of the returned scope.
    --  @param Format Selected output format.
    --  @param Color Requested terminal color policy.
+   --  @return Scope that restores the preceding terminal policy when finalized.
 
    function Header (Text : String) return String;
    --  Decorate a terminal heading according to the current policy.
@@ -99,5 +107,13 @@ package Improve.Presentation is
    --  @param Value Verification report.
    --  @param Command Command name selecting the heading.
    --  @return Human-readable verification result.
+private
+   type Styling_Scope is new Ada.Finalization.Limited_Controlled with record
+      Previous : Terminal_Styles.Color_Policy := Terminal_Styles.Color_Auto;
+   end record;
+
+   overriding procedure Finalize (Item : in out Styling_Scope);
+   --  Restore the terminal policy captured by Configure.
+   --  @param Item Completed rendering scope.
 end Improve.Presentation;
 

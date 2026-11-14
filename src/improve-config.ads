@@ -60,7 +60,6 @@ package Improve.Config is
    --  @enum Candidate_Publication Publish candidate tasks without accepting them.
 
    type Settings is record
-      Source_Path               : UString;
       Quality_Database          : UString;
       Selection                 : Selection_Mode := Latest_Completed;
       Maximum_Quality_Projects  : Positive := 10_000;
@@ -96,7 +95,6 @@ package Improve.Config is
       Color                     : Color_Mode := Color_Auto;
    end record;
    --  Validated configuration values.
-   --  @field Source_Path Configuration file that supplied these settings, or empty for defaults.
    --  @field Quality_Database Default Ada Quality database path.
    --  @field Selection Assessment selection policy.
    --  @field Maximum_Quality_Projects Maximum project rows loaded from the quality database.
@@ -149,6 +147,22 @@ package Improve.Config is
    --  Load and validate a configuration file; an empty path returns defaults.
    --  @param Path Configuration path or empty string.
    --  @return Validated settings.
+   --  @exception Argument_Error The file is missing, malformed, unsupported, or outside configured ranges.
+
+   type Loaded_Configuration is record
+      Values                      : Settings;
+      Source_Path                 : UString;
+      Quality_Database_Configured : Boolean := False;
+   end record;
+   --  Validated settings plus non-semantic loading provenance.
+   --  @field Values Effective semantic configuration.
+   --  @field Source_Path Configuration file that supplied Values, or empty for defaults.
+   --  @field Quality_Database_Configured Whether the file explicitly selected a quality database.
+
+   function Load_With_Provenance (Path : String) return Loaded_Configuration;
+   --  Load settings while retaining configuration-source metadata for adapters.
+   --  @param Path Configuration path or empty string.
+   --  @return Effective values and non-semantic loading provenance.
    --  @exception Argument_Error The file is missing, malformed, unsupported, or outside configured ranges.
 
    function Image (Item : Settings) return String;

@@ -151,6 +151,13 @@ package body Improve.Planner is
            "current project source does not match the selected assessment; remeasure before planning";
       end if;
       for Finding of Findings loop
+         if not Finding.Indicator_Level and then Finding.Level < Settings.Minimum_Severity then
+            raise Data_Error with "planner input contains a finding below the configured severity threshold";
+         elsif not Settings.Allow_Investigation and then
+           Finding.Kind /= Improve.Model.Remediation_Candidate
+         then
+            raise Data_Error with "planner input contains investigation work disabled by policy";
+         end if;
          declare
             Key : constant String := Group_Key (Finding);
          begin

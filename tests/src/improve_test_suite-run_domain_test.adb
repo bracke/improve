@@ -18,9 +18,25 @@ begin
                when Improve.Data_Error => Rejected := True;
             end;
             Assert (Rejected, "missing catalog key was accepted");
-            Improve.Presentation.Configure (Improve.Config.Terminal_Format, Improve.Config.Color_Always);
-            Assert (Improve.Presentation.Header ("Improve") /= "", "styled header was empty");
-            Improve.Presentation.Configure (Improve.Config.Terminal_Format, Improve.Config.Color_Never);
+            declare
+               Previous : constant Terminal_Styles.Color_Policy :=
+                 Terminal_Styles.Current_Color_Policy;
+            begin
+               declare
+                  Style : Improve.Presentation.Styling_Scope :=
+                    Improve.Presentation.Configure
+                      (Improve.Config.Terminal_Format, Improve.Config.Color_Always);
+                  pragma Unreferenced (Style);
+               begin
+                  Assert
+                    (Improve.Presentation.Header ("Improve") /= "" and then
+                     Terminal_Styles.Current_Color_Policy = Terminal_Styles.Color_Always,
+                     "scoped terminal style was not applied");
+               end;
+               Assert
+                 (Terminal_Styles.Current_Color_Policy = Previous,
+                  "terminal style leaked beyond its rendering scope");
+            end;
          end;
       when Digest =>
          Assert

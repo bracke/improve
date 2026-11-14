@@ -210,8 +210,7 @@ package body Improve.Config is
    end Read_Configuration;
 
    function Defaults return Settings is
-     ((Source_Path               => Null_Unbounded_String,
-       Quality_Database          => To_Unbounded_String (Default_String (Quality_Database)),
+     ((Quality_Database          => To_Unbounded_String (Default_String (Quality_Database)),
        Selection                 => Latest_Completed,
        Maximum_Quality_Projects  => Default_Positive (Maximum_Quality_Projects),
        Maximum_Quality_Runs      => Default_Positive (Maximum_Quality_Runs),
@@ -253,11 +252,13 @@ package body Improve.Config is
          when High => Ada_Quality.Types.High,
          when Critical => Ada_Quality.Types.Critical);
 
-   function Load (Path : String) return Settings is
+   function Load_With_Provenance (Path : String) return Loaded_Configuration is
       Result : Settings := Defaults;
    begin
       if Path = "" then
-         return Result;
+         return
+           (Values => Result, Source_Path => Null_Unbounded_String,
+            Quality_Database_Configured => False);
       elsif not Project_Tools.Files.File_Exists (Path) then
          raise Argument_Error with "configuration file not found: " & Path;
       end if;
@@ -397,7 +398,6 @@ package body Improve.Config is
             raise Argument_Error with "workflow.publication must be candidate";
          end if;
 
-         Result.Source_Path := To_Unbounded_String (Path);
          for Id in Setting_Id loop
             Apply (Id);
          end loop;
@@ -413,9 +413,14 @@ package body Improve.Config is
          if not Result.Require_Initialized then
             raise Argument_Error with "workflow.require_initialized_project must be true";
          end if;
+         return
+           (Values => Result, Source_Path => To_Unbounded_String (Path),
+            Quality_Database_Configured => Present (Quality_Database));
       end;
-      return Result;
-   end Load;
+   end Load_With_Provenance;
+
+   function Load (Path : String) return Settings is
+     (Load_With_Provenance (Path).Values);
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
 

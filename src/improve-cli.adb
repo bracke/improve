@@ -183,7 +183,10 @@ package body Improve.CLI is
           (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
    end Apply_Output;
 
-   function Tasks_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+   function Tasks_Output
+     (Item                        : Invocation;
+      Settings                    : Improve.Config.Settings;
+      Quality_Database_Configured : Boolean) return String is
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
       Filtered   : constant Improve.Tasks.View_Vectors.Vector :=
         Improve.Operations.Inspection.Tasks
@@ -195,9 +198,7 @@ package body Improve.CLI is
            Filter           => Filter,
            Maximum_Items    => Settings.Maximum_Output_Items,
            Require_Quality  =>
-             Item.Has_Database or else
-             Length (Settings.Source_Path) > 0 or else
-             To_String (Settings.Quality_Database) /= To_String (Improve.Config.Defaults.Quality_Database),
+             Item.Has_Database or else Quality_Database_Configured,
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
@@ -274,19 +275,22 @@ package body Improve.CLI is
 
    function Dispatch
      (Item     : Invocation;
-      Settings : Improve.Config.Settings;
+      Configuration : Improve.Config.Loaded_Configuration;
       Negative : out Boolean) return String is
+      Settings : constant Improve.Config.Settings := Configuration.Values;
+      Style : Improve.Presentation.Styling_Scope :=
+        Improve.Presentation.Configure (Item.Format, Item.Color);
+      pragma Unreferenced (Style);
       Plain : Unbounded_String;
    begin
       Negative := False;
-      Improve.Presentation.Configure (Item.Format, Item.Color);
       case Item.Command is
          when Help_Command => Plain := To_Unbounded_String (Help_Text);
          when Version_Command =>
             Plain := To_Unbounded_String (Message ("help.version", [Arg ("version", Version)]) & LF);
          when Config_Command =>
             if Item.Has_Target and then To_String (Item.Target) = "validate" then
-               if Length (Settings.Source_Path) = 0 then
+               if Length (Configuration.Source_Path) = 0 then
                   raise Argument_Error with "no configuration file was selected";
                end if;
                Plain := To_Unbounded_String (Message ("config.valid") & LF);
@@ -298,7 +302,8 @@ package body Improve.CLI is
          when Findings_Command => return Findings_Output (Item, Settings);
          when Plan_Command => return Plan_Output (Item, Settings);
          when Apply_Command => return Apply_Output (Item, Settings);
-         when Tasks_Command => return Tasks_Output (Item, Settings);
+         when Tasks_Command =>
+            return Tasks_Output (Item, Settings, Configuration.Quality_Database_Configured);
          when Status_Command => return Status_Output (Item, Settings);
          when Verify_Command => return Verify_Output (Item, Settings, Negative);
          when Refresh_Command => return Refresh_Output (Item, Settings);
@@ -330,16 +335,20 @@ package body Improve.CLI is
       Negative : Boolean := False;
    begin
       Item := Parse (Arguments);
-      declare Settings : constant Improve.Config.Settings :=
+      declare Configuration : constant Improve.Config.Loaded_Configuration :=
         (if Item.Command in Help_Command | Version_Command
-         then Improve.Config.Defaults
-         else Improve.Config.Load (Configuration_Path (Item)));
+         then
+           (Values => Improve.Config.Defaults,
+            Source_Path => Null_Unbounded_String,
+            Quality_Database_Configured => False)
+         else Improve.Config.Load_With_Provenance (Configuration_Path (Item)));
+         Settings : Improve.Config.Settings renames Configuration.Values;
       begin
          if not Item.Has_Format then Item.Format := Settings.Format; end if;
          if not Item.Has_Color then Item.Color := Settings.Color; end if;
          if Item.Format = JSON_Format then Item.Color := Color_Never; end if;
          declare
-            Base_Output : constant String := Dispatch (Item, Settings, Negative);
+            Base_Output : constant String := Dispatch (Item, Configuration, Negative);
             Output      : Unbounded_String := To_Unbounded_String (Base_Output);
          begin
             if Item.Format = Terminal_Format and then Item.Quiet then

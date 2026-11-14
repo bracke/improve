@@ -4,7 +4,6 @@ with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Types;
 with Improve.Text;
-with Terminal_Styles;
 
 package body Improve.Presentation is
    use Ada.Strings.Unbounded;
@@ -17,19 +16,29 @@ package body Improve.Presentation is
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
-   procedure Configure (Format : Improve.Config.Output_Format; Color : Improve.Config.Color_Mode) is
+   function Configure
+     (Format : Improve.Config.Output_Format;
+      Color  : Improve.Config.Color_Mode) return Styling_Scope is
       use Improve.Config;
    begin
-      if Format = JSON_Format then
-         Terminal_Styles.Set_Color_Policy (Terminal_Styles.Color_Never);
-      else
-         Terminal_Styles.Set_Color_Policy
-           (case Color is
-               when Color_Auto => Terminal_Styles.Color_Auto,
-               when Color_Always => Terminal_Styles.Color_Always,
-               when Color_Never => Terminal_Styles.Color_Never);
-      end if;
+      return Result : Styling_Scope do
+         Result.Previous := Terminal_Styles.Current_Color_Policy;
+         if Format = JSON_Format then
+            Terminal_Styles.Set_Color_Policy (Terminal_Styles.Color_Never);
+         else
+            Terminal_Styles.Set_Color_Policy
+              (case Color is
+                  when Color_Auto => Terminal_Styles.Color_Auto,
+                  when Color_Always => Terminal_Styles.Color_Always,
+                  when Color_Never => Terminal_Styles.Color_Never);
+         end if;
+      end return;
    end Configure;
+
+   overriding procedure Finalize (Item : in out Styling_Scope) is
+   begin
+      Terminal_Styles.Set_Color_Policy (Item.Previous);
+   end Finalize;
 
    function Header (Text : String) return String is
      (Terminal_Styles.Decorate (Safe_Text (Text), Terminal_Styles.Role_Header));

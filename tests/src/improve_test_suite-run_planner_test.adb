@@ -103,6 +103,46 @@ begin
                   end;
                   Assert (Rejected, "planner did not enforce the task limit while grouping findings");
                end;
+               declare
+                  Candidate : Improve.Model.Finding_Reference := Original.First_Element;
+                  Inputs    : Improve.Model.Finding_Vectors.Vector;
+                  Policy    : Improve.Planner.Policy :=
+                    Improve.Operations.Planning_Policy (Improve.Config.Defaults);
+                  Rejected  : Boolean := False;
+               begin
+                  Candidate.Level := Ada_Quality.Types.Info;
+                  Candidate.Indicator_Level := False;
+                  Inputs.Append (Candidate);
+                  begin
+                     declare
+                        Plan : constant Improve.Model.Plan_Revision :=
+                          Improve.Planner.Generate (Selected, Inputs, Policy);
+                        pragma Unreferenced (Plan);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "planner accepted a finding below its policy threshold");
+                  Candidate.Level := Ada_Quality.Types.High;
+                  Candidate.Kind := Improve.Model.Investigation_Candidate;
+                  Inputs.Replace_Element (1, Candidate);
+                  Policy.Allow_Investigation := False;
+                  Rejected := False;
+                  begin
+                     declare
+                        Plan : constant Improve.Model.Plan_Revision :=
+                          Improve.Planner.Generate (Selected, Inputs, Policy);
+                        pragma Unreferenced (Plan);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Data_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "planner accepted investigation work disabled by policy");
+               end;
             end;
             Improve.Source.Close (Store);
             Remove (Data);

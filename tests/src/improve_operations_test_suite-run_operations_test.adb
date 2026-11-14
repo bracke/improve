@@ -77,10 +77,14 @@ begin
                   "format = ""json""" & ASCII.LF &
                   "color = ""never""",
                   Version => 2);
-               declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
+               declare
+                  Loaded : constant Improve.Config.Loaded_Configuration :=
+                    Improve.Config.Load_With_Provenance (Path);
+                  Value : Improve.Config.Settings renames Loaded.Values;
+               begin
                   Assert
                     (Value.Minimum_Severity = Improve.Config.Critical and then
-                     To_String (Value.Source_Path) = Path and then
+                     To_String (Loaded.Source_Path) = Path and then Loaded.Quality_Database_Configured and then
                      Value.Maximum_Quality_Projects = 70 and then
                      Value.Maximum_Quality_Runs = 700 and then
                      Value.Maximum_Quality_Findings = 7_000 and then

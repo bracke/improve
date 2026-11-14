@@ -40,6 +40,7 @@ with Model_Runner.Framework.Stores;
 with Model_Runner.Framework.Task_Eligibility;
 with Model_Runner.Framework.Tasks;
 with Project_Tools.Files;
+with Terminal_Styles;
 
 package body Improve_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -51,6 +52,7 @@ package body Improve_Test_Suite is
    use type Improve.Model.Candidate_Kind;
    use type Improve.Model.Task_Vectors.Vector;
    use type Improve.Refinement.Refinement_Status;
+   use type Terminal_Styles.Color_Policy;
    use type Improve.Refinement.Source_State;
    use type Ada.Containers.Count_Type;
    use type Ada_Quality.Types.Indicator_Id;

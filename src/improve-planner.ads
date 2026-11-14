@@ -19,10 +19,10 @@ package Improve.Planner is
       Maximum_Source_Total_Bytes : Positive := 268_435_456;
    end record;
    --  Planning-only policy, independent of configuration and presentation.
-   --  @field Minimum_Severity Effective task-generation severity threshold.
+   --  @field Minimum_Severity Lowest non-indicator-level finding accepted by the planner.
    --  @field Maximum_Tasks Maximum tasks generated for one plan.
    --  @field Maximum_Findings_Per_Task Maximum evidence references grouped into one task.
-   --  @field Allow_Investigation Whether incomplete evidence may produce investigation work.
+   --  @field Allow_Investigation Whether investigation or diagnostic findings are accepted.
    --  @field Require_Review Whether generated task specifications require approval.
    --  @field Maximum_Source_File_Bytes Maximum source bytes read from one file.
    --  @field Maximum_Source_Total_Bytes Maximum source bytes read for one identity.

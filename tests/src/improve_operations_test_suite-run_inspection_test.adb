@@ -106,6 +106,17 @@ begin
                   Assert
                     (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0,
                      "configured default quality database was mistaken for an implicit default");
+                  Project_Tools.Files.Write_Text_File
+                    (Config_Path,
+                     "schema_version = 2" & ASCII.LF & "[output]" & ASCII.LF &
+                     "format = ""json""" & ASCII.LF);
+                  Result := Improve.CLI.Execute
+                    (Args ("tasks|--task|IMP-000001|--config|" & Config_Path &
+                           "|--state|" & State));
+                  Assert
+                    (Result.Exit_Code = 0 and then
+                     Ada.Strings.Fixed.Index (To_String (Result.Output), "IMP-000001") > 0,
+                     "output-only configuration incorrectly required a quality database");
                end;
                Remove (Data);
             end;
