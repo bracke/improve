@@ -11,11 +11,12 @@ procedure Record_Verification
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
    History_Count : Natural := 0;
 
-   function Scope_Image (Value : Verification_Scope) return String is
+   function Persisted_Scope
+     (Value : Verification_Scope) return Improve.Persistence_Records.Verification_Scope is
      (case Value is
-         when Task_Evaluation => "task",
-         when Plan_Evaluation => "plan",
-         when Project_Evaluation => "project");
+         when Task_Evaluation    => Improve.Persistence_Records.Task_Scope,
+         when Plan_Evaluation    => Improve.Persistence_Records.Plan_Scope,
+         when Project_Evaluation => Improve.Persistence_Records.Project_Scope);
 
    function Record_Key (Value : Verification_Record) return String is
      (case Value.Scope is
@@ -69,6 +70,8 @@ begin
          begin
             Require_Payload_Limit (Payload, Limits, "verification evidence payload");
             Data := Improve.Persistence_Records.Decode_Verification (Payload);
+            Improve.Persistence_Validation.Validate
+              (Data, Plan_Id, Expected_Record_Key => S (Row.Kind));
             declare Key : constant String := Identity_Key
                  (S (Row.Kind), To_String (Data.Plan_Id), Number (Data.Assessment_Id),
                   Number (Data.Plan_Revision), To_String (Data.Contract));
@@ -80,7 +83,8 @@ begin
               (Key,
                To_Unbounded_String
                  (Stored_Value
-                    (S (Row.State), To_String (Data.Scope), Boolean_Image (Data.Comparable),
+                    (S (Row.State), Improve.Persistence_Records.Image (Data.Scope),
+                     Boolean_Image (Data.Comparable),
                      To_String (Data.Explanation))));
             end;
          end;
@@ -94,7 +98,8 @@ begin
            (Key, Plan_Id, Number (Value.Assessment_Id), Number (Value.Plan_Revision),
             To_String (Value.Contract_Fingerprint));
          Expected : constant String := Stored_Value
-           (Improve.Model.Image (Value.Outcome), Scope_Image (Value.Scope), Boolean_Image (Value.Comparable),
+           (Improve.Model.Image (Value.Outcome),
+            Improve.Persistence_Records.Image (Persisted_Scope (Value.Scope)), Boolean_Image (Value.Comparable),
             To_String (Value.Explanation));
          Existing : constant Boolean := Stored.Contains (Identity);
          Payload  : constant String := Improve.Persistence_Records.Encode_Verification
@@ -102,7 +107,7 @@ begin
              Assessment_Id => Value.Assessment_Id,
              Plan_Revision => Value.Plan_Revision,
              Contract      => Value.Contract_Fingerprint,
-             Scope         => To_Unbounded_String (Scope_Image (Value.Scope)),
+             Scope         => Persisted_Scope (Value.Scope),
              Task_Id       => Value.Task_Id,
              Comparable    => Value.Comparable,
              Explanation   => Value.Explanation));

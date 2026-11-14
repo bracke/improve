@@ -8,7 +8,6 @@ function Begin_Publication
    Stored  : constant Improve.Model.Plan_Revision :=
      Load (Item, To_String (Plan.Plan_Id), Plan.Revision, Limits);
    Tx      : Database.Transactions.Transaction;
-   Packed  : Unbounded_String;
    Payload : Unbounded_String;
    Key     : Unbounded_String;
    Row_Id  : Positive;
@@ -46,7 +45,6 @@ begin
          Packed_Size := Packed_Size + Size;
       end;
    end loop;
-   Packed := To_Unbounded_String (Pack (Task_Ids));
    Payload := To_Unbounded_String
      (Improve.Persistence_Records.Encode_Publication_Operation
         ((Plan_Id     => Plan.Plan_Id,
@@ -57,13 +55,32 @@ begin
    Require_Payload_Limit
      (To_String (Payload), Limits, "publication operation payload");
    Key := To_Unbounded_String
-     ("publish:" & To_String (Plan.Plan_Id) & ":" & Number (Plan.Revision) & ":" &
-      Stable_Digest (Task_Kind & Character'Val (0) & To_String (Packed)));
+     (Improve.Persistence_Validation.Operation_Key
+        ((Plan_Id     => Plan.Plan_Id,
+          Revision    => Plan.Revision,
+          Fingerprint => Plan.Fingerprint,
+          Task_Kind   => To_Unbounded_String (Task_Kind),
+          Task_Ids    => Task_Ids)));
    Database.Transactions.Begin_Write (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, To_String (Key)); begin
       while Entity_Tables.Has_Element (Cursor) loop
          declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
             if S (Row.Kind) = To_String (Key) and then S (Row.State) = "started" then
+               Require_Payload_Limit
+                 (S (Row.Payload), Limits, "publication operation payload");
+               declare
+                  Data : constant Improve.Persistence_Records.Publication_Operation_Data :=
+                    Improve.Persistence_Records.Decode_Publication_Operation
+                      (S (Row.Payload), Limits.Maximum_Tasks, Limits.Maximum_Text_Bytes);
+               begin
+                  Improve.Persistence_Validation.Validate
+                    (Data, To_String (Plan.Plan_Id), Plan.Revision, To_String (Plan.Fingerprint));
+                  if Improve.Persistence_Validation.Operation_Key (Data) /= S (Row.Kind) or else
+                    S (Row.Payload) /= To_String (Payload)
+                  then
+                     raise Data_Error with "publication operation identity conflicts with durable state";
+                  end if;
+               end;
                Database.Transactions.Rollback (Tx);
                return Row.Id;
             end if;

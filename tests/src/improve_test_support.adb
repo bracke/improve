@@ -1,9 +1,19 @@
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Strings.Fixed;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
+with Ada.Strings.Wide_Wide_Unbounded;
 with Ada_Quality.Checks;
 with Ada_Quality.Storage;
 with AUnit.Assertions;
+with Database;
+with Database.Catalog;
+with Database.Rows;
+with Database.Schema;
+with Database.Status;
+with Database.Tables;
+with Database.Transactions;
+with Database.Values;
 with Improve.Config;
 with Improve.Findings;
 with Improve.Planner;
@@ -18,6 +28,7 @@ with Project_Tools.Files;
 
 package body Improve_Test_Support is
    use Ada.Strings.Unbounded;
+   use Ada.Strings.Wide_Wide_Unbounded;
    use AUnit.Assertions;
 
    function Args (Text : String) return Improve.CLI.String_Vectors.Vector is
@@ -355,6 +366,93 @@ package body Improve_Test_Support is
       Ada_Quality.Storage.Close (Store);
       return Run;
    end Publish_Followup;
+
+   procedure Replace_Assessment_Source
+     (Database_Path : String;
+      Run_Id        : Positive;
+      Source         : String) is
+      type Quality_Entity is record
+         Id        : Positive;
+         Parent_Id : Natural := 0;
+         Kind      : Unbounded_Wide_Wide_String;
+         State     : Unbounded_Wide_Wide_String;
+         Payload   : Unbounded_Wide_Wide_String;
+         Active    : Boolean := True;
+      end record;
+
+      function To_Row (Value : Quality_Entity) return Database.Rows.Row is
+         Result : Database.Rows.Row;
+      begin
+         Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Id)));
+         Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Parent_Id)));
+         Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Kind)));
+         Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.State)));
+         Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Payload)));
+         Database.Rows.Append (Result, Database.Values.From_Boolean (Value.Active));
+         return Result;
+      end To_Row;
+
+      function From_Row (Row : Database.Rows.Row) return Quality_Entity is
+        ((Id        => Positive (Database.Rows.Get (Row, 0).Int),
+          Parent_Id => Natural (Database.Rows.Get (Row, 1).Int),
+          Kind      => Database.Rows.Get (Row, 2).Text,
+          State     => Database.Rows.Get (Row, 3).Text,
+          Payload   => Database.Rows.Get (Row, 4).Text,
+          Active    => Database.Rows.Get (Row, 5).Bool));
+
+      function Key_Of (Value : Quality_Entity) return Positive is (Value.Id);
+      function Key_Value (Key : Positive) return Database.Values.Value is
+        (Database.Values.From_Integer (Integer (Key)));
+
+      package Quality_Tables is new Database.Tables.Typed
+        (Quality_Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
+
+      function Replace_Source (Payload : String) return String is
+         Prefix : constant String := "source=";
+         First  : constant Natural := Ada.Strings.Fixed.Index (Payload, Prefix);
+         Last   : Natural := First + Prefix'Length;
+      begin
+         if First = 0 then
+            raise Program_Error with "assessment fixture has no source identity";
+         end if;
+         while Last <= Payload'Last and then Payload (Last) /= ASCII.LF loop
+            Last := Last + 1;
+         end loop;
+         return Payload (Payload'First .. First + Prefix'Length - 1) & Source &
+           (if Last <= Payload'Last then Payload (Last .. Payload'Last) else "");
+      end Replace_Source;
+
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : Database.Schema.Table_Schema;
+      Row    : Quality_Entity;
+      Status : Database.Status.Result;
+   begin
+      Database.Open
+        (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Database_Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "quality database could not be opened for mutation fixture");
+      Status := Database.Catalog.Find_By_Name
+        (Database.Catalog_State_Key (DB), "assessment_runs", Schema);
+      Assert (Database.Status.Is_Ok (Status), "assessment schema is unavailable for mutation fixture");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Status := Quality_Tables.Find (Tx, DB, Schema, Run_Id, Row);
+      Assert (Database.Status.Is_Ok (Status), "assessment row is unavailable for mutation fixture");
+      Row.Payload := To_Unbounded_Wide_Wide_String
+        (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode
+           (Replace_Source
+              (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode
+                 (To_Wide_Wide_String (Row.Payload)))));
+      Assert
+        (Database.Status.Is_Ok (Quality_Tables.Update (Tx, DB, Schema, Row)),
+         "assessment source identity could not be mutated");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Replace_Assessment_Source;
 
    function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome is
      (Improve.CLI.Execute

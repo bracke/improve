@@ -17,6 +17,7 @@ with Database.Types;
 with Database.Values;
 with Improve;
 with Improve.Model;
+with Improve.Persistence_Records;
 with Improve.Storage;
 with Hostkit.Fs;
 with Project_Tools.Files;
@@ -153,6 +154,36 @@ package body Improve_Storage_Test_Suite is
    procedure Corrupt_Baseline_Parent
      (Path : String; Baseline_Id : Positive) is separate;
 
+   procedure Replace_Row_Payload
+     (Path    : String;
+      Table   : Positive;
+      Id      : Positive;
+      Payload : String) is
+      DB     : Database.Handle;
+      Tx     : Database.Transactions.Transaction;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Raw_Entity;
+      Status : Database.Status.Result;
+   begin
+      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
+      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for payload corruption");
+      Database.Transactions.Begin_Write (DB, Tx);
+      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Id), Row);
+      Assert (Status.Code = Database.Status.Ok, "payload corruption fixture row is missing");
+      Row.Payload := To_Unbounded_Wide_Wide_String
+        (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Payload));
+      Assert
+        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
+         "fixture row payload could not be corrupted");
+      Database.Transactions.Commit (Tx);
+      Database.Close (DB);
+   exception
+      when others =>
+         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
+         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         raise;
+   end Replace_Row_Payload;
+
    procedure Exhaust_Project_Identities (Path : String) is separate;
 
    procedure Insert_Unknown_Finding_Link
@@ -164,7 +195,7 @@ package body Improve_Storage_Test_Suite is
    type Test_Id is
      (Invariant_Validation, Indexed_History, Schema_Migration, Operational_Limits,
       Identity_Exhaustion, Corrupt_Links, Corrupt_Revision_Data,
-      Corrupt_Task_Detail, Corrupt_Provenance);
+      Corrupt_Task_Detail, Corrupt_Provenance, Corrupt_Persistence_Context);
 
    type Storage_Case (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
@@ -278,6 +309,7 @@ package body Improve_Storage_Test_Suite is
    procedure Run_Corrupt_Revision_Data is separate;
    procedure Run_Corrupt_Task_Detail is separate;
    procedure Run_Corrupt_Provenance is separate;
+   procedure Run_Corrupt_Persistence_Context is separate;
 
    procedure Run_Test (Item : in out Storage_Case) is
    begin
@@ -291,6 +323,7 @@ package body Improve_Storage_Test_Suite is
          when Corrupt_Revision_Data => Run_Corrupt_Revision_Data;
          when Corrupt_Task_Detail => Run_Corrupt_Task_Detail;
          when Corrupt_Provenance => Run_Corrupt_Provenance;
+         when Corrupt_Persistence_Context => Run_Corrupt_Persistence_Context;
       end case;
    end Run_Test;
 

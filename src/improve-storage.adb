@@ -12,6 +12,7 @@ with Database.Transactions;
 with Database.Types;
 with Database.Values;
 with Improve.Persistence_Records;
+with Improve.Persistence_Validation;
 with Improve.Storage_Codec;
 with Interfaces;
 
@@ -650,15 +651,6 @@ function Save
       end loop;
       raise Data_Error with "stored verification outcome is invalid: " & Value;
    end Parse_Outcome;
-
-   function Parse_Scope (Value : String) return Verification_Scope is
-   begin
-      if Value = "task" then return Task_Evaluation;
-      elsif Value = "plan" then return Plan_Evaluation;
-      elsif Value = "project" then return Project_Evaluation;
-      else raise Data_Error with "stored verification scope is invalid: " & Value;
-      end if;
-   end Parse_Scope;
 
    function Verifications
      (Item    : in out Store;

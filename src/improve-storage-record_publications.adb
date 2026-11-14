@@ -48,6 +48,7 @@ begin
          begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             Data := Improve.Persistence_Records.Decode_Publication (Payload);
+            Improve.Persistence_Validation.Validate (Data, Plan_Id);
             declare Key : constant String :=
               Mapping_Key (S (Row.Kind), To_String (Data.Contract));
             begin

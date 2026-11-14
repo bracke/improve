@@ -12,6 +12,7 @@ package body Improve_Storage_Codec_Test_Suite is
    use AUnit.Assertions;
    use type Improve.Model.UString_Vectors.Vector;
    use type Improve.Persistence_Records.Publication_Data;
+   use type Improve.Persistence_Records.Verification_Data;
 
    type Codec_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Codec_Access is access all Codec_Case;
@@ -85,6 +86,59 @@ package body Improve_Storage_Codec_Test_Suite is
            (Decoded = Publication,
             "typed publication payload codec did not round-trip");
       end;
+      declare
+         Verification : constant Improve.Persistence_Records.Verification_Data :=
+           (Plan_Id       => To_Unbounded_String ("PLAN-000001"),
+            Assessment_Id => 4,
+            Plan_Revision => 2,
+            Contract      => To_Unbounded_String ("contract"),
+            Scope         => Improve.Persistence_Records.Task_Scope,
+            Task_Id       => To_Unbounded_String ("IMP-000001"),
+            Comparable    => True,
+            Explanation   => To_Unbounded_String ("evidence remains comparable"));
+         Decoded : constant Improve.Persistence_Records.Verification_Data :=
+           Improve.Persistence_Records.Decode_Verification
+             (Improve.Persistence_Records.Encode_Verification (Verification));
+      begin
+         Assert
+           (Decoded = Verification,
+            "typed verification payload codec did not round-trip");
+      end;
+      Invalid := False;
+      begin
+         declare
+            Ignored : constant String :=
+              Improve.Storage_Codec.Field
+                ("value=first" & Character'Val (10) & "value=second", "value");
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Data_Error => Invalid := True;
+      end;
+      Assert (Invalid, "storage codec accepted an ambiguous duplicate field");
+      Invalid := False;
+      begin
+         declare
+            Ignored : constant Improve.Persistence_Records.Verification_Data :=
+              Improve.Persistence_Records.Decode_Verification
+                ("plan_id=PLAN-000001" & Character'Val (10) &
+                 "assessment_id=1" & Character'Val (10) &
+                 "plan_revision=1" & Character'Val (10) &
+                 "contract=contract" & Character'Val (10) &
+                 "scope=unknown" & Character'Val (10) &
+                 "task_id=IMP-000001" & Character'Val (10) &
+                 "comparable=true" & Character'Val (10) &
+                 "explanation=evidence");
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Data_Error => Invalid := True;
+      end;
+      Assert (Invalid, "typed verification codec accepted an invalid scope");
       begin
          declare
             Ignored : constant Improve.Model.UString_Vectors.Vector := Improve.Storage_Codec.Unpack ("4:abc");

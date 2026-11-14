@@ -6,6 +6,31 @@ package body Improve.Persistence_Records is
 
    LF : constant Character := Character'Val (10);
 
+   procedure Require_Value (Value, Name : String) is
+   begin
+      if Value = "" then
+         raise Data_Error with "stored " & Name & " is empty";
+      end if;
+   end Require_Value;
+
+   function Image (Value : Verification_Scope) return String is
+     (case Value is
+         when Task_Scope    => "task",
+         when Plan_Scope    => "plan",
+         when Project_Scope => "project");
+
+   function Scope_Value (Value : String) return Verification_Scope is
+   begin
+      if Value = "task" then
+         return Task_Scope;
+      elsif Value = "plan" then
+         return Plan_Scope;
+      elsif Value = "project" then
+         return Project_Scope;
+      end if;
+      raise Data_Error with "stored verification scope is invalid: " & Value;
+   end Scope_Value;
+
    function Encode_Publication (Value : Publication_Data) return String is
      (Pair ("plan_id", To_String (Value.Plan_Id)) & LF &
       Pair ("harness_id", To_String (Value.Harness_Id)) & LF &
@@ -14,13 +39,18 @@ package body Improve.Persistence_Records is
       Pair ("plan_revision", Number (Value.Plan_Revision)));
 
    function Decode_Publication (Payload : String) return Publication_Data is
+      Result : Publication_Data;
    begin
-      return
+      Result :=
         (Plan_Id       => To_Unbounded_String (Field (Payload, "plan_id")),
          Harness_Id    => To_Unbounded_String (Field (Payload, "harness_id")),
          Origin        => To_Unbounded_String (Field (Payload, "origin")),
          Contract      => To_Unbounded_String (Field_Or (Payload, "contract", "")),
          Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")));
+      Require_Value (To_String (Result.Plan_Id), "publication plan identity");
+      Require_Value (To_String (Result.Harness_Id), "publication harness identity");
+      Require_Value (To_String (Result.Origin), "publication origin");
+      return Result;
    exception
       when Constraint_Error =>
          raise Data_Error with "stored publication payload is malformed";
@@ -31,22 +61,28 @@ package body Improve.Persistence_Records is
       Pair ("assessment_id", Number (Value.Assessment_Id)) & LF &
       Pair ("plan_revision", Number (Value.Plan_Revision)) & LF &
       Pair ("contract", To_String (Value.Contract)) & LF &
-      Pair ("scope", To_String (Value.Scope)) & LF &
+      Pair ("scope", Image (Value.Scope)) & LF &
       Pair ("task_id", To_String (Value.Task_Id)) & LF &
       Pair ("comparable", Boolean_Image (Value.Comparable)) & LF &
       Pair ("explanation", To_String (Value.Explanation)));
 
    function Decode_Verification (Payload : String) return Verification_Data is
+      Result : Verification_Data;
    begin
-      return
+      Result :=
         (Plan_Id       => To_Unbounded_String (Field (Payload, "plan_id")),
          Assessment_Id => Positive'Value (Field (Payload, "assessment_id")),
          Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")),
          Contract      => To_Unbounded_String (Field_Or (Payload, "contract", "")),
-         Scope         => To_Unbounded_String (Field_Or (Payload, "scope", "task")),
+         Scope         => Scope_Value (Field_Or (Payload, "scope", "task")),
          Task_Id       => To_Unbounded_String (Field_Or (Payload, "task_id", "")),
          Comparable    => Boolean'Value (Field (Payload, "comparable")),
          Explanation   => To_Unbounded_String (Field (Payload, "explanation")));
+      Require_Value (To_String (Result.Plan_Id), "verification plan identity");
+      if Result.Scope /= Task_Scope and then Length (Result.Task_Id) > 0 then
+         raise Data_Error with "stored aggregate verification names a task";
+      end if;
+      return Result;
    exception
       when Constraint_Error =>
          raise Data_Error with "stored verification payload is malformed";
@@ -64,13 +100,19 @@ package body Improve.Persistence_Records is
      (Payload       : String;
       Maximum_Tasks : Positive;
       Maximum_Bytes : Positive) return Publication_Operation_Data is
+      Result : Publication_Operation_Data;
    begin
-      return
+      Result :=
         (Plan_Id     => To_Unbounded_String (Field (Payload, "plan_id")),
          Revision    => Positive'Value (Field_Or (Payload, "revision", "1")),
          Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
          Task_Kind   => To_Unbounded_String (Field_Or (Payload, "task_kind", "")),
          Task_Ids    => Unpack (Field (Payload, "task_ids"), Maximum_Tasks, Maximum_Bytes));
+      Require_Value (To_String (Result.Plan_Id), "publication operation plan identity");
+      if Result.Task_Ids.Is_Empty then
+         raise Data_Error with "stored publication operation has no tasks";
+      end if;
+      return Result;
    exception
       when Constraint_Error =>
          raise Data_Error with "stored publication operation is malformed";
@@ -82,11 +124,15 @@ package body Improve.Persistence_Records is
       Pair ("fingerprint", To_String (Value.Fingerprint)));
 
    function Decode_Approval (Payload : String) return Approval_Data is
+      Result : Approval_Data;
    begin
-      return
+      Result :=
         (Plan_Id     => To_Unbounded_String (Field (Payload, "plan_id")),
          Revision    => Positive'Value (Field (Payload, "revision")),
          Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")));
+      Require_Value (To_String (Result.Plan_Id), "approval plan identity");
+      Require_Value (To_String (Result.Fingerprint), "approval fingerprint");
+      return Result;
    exception
       when Constraint_Error =>
          raise Data_Error with "stored approval payload is malformed";

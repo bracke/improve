@@ -17,15 +17,24 @@ function Verifications
       History_Count := History_Count + 1;
    end Count_Row;
 
-   procedure Append_Row (Row : Entity; Already_Counted : Boolean := False) is
+   procedure Append_Row
+     (Row              : Entity;
+      Expected_Plan_Id : String;
+      Already_Counted  : Boolean := False) is
       Payload : constant String := S (Row.Payload);
       Data    : Improve.Persistence_Records.Verification_Data;
    begin
       if not Already_Counted then Count_Row; end if;
       Require_Payload_Limit (Payload, Limits, "verification evidence payload");
       Data := Improve.Persistence_Records.Decode_Verification (Payload);
+      Improve.Persistence_Validation.Validate
+        (Data, Expected_Plan_Id, Expected_Record_Key => S (Row.Kind));
       declare
-         Scope : constant Verification_Scope := Parse_Scope (To_String (Data.Scope));
+         Scope : constant Verification_Scope :=
+           (case Data.Scope is
+               when Improve.Persistence_Records.Task_Scope    => Task_Evaluation,
+               when Improve.Persistence_Records.Plan_Scope    => Plan_Evaluation,
+               when Improve.Persistence_Records.Project_Scope => Project_Evaluation);
          Stored_Task : constant String :=
            (if Scope = Task_Evaluation and then Length (Data.Task_Id) > 0
             then To_String (Data.Task_Id)
@@ -56,7 +65,12 @@ begin
    if Plan_Id = "" then
       declare Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Verifications_Table); begin
          while Entity_Tables.Has_Element (Cursor) loop
-            Append_Row (Entity_Tables.Element (Cursor));
+            declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
+               if Row.Parent_Id = 0 then
+                  raise Data_Error with "verification evidence has no owning plan";
+               end if;
+               Append_Row (Row, Id_Image ("PLAN-", Positive (Row.Parent_Id)));
+            end;
             Advance (Item, Tx, Verifications_Table, Cursor);
          end loop;
       end;
@@ -66,7 +80,7 @@ begin
          Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Verifications_Table, Parent);
       begin
          while Entity_Tables.Has_Element (Cursor) loop
-            Append_Row (Entity_Tables.Element (Cursor));
+            Append_Row (Entity_Tables.Element (Cursor), Plan_Id);
             Advance_Children (Item, Tx, Verifications_Table, Parent, Cursor);
          end loop;
       end;
@@ -82,7 +96,7 @@ begin
                   if Row.Parent_Id = 0 and then
                     To_String (Improve.Persistence_Records.Decode_Verification (Payload).Plan_Id) = Plan_Id
                   then
-                     Append_Row (Row, Already_Counted => True);
+                     Append_Row (Row, Plan_Id, Already_Counted => True);
                   end if;
                end;
                Advance (Item, Tx, Verifications_Table, Cursor);

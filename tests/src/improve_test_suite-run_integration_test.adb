@@ -395,6 +395,47 @@ begin
                end;
                Remove (Data);
             end;
+         when Publication_Baseline_Mutation_Rejected =>
+            declare
+               package Errors renames Model_Runner.Errors;
+               package Stores renames Model_Runner.Framework.Stores;
+               package Tasks renames Model_Runner.Framework.Tasks;
+               Data      : constant Fixture := Build_Fixture ("publication_replaced_baseline");
+               State     : constant String := To_String (Data.Directory) & "/improve.db";
+               Baseline  : constant Positive := Publish_Followup
+                 (Data, Structure_State => Structure_Failing);
+               Planned   : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute
+                   (Args ("plan|--database|" & To_String (Data.Database) & "|--state|" & State &
+                          "|--project|" & Id_Image (Data.Project) & "|--run|" & Id_Image (Baseline) &
+                          "|--format|json"));
+               Applied   : Improve.CLI.Outcome;
+               Harness   : Stores.Store;
+               Status    : Errors.Error_Info;
+            begin
+               Assert (Planned.Exit_Code = 0, "replacement-baseline fixture planning failed");
+               Initialize_Harness (To_String (Data.Target));
+               Approve_Latest (State);
+               Replace_Assessment_Source
+                 (To_String (Data.Database), Baseline, "mutated-assessment-source");
+               Applied := Improve.CLI.Execute
+                 (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
+                        "|--format|json"));
+               Assert
+                 (Applied.Exit_Code = Improve.CLI.Failure_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Applied.Errors), "no longer matches") > 0,
+                  "publication accepted a mutated exact assessment baseline");
+               Stores.Open_To_Read (Harness, To_String (Data.Target), Status);
+               Assert
+                 (Errors.Is_Ok (Status) and then Tasks.List (Harness).Is_Empty,
+                  "replaced-baseline rejection modified harness state");
+               Stores.Close (Harness);
+               Remove (Data);
+            exception
+               when others =>
+                  Remove (Data);
+                  raise;
+            end;
          when Historical_Task_Lookup =>
             declare
                Data       : constant Fixture := Build_Fixture ("historical_task");

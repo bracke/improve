@@ -27,7 +27,12 @@ begin
               Improve.Persistence_Records.Decode_Publication_Operation
                 (S (Started.Payload), Limits.Maximum_Tasks, Limits.Maximum_Text_Bytes);
          begin
-            pragma Unreferenced (Data);
+            if Started.Parent_Id /= 0 or else
+              (Length (Data.Task_Kind) > 0 and then
+               Improve.Persistence_Validation.Operation_Key (Data) /= S (Started.Kind))
+            then
+               raise Data_Error with "publication operation identity is inconsistent";
+            end if;
          end;
          Found := True;
       elsif Status.Code /= Database.Status.Not_Found then
@@ -41,10 +46,17 @@ begin
             raise Data_Error with "publication completion history exceeds configured item limit";
          end if;
          History_Count := History_Count + 1;
-         if S (Entity_Tables.Element (Ends).State) = "completed" then
-            Database.Transactions.Rollback (Tx);
-            return;
-         end if;
+         declare Completion : constant Entity := Entity_Tables.Element (Ends); begin
+            if S (Completion.State) = "completed" and then
+              S (Completion.Kind) = S (Started.Kind)
+            then
+               if S (Completion.Payload) /= S (Started.Payload) then
+                  raise Data_Error with "publication completion does not match its operation";
+               end if;
+               Database.Transactions.Rollback (Tx);
+               return;
+            end if;
+         end;
          Advance_Children (Item, Tx, Operations_Table, Operation_Id, Ends);
       end loop;
    end;

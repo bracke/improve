@@ -31,6 +31,7 @@ begin
          begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             Data := Improve.Persistence_Records.Decode_Publication (Payload);
+            Improve.Persistence_Validation.Validate (Data, Plan_Id);
             Rows.Include
               (Mapping_Key (S (Row.Kind), To_String (Data.Contract)), Row.Id);
          end;
@@ -56,6 +57,7 @@ begin
             declare Data : constant Improve.Persistence_Records.Publication_Data :=
               Improve.Persistence_Records.Decode_Publication (Payload);
             begin
+               Improve.Persistence_Validation.Validate (Data, Plan_Id);
                if Data.Harness_Id /= Value.Harness_Task_Id or else Data.Origin /= Value.Origin
                then
                   raise Data_Error with "publication reconciliation identity does not match stored mapping";

@@ -49,6 +49,12 @@ package Improve_Test_Support is
       Structure_Severity : Ada_Quality.Types.Severity := Ada_Quality.Types.High;
       New_Critical       : Boolean := False) return Positive;
 
+   procedure Replace_Assessment_Source
+     (Database_Path : String;
+      Run_Id        : Positive;
+      Source         : String);
+   --  Corrupt one completed assessment source identity for integrity regression testing.
+
    function Prepare_Verification_Plan (Data : Fixture; State : String) return Improve.CLI.Outcome;
 
    procedure Approve_Latest (State : String);

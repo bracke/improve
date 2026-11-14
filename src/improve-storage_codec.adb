@@ -65,6 +65,8 @@ package body Improve.Storage_Codec is
    function Field (Payload, Name : String) return String is
       Prefix : constant String := Name & "=";
       Start  : Natural := Payload'First;
+      Result : Unbounded_String;
+      Found  : Boolean := False;
    begin
       while Start <= Payload'Last loop
          declare
@@ -76,12 +78,20 @@ package body Improve.Storage_Codec is
             if Stop - Start >= Prefix'Length and then
               Payload (Start .. Start + Prefix'Length - 1) = Prefix
             then
-               return Unescape (Payload (Start + Prefix'Length .. Stop - 1));
+               if Found then
+                  raise Data_Error with "duplicate persisted field " & Name;
+               end if;
+               Result := To_Unbounded_String
+                 (Unescape (Payload (Start + Prefix'Length .. Stop - 1)));
+               Found := True;
             end if;
             Start := Stop + 1;
          end;
       end loop;
-      raise Data_Error with "missing persisted field " & Name;
+      if not Found then
+         raise Data_Error with "missing persisted field " & Name;
+      end if;
+      return To_String (Result);
    end Field;
 
    function Has_Field (Payload, Name : String) return Boolean is

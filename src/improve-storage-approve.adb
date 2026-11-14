@@ -32,6 +32,8 @@ begin
          begin
             Require_Payload_Limit (Stored, Limits, "plan approval payload");
             Data := Improve.Persistence_Records.Decode_Approval (Stored);
+            Improve.Persistence_Validation.Validate
+              (Data, Plan_Id, Revision, To_String (Plan.Fingerprint));
             if S (Row.Kind) = Key and then S (Row.State) = "approved" and then
               Data.Fingerprint = Plan.Fingerprint
             then

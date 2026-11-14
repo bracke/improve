@@ -67,6 +67,7 @@ package body Improve_Test_Suite is
       Plan_Approval_Required, Current_Source_Staleness_Detected, Historical_Task_Lookup,
       Measurement_Source_Mismatch_Blocks_Plan, Quality_Database_Identity_Rejected,
       Quality_Database_Histories_Isolated, Publication_Policy_Change_Rejected,
+      Publication_Baseline_Mutation_Rejected,
       Agent_Context_Bounded,
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
@@ -246,7 +247,8 @@ package body Improve_Test_Suite is
            Persisted_Dependency_Translation | Read_Only_Does_Not_Initialize | Storage_Finalizes_On_Error |
            Plan_Approval_Required | Current_Source_Staleness_Detected | Historical_Task_Lookup |
            Measurement_Source_Mismatch_Blocks_Plan | Quality_Database_Identity_Rejected |
-           Quality_Database_Histories_Isolated | Publication_Policy_Change_Rejected =>
+           Quality_Database_Histories_Isolated | Publication_Policy_Change_Rejected |
+           Publication_Baseline_Mutation_Rejected =>
             Run_Integration_Test (Item);
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
            Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |

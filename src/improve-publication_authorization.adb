@@ -32,10 +32,20 @@ package body Improve.Publication_Authorization is
       declare
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Number (Plan.Project.Id));
+         Baseline : Improve.Source.Selection;
          Latest : constant Improve.Source.Selection :=
            Improve.Source.Select_Assessment (Quality, Project);
       begin
          Improve.Operations.Require_Project_Identity (Plan.Project, Project);
+         Baseline := Improve.Source.Select_Assessment
+           (Quality, Project, Plan.Baseline.Run_Id);
+         if Baseline.Baseline.Project_Id /= Plan.Baseline.Project_Id or else
+           Baseline.Baseline.Source_Id /= Plan.Baseline.Source_Id or else
+           Baseline.Baseline.Policy_Id /= Plan.Baseline.Policy_Id or else
+           Baseline.Baseline.Toolchain_Id /= Plan.Baseline.Toolchain_Id
+         then
+            Reject ("stored quality assessment no longer matches the plan baseline");
+         end if;
          if Latest.Baseline.Run_Id > Plan.Baseline.Run_Id and then
            Latest.Baseline.Source_Id /= Plan.Baseline.Source_Id
          then
