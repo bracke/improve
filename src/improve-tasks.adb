@@ -32,6 +32,12 @@ package body Improve.Tasks is
          when Regressed => "regressed",
          when Superseded => "superseded");
 
+   function Image (Value : Verification_Freshness) return String is
+     (case Value is
+         when Freshness_Unknown => "unknown",
+         when Freshness_Current => "current",
+         when Freshness_Historical => "historical");
+
    function Status_Of
      (Harness          : String;
       Quality          : Improve.Model.Quality_Outcome;
@@ -152,9 +158,11 @@ package body Improve.Tasks is
                   View.Verification_Run := Verification.Assessment_Id;
                end;
             end if;
-            View.Verification_Current :=
-              View.Has_Verification and then Current_Assessment > 0 and then
-              View.Verification_Run = Current_Assessment;
+            View.Freshness :=
+              (if not View.Has_Verification or else Current_Assessment = 0 then Freshness_Unknown
+               elsif View.Verification_Run = Current_Assessment then Freshness_Current
+               else Freshness_Historical);
+            View.Verification_Current := View.Freshness = Freshness_Current;
             View.Status := Status_Of
               (To_String (View.Harness_State), View.Quality, View.Verification_Current);
             Result.Append (View);
@@ -267,7 +275,7 @@ package body Improve.Tasks is
                            State.Any_Regressed := State.Any_Regressed or else
                              (View.Verification_Current and then View.Quality = Improve.Model.Regressed);
                            State.All_Previously_Verified := State.All_Previously_Verified and then
-                             View.Has_Verification and then not View.Verification_Current and then
+                             View.Has_Verification and then View.Freshness = Freshness_Historical and then
                              View.Quality = Improve.Model.Verified;
                            States.Replace (Key, State);
                         end;

@@ -456,7 +456,9 @@ begin
                  (Args ("tasks|--task|IMP-000001|--revision|1|--state|" & State & "|--format|json"));
                Assert
                  (Inspected.Exit_Code = 0 and then
-                  Ada.Strings.Fixed.Index (To_String (Inspected.Output), "IMP-000001") > 0,
+                  Ada.Strings.Fixed.Index (To_String (Inspected.Output), "IMP-000001") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Inspected.Output), """verification_freshness"":""unknown""") > 0,
                   "task omitted from latest revision is not inspectable");
                Verified := Improve.CLI.Execute
                  (Args ("verify|--task|IMP-000001|--revision|1|--run|" & Id_Image (Run) & "|--database|" &

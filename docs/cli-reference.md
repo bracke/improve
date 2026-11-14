@@ -68,7 +68,8 @@ Finding summaries are assessment-scoped. `resolved`, `regressed`, `not_measurabl
 verification. Historical resolution is reported as `previously_resolved`; findings lacking an applicable current
 conclusion are reported as `unverified` rather than silently counted as resolved or outstanding.
 
-Each JSON task view likewise reports `verification_run` and `verification_current`. Its historical `quality_outcome`
+Each JSON task view likewise reports `verification_run`, tri-state `verification_freshness`, and the compatibility
+Boolean `verification_current`. Its historical `quality_outcome`
 is retained for audit, but the derived task status does not treat it as verified when a newer completed assessment is
 current or when the current assessment is unknown. This freshness rule applies to verified, regressed, superseded,
 partially resolved, still failing, and inconclusive measurement outcomes.

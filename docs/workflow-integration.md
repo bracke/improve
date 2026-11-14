@@ -78,5 +78,5 @@ adapter reports the actual post-commit state and never overrides that policy.
 `improve refresh` reads each current and historical stored native task through the framework, verifies both
 `created_by=improve` and its exact originating revision contract, and then updates only Improve's cached copy of the
 harness state. It opens harness state read-only and never performs harness recovery, index repair, or lifecycle changes.
-Missing tasks, changed origins, and mismatched creators are integrity failures rather than mappings that Improve silently
-adopts.
+Missing tasks, changed origins, and mismatched creators are integrity failures rather than mappings that Improve
+silently adopts.

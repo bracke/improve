@@ -51,7 +51,7 @@ package body Improve.Config is
        Kind, Minimum, Maximum));
 
    Definitions : constant Descriptor_Array :=
-     [Define ("", "schema_version", "1", Positive_Value, 1, 1),
+     [Define ("", "schema_version", "2", Positive_Value, 1, 2),
       Define ("quality", "database", ".ada-quality.db", String_Value),
       Define ("quality", "selection", "latest_completed", Enum_Value),
       Define ("quality", "maximum_database_projects", "10000", Positive_Value, 1, 100_000),
@@ -264,6 +264,7 @@ package body Improve.Config is
          Text : constant String := Read_Configuration (Path);
          Entries : Entry_Array;
          Present : Presence_Array := [others => False];
+         Version : Positive;
 
          function Line_Of (Id : Setting_Id) return String is
            (if Present (Id) then To_String (Entries (Id)) else "");
@@ -309,8 +310,17 @@ package body Improve.Config is
 
       begin
          TOML_Codec.Parse (Text, Entries, Present);
-         if not Present (Schema_Version) or else Positive_Setting (Schema_Version) /= 1 then
-            raise Argument_Error with "configuration schema_version must be 1";
+         if not Present (Schema_Version) then
+            raise Argument_Error with "configuration schema_version is required";
+         end if;
+         Version := Positive_Setting (Schema_Version);
+         if Version not in 1 | 2 then
+            raise Argument_Error with "configuration schema_version must be 1 or 2";
+         elsif Version = 1 and then
+           (Present (Maximum_Normalized_Finding_Bytes) or else
+            Present (Maximum_Source_File_Bytes) or else Present (Maximum_Source_Total_Bytes))
+         then
+            raise Argument_Error with "new quality evidence limits require configuration schema_version 2";
          elsif String_Setting (Quality_Selection) /= "latest_completed" then
             raise Argument_Error with "quality.selection must be latest_completed";
          elsif String_Setting (Workflow_Publication) /= "candidate" then
@@ -369,7 +379,7 @@ package body Improve.Config is
    function Raw_Value (Item : Settings; Id : Setting_Id) return String is
    begin
       case Id is
-         when Schema_Version => return "1";
+         when Schema_Version => return "2";
          when Quality_Database => return To_String (Item.Quality_Database);
          when Quality_Selection => return "latest_completed";
          when Maximum_Quality_Projects => return Number (Item.Maximum_Quality_Projects);

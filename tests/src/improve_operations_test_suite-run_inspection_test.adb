@@ -68,6 +68,12 @@ begin
                         To_String (Data.Database) & "|--state|" & State));
                Assert (Result.Exit_Code = Improve.CLI.Argument_Exit and then Length (Result.Output) = 0,
                        "invalid task status did not return exit 2");
+               Result := Improve.CLI.Execute
+                 (Args ("tasks|--task|IMP-000001|--database|" & To_String (Data.Directory) &
+                        "/missing-quality.db|--state|" & State & "|--format|json"));
+               Assert
+                 (Result.Exit_Code = Improve.CLI.Unavailable_Exit and then Length (Result.Output) = 0,
+                  "explicitly unavailable task quality database was silently ignored");
                Remove (Data);
             end;
          when Status_Project_And_All =>
@@ -119,7 +125,9 @@ begin
                  (Task_View.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                     (To_String (Task_View.Output), """verification_current"":true") > 0 and then
                   Ada.Strings.Fixed.Index
-                    (To_String (Task_View.Output), """verification_run"":" & Id_Image (Verified)) > 0,
+                    (To_String (Task_View.Output), """verification_run"":" & Id_Image (Verified)) > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Task_View.Output), """verification_freshness"":""current""") > 0,
                   "task-only inspection did not establish current assessment freshness");
                Latest := Publish_Followup (Data, Structure_State => Structure_Failing);
                JSON_View := Improve.CLI.Execute
@@ -146,7 +154,9 @@ begin
                   Ada.Strings.Fixed.Index
                     (To_String (JSON_View.Output), """verification_run"":" & Id_Image (Verified)) > 0 and then
                   Ada.Strings.Fixed.Index
-                    (To_String (JSON_View.Output), """verification_current"":false") > 0,
+                    (To_String (JSON_View.Output), """verification_current"":false") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (JSON_View.Output), """verification_freshness"":""historical""") > 0,
                   "task status did not distinguish historical verification from current evidence");
                Assert
                  (Ada.Strings.Fixed.Index (To_String (JSON_View.Output), """resolved"":0") > 0 and then

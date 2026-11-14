@@ -7,10 +7,10 @@ begin
                Root : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-config");
                Path : constant String := Root & "/improve.toml";
 
-               procedure Write (Text : String) is
+               procedure Write (Text : String; Version : Positive := 1) is
                begin
                   Project_Tools.Files.Write_Text_File
-                    (Path, "schema_version = 1" & ASCII.LF & Text & ASCII.LF);
+                    (Path, "schema_version =" & Positive'Image (Version) & ASCII.LF & Text & ASCII.LF);
                end Write;
 
                procedure Reject (Text, Label : String; Section : String := "") is
@@ -75,7 +75,8 @@ begin
                   "[output]" & ASCII.LF &
                   "maximum_output_items = 8" & ASCII.LF &
                   "format = ""json""" & ASCII.LF &
-                  "color = ""never""");
+                  "color = ""never""",
+                  Version => 2);
                declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path); begin
                   Assert
                     (Value.Minimum_Severity = Improve.Config.Critical and then
@@ -154,7 +155,7 @@ begin
                         "Unicode TOML escapes were not decoded as UTF-8");
                   end;
                end;
-               Project_Tools.Files.Write_Text_File (Path, "schema_version = 2" & ASCII.LF);
+               Project_Tools.Files.Write_Text_File (Path, "schema_version = 3" & ASCII.LF);
                begin
                   declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
                      pragma Unreferenced (Value);
@@ -164,6 +165,25 @@ begin
                exception
                   when Improve.Argument_Error => null;
                end;
+               Write
+                 ("[quality]" & ASCII.LF & "maximum_normalized_finding_bytes = 1024");
+               declare Rejected : Boolean := False; begin
+                  begin
+                     declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "schema version 1 accepted version 2 evidence settings");
+               end;
+               Write ("[quality]" & ASCII.LF & "maximum_assessment_bytes = 1024");
+               Assert
+                 (Improve.Config.Load (Path).Maximum_Normalized_Finding_Bytes =
+                    Improve.Config.Default_Maximum_Normalized_Finding_Bytes,
+                  "schema version 1 did not apply defaults for version 2 settings");
                Accept_Severity ("info", Improve.Config.Info);
                Accept_Severity ("medium", Improve.Config.Medium);
                Accept_Severity ("high", Improve.Config.High);

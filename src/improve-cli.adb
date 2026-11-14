@@ -209,6 +209,9 @@ package body Improve.CLI is
            Revision         => Item.Revision,
            Filter           => Filter,
            Maximum_Items    => Settings.Maximum_Output_Items,
+           Require_Quality  =>
+             Item.Has_Database or else
+             To_String (Settings.Quality_Database) /= To_String (Improve.Config.Defaults.Quality_Database),
            Limits           => Improve.Operations.Storage_Read_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));

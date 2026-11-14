@@ -36,16 +36,9 @@ package body Improve.Planner is
 
    function Boolean_Image (Value : Boolean) return String is (if Value then "true" else "false");
 
-   function Configuration_Fingerprint (Settings : Improve.Config.Settings) return String is
+   function Semantic_Configuration_Fingerprint (Settings : Improve.Config.Settings) return String is
      (Stable_Digest
         (Improve.Config.Severity_Level'Image (Settings.Minimum_Severity) & "|" &
-         Positive'Image (Settings.Maximum_Assessment_Findings) & "|" &
-         Positive'Image (Settings.Maximum_Assessment_Bytes) & "|" &
-         Positive'Image (Settings.Maximum_Normalized_Finding_Bytes) & "|" &
-         Positive'Image (Settings.Maximum_Quality_Database_Bytes) & "|" &
-         Positive'Image (Settings.Maximum_Source_File_Bytes) & "|" &
-         Positive'Image (Settings.Maximum_Source_Total_Bytes) & "|" &
-         Positive'Image (Settings.Maximum_Tasks_Per_Plan) & "|" &
          Positive'Image (Settings.Maximum_Findings_Per_Task) & "|" &
          Boolean_Image (Settings.Allow_Investigation_Tasks) & "|" &
          Boolean_Image (Settings.Require_Review)));
@@ -150,7 +143,7 @@ package body Improve.Planner is
       Groups : Group_Vectors.Vector;
       Group_Indexes : Group_Index_Maps.Map;
       Result : Improve.Model.Plan_Revision;
-      Config_Id : constant String := Configuration_Fingerprint (Settings);
+      Config_Id : constant String := Semantic_Configuration_Fingerprint (Settings);
       Current_Measured_Source : constant String :=
         Ada_Quality.Checks.Source_Fingerprint (To_String (Selected.Project.Path));
    begin

@@ -1,6 +1,7 @@
 # Configuration
 
-`config/improve.toml` is schema version 1. Every value is type- and range-checked. Planning task and per-task finding
+`config/improve.toml` is schema version 2. Every value is type- and range-checked. Schema version 1 remains readable;
+the version-2 evidence and source-limit settings use documented defaults when absent. Planning task and per-task finding
 limits are positive and bounded at 10,000. The only supported initial evidence selection is `latest_completed`, and
 publication is always `candidate`; project harness policy may independently auto-accept a published origin or kind.
 Settings are section-qualified. Unknown sections, misplaced or duplicate keys, and files larger than 1 MiB are

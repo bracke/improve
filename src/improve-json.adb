@@ -258,6 +258,7 @@ package body Improve.JSON is
       Doc.Insert (Item, "harness_state", Doc.New_String (To_String (Value.Harness_State)));
       Doc.Insert (Item, "quality_outcome", Doc.New_String (Improve.Model.Image (Value.Quality)));
       Doc.Insert (Item, "verification_run", Doc.New_Integer (Long_Long_Integer (Value.Verification_Run)));
+      Doc.Insert (Item, "verification_freshness", Doc.New_String (Improve.Tasks.Image (Value.Freshness)));
       Doc.Insert (Item, "verification_current", Doc.New_Boolean (Value.Verification_Current));
       Doc.Insert (Item, "status", Doc.New_String (Improve.Tasks.Image (Value.Status)));
       Doc.Append (List, Item);

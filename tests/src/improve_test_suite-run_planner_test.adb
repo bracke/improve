@@ -110,6 +110,7 @@ begin
             Quality : Improve.Source.Repository;
             Low_Settings  : Improve.Config.Settings := Improve.Config.Defaults;
             High_Settings : Improve.Config.Settings := Improve.Config.Defaults;
+            Limit_Settings : Improve.Config.Settings := Improve.Config.Defaults;
             Store   : Improve.Storage.Store;
             First   : Improve.Storage.Save_Result;
             Second  : Improve.Storage.Save_Result;
@@ -130,12 +131,24 @@ begin
                  Improve.Planner.Generate (Selected, Low_Findings, Low_Settings);
                High_Plan : constant Improve.Model.Plan_Revision :=
                  Improve.Planner.Generate (Selected, High_Findings, High_Settings);
+               Limit_Plan : Improve.Model.Plan_Revision;
             begin
+               Limit_Settings.Maximum_Quality_Database_Bytes := 2_000_000_000;
+               Limit_Settings.Maximum_Assessment_Bytes := 268_435_456;
+               Limit_Settings.Maximum_Normalized_Finding_Bytes := 268_435_456;
+               Limit_Settings.Maximum_Source_File_Bytes := 1_073_741_824;
+               Limit_Settings.Maximum_Source_Total_Bytes := 2_000_000_000;
+               Limit_Settings.Maximum_Assessment_Findings := 1_000_000;
+               Limit_Settings.Maximum_Tasks_Per_Plan := 10_000;
+               Limit_Plan := Improve.Planner.Generate (Selected, Low_Findings, Limit_Settings);
                Improve.Source.Close (Quality);
                Assert
                  (Low_Findings.Length > High_Findings.Length and then
                   Low_Plan.Fingerprint /= High_Plan.Fingerprint,
                   "severity-dependent finding membership collided in the plan fingerprint");
+               Assert
+                 (Low_Plan.Fingerprint = Limit_Plan.Fingerprint,
+                  "rejection-only resource limits changed semantic plan identity");
                Improve.Storage.Open (Store, To_String (Data.Directory) & "/severity-improve.db", Writable => True);
                First := Improve.Storage.Save (Store, Low_Plan);
                Second := Improve.Storage.Save (Store, High_Plan);

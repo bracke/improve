@@ -96,6 +96,7 @@ package body Improve.Operations.Inspection is
       Revision         : Natural;
       Filter           : String;
       Maximum_Items    : Positive;
+      Require_Quality  : Boolean := False;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
@@ -160,6 +161,8 @@ package body Improve.Operations.Inspection is
                      Improve.Source.Close (Quality);
                      raise;
                end;
+            elsif Require_Quality then
+               raise Dependency_Error with "Ada Quality database is unavailable: " & Quality_Path;
             end if;
             declare
                Views : constant Improve.Tasks.View_Vectors.Vector :=

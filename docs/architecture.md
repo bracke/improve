@@ -19,6 +19,8 @@ per-assessment evidence limit without creating another complete copy of the evid
 Complete assessment evidence, normalized remediation findings, and working-source content have separate limits.
 Application operations receive them through one typed evidence-limit value so publication and recovery cannot drift
 from planning policy.
+Operational rejection limits are not part of semantic plan identity: changing a limit without changing accepted
+evidence, task grouping, or review policy does not create a new immutable revision.
 
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
 assessment. Publication applies a second, harness-state-aware `working-sha256-v3` fingerprint to detect authored

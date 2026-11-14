@@ -12,6 +12,7 @@ package body Improve_Tasks_Test_Suite is
    use AUnit.Assertions;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Tasks.Operational_Status;
+   use type Improve.Tasks.Verification_Freshness;
 
    type Task_Case is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Task_Case;
@@ -119,6 +120,13 @@ package body Improve_Tasks_Test_Suite is
          Reordered.Append (Ordered.First_Element);
          Summary := Improve.Tasks.Findings (Joined, Reordered);
          Assert (Summary.Resolved = 1, "finding aggregation used task/view position instead of task identity");
+         Ordered := Improve.Tasks.Build
+           (Joined, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 0);
+         Summary := Improve.Tasks.Findings (Joined, Ordered);
+         Assert
+           (Ordered.First_Element.Freshness = Improve.Tasks.Freshness_Unknown and then
+            Summary.Unverified = 1 and then Summary.Previously_Resolved = 0,
+            "unknown verification freshness was misclassified as historical resolution");
       end;
       declare
          Original  : Improve.Model.Plan_Revision := Plan;

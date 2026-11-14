@@ -34,6 +34,17 @@ package Improve.Tasks is
    --  @param Value Status to render.
    --  @return Stable machine-readable spelling.
 
+   type Verification_Freshness is (Freshness_Unknown, Freshness_Current, Freshness_Historical);
+   --  Applicability of persisted verification evidence to the selected assessment.
+   --  @enum Freshness_Unknown Current assessment evidence was unavailable or no verification exists.
+   --  @enum Freshness_Current Verification evaluates the selected current assessment.
+   --  @enum Freshness_Historical Verification evaluates an older assessment.
+
+   function Image (Value : Verification_Freshness) return String;
+   --  Return the stable lowercase freshness spelling.
+   --  @param Value Verification freshness to render.
+   --  @return `unknown`, `current`, or `historical`.
+
    type Task_View is record
       Project_Id     : Positive;
       Project        : UString;
@@ -45,6 +56,7 @@ package Improve.Tasks is
       Quality        : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Has_Verification : Boolean := False;
       Verification_Run : Natural := 0;
+      Freshness       : Verification_Freshness := Freshness_Unknown;
       Verification_Current : Boolean := False;
       Status         : Operational_Status := Proposed;
    end record;
@@ -59,6 +71,7 @@ package Improve.Tasks is
    --  @field Quality Latest independent quality outcome.
    --  @field Has_Verification Whether quality evidence has been recorded.
    --  @field Verification_Run Assessment evaluated by the historical quality outcome.
+   --  @field Freshness Whether verification applicability is current, historical, or unknown.
    --  @field Verification_Current Whether that assessment is the selected current assessment.
    --  @field Status Derived inspection status.
 

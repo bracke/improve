@@ -54,6 +54,7 @@ package Improve.Operations.Inspection is
       Revision         : Natural;
       Filter           : String;
       Maximum_Items    : Positive;
+      Require_Quality  : Boolean := False;
       Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
@@ -66,6 +67,7 @@ package Improve.Operations.Inspection is
    --  @param Revision Exact historical plan revision, or zero for the latest task definition.
    --  @param Filter Valid operational status filter.
    --  @param Maximum_Items Hard result-size limit.
+   --  @param Require_Quality Reject an unavailable selected quality database instead of returning unknown freshness.
    --  @param Limits Hard persistence and history limits.
    --  @param Quality_Limits Hard quality snapshot load limits.
    --  @param Evidence_Limits Shared quality evidence and source identity limits.
