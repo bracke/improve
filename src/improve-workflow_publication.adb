@@ -178,8 +178,8 @@ package body Improve.Workflow_Publication is
       Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
-      Existing          : Improve.Storage.Publication_Vectors.Vector :=
-        Improve.Storage.Publication_Vectors.Empty_Vector;
+      Existing          : Improve.State.Publication_Vectors.Vector :=
+        Improve.State.Publication_Vectors.Empty_Vector;
       Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
         Improve.Model.UString_Vectors.Empty_Vector;
       Existing_Only     : Boolean := False;

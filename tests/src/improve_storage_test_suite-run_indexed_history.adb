@@ -6,15 +6,15 @@ procedure Run_Indexed_History is
    Store_Id    : Unbounded_String;
    Plan        : Improve.Model.Plan_Revision := Fixture (Root);
    Stored      : Improve.Model.Plan_Revision;
-   Mappings    : Improve.Storage.Publication_Vectors.Vector;
-   Evidence    : Improve.Storage.Verification_Vectors.Vector;
+   Mappings    : Improve.State.Publication_Vectors.Vector;
+   Evidence    : Improve.State.Verification_Vectors.Vector;
    Rejected    : Boolean := False;
 begin
    Improve.Storage.Open (Store, Path, Writable => True);
    Store_Id := To_Unbounded_String (Improve.Storage.Identity (Store));
    Assert (Length (Store_Id) > 0, "state store has no persistent identity");
    Seed (Store, Plan, 4, Stored);
-   declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+   declare Summaries : constant Improve.State.Summary_Vectors.Vector :=
      Improve.Storage.List (Store, Plan.Project);
    begin
       Assert
@@ -24,7 +24,7 @@ begin
    end;
    declare
       Task_Ids : Improve.Model.UString_Vectors.Vector;
-      Limits   : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits   : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
    begin
       Task_Ids.Append (Stored.Tasks (1).Id);
       Task_Ids.Append (Stored.Tasks (2).Id);
@@ -41,7 +41,7 @@ begin
       Assert (Rejected, "publication journal ignored its configured task limit");
    end;
    declare
-      Limits : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
 
       procedure Expect_History_Rejection
         (Action : not null access procedure;
@@ -64,7 +64,7 @@ begin
       end Load_Latest;
 
       procedure List_Plans is
-         Values : constant Improve.Storage.Summary_Vectors.Vector :=
+         Values : constant Improve.State.Summary_Vectors.Vector :=
            Improve.Storage.List (Store, Plan.Project, Limits => Limits);
       begin
          pragma Unreferenced (Values);
@@ -106,12 +106,14 @@ begin
       declare Value : constant Improve.Model.Plan_Revision :=
         Improve.Storage.Load
           (Store, "PLAN-000001",
-           (Maximum_Findings     => 10,
-            Maximum_Tasks        => 1,
-            Maximum_Task_Details => 10,
-            Maximum_Task_Links   => 10,
-            Maximum_History      => 10,
-            Maximum_Text_Bytes   => 1_024));
+           (Maximum_Findings          => 10,
+            Maximum_Tasks             => 1,
+            Maximum_Task_Details      => 10,
+            Maximum_Task_Associations => 10,
+            Maximum_History           => 10,
+            Maximum_Migration_Rows    => 100,
+            Maximum_Text_Bytes        => 1_024,
+            Maximum_Total_Bytes       => 4_096));
       begin
          pragma Unreferenced (Value);
       end;
@@ -123,7 +125,7 @@ begin
       Task_Ids  : Improve.Model.UString_Vectors.Vector;
       Operation : Positive;
       Candidate : Improve.Model.Plan_Revision := Plan;
-      Limits    : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits    : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
    begin
       Task_Ids.Append (Stored.Tasks.First_Element.Id);
       Operation := Improve.Storage.Begin_Publication (Store, Stored, "remediation", Task_Ids);
@@ -138,14 +140,37 @@ begin
       Assert
         (Improve.Storage.Pending_Publications (Store, Limits => Limits).Length = 1,
          "plan revision history contaminated the publication journal namespace");
+      Improve.Storage.Close (Store);
+      Duplicate_Row (Path, 12, Operation, 99);
+      Improve.Storage.Open (Store, Path, Writable => True);
+      Rejected := False;
+      begin
+         declare Duplicate : constant Positive :=
+           Improve.Storage.Begin_Publication (Store, Stored, "remediation", Task_Ids);
+         begin
+            pragma Unreferenced (Duplicate);
+         end;
+      exception
+         when Improve.Data_Error => Rejected := True;
+      end;
+      Assert (Rejected, "publication journal accepted duplicate pending operations");
+      Limits.Maximum_History := 2;
       Improve.Storage.Complete_Publication (Store, Operation, Limits);
    end;
    History_Records (Stored, Mappings, Evidence);
    Improve.Storage.Record_Publications (Store, To_String (Stored.Plan_Id), Mappings);
    Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Evidence);
    declare
-      Invalid_Mapping  : Improve.Storage.Publication_Vectors.Vector := Mappings;
-      Invalid_Evidence : Improve.Storage.Verification_Vectors.Vector := Evidence;
+      Extra : Improve.State.Verification_Vectors.Vector;
+      Item  : Improve.State.Verification_Record := Evidence.First_Element;
+   begin
+      Item.Assessment_Id := 2;
+      Extra.Append (Item);
+      Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Extra);
+   end;
+   declare
+      Invalid_Mapping  : Improve.State.Publication_Vectors.Vector := Mappings;
+      Invalid_Evidence : Improve.State.Verification_Vectors.Vector := Evidence;
    begin
       Invalid_Mapping (1).Contract := To_Unbounded_String ("unrelated-contract");
       Rejected := False;
@@ -166,22 +191,26 @@ begin
    end;
    Assert
      (Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).Length = 2 and then
-      Improve.Storage.Verifications (Store, To_String (Stored.Plan_Id)).Length = 2,
+      Improve.Storage.Verifications (Store, To_String (Stored.Plan_Id)).Length = 3,
       "history records were not plan-scoped");
+   Assert
+     (Improve.Storage.Publications
+        (Store, To_String (Stored.Plan_Id), Maximum => 2).Length = 2,
+      "publication query was constrained by unrelated verification history");
    declare
-      Snapshot : constant Improve.Storage.Inspection_History :=
+      Snapshot : constant Improve.State.Inspection_History :=
         Improve.Storage.History (Store, To_String (Stored.Plan_Id));
-      Historical : constant Improve.Storage.Inspection_History :=
+      Historical : constant Improve.State.Inspection_History :=
         Improve.Storage.History (Store, To_String (Stored.Plan_Id), Stored.Revision);
    begin
       Assert
         (Snapshot.Selected_Revision = 5 and then Historical.Selected_Revision = Stored.Revision and then
-         Snapshot.Publications.Length = 2 and then Snapshot.Verifications.Length = 2,
+         Snapshot.Publications.Length = 2 and then Snapshot.Verifications.Length = 3,
          "joined inspection history omitted persisted records");
    end;
    Rejected := False;
    begin
-      declare Values : constant Improve.Storage.Publication_Vectors.Vector :=
+      declare Values : constant Improve.State.Publication_Vectors.Vector :=
         Improve.Storage.Publications (Store, To_String (Stored.Plan_Id), Maximum => 1);
       begin
          pragma Unreferenced (Values);
@@ -190,6 +219,17 @@ begin
       when Improve.Data_Error => Rejected := True;
    end;
    Assert (Rejected, "publication query ignored its materialization limit");
+   Improve.Storage.Close (Store);
+   Duplicate_Row (Path, 10, 1, 99);
+   Improve.Storage.Open (Store, Path, Writable => True);
+   Rejected := False;
+   begin
+      Improve.Storage.Update_Publication_States
+        (Store, To_String (Stored.Plan_Id), Mappings);
+   exception
+      when Improve.Data_Error => Rejected := True;
+   end;
+   Assert (Rejected, "publication reconciliation accepted a duplicate persisted mapping");
    Improve.Storage.Close (Store);
    declare Moved : constant String := Root & "/moved-state.db"; begin
       Ada.Directories.Rename (Path, Moved);

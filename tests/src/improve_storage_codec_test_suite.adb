@@ -41,7 +41,8 @@ package body Improve_Storage_Codec_Test_Suite is
          "storage scalar images are not canonical");
       Assert
         (Improve.Storage_Codec.Id_Image ("IMP-", 7) = "IMP-000007" and then
-         Improve.Storage_Codec.Plan_Row_Id ("PLAN-000042") = 42,
+         Improve.Storage_Codec.Plan_Row_Id ("PLAN-000042") = 42 and then
+         Improve.Storage_Codec.Plan_Row_Id ("PLAN-1000000") = 1_000_000,
          "storage identities did not round-trip");
       declare
          Image : constant String := Improve.Storage_Codec.Timestamp (Ada.Calendar.Clock);
@@ -186,6 +187,18 @@ package body Improve_Storage_Codec_Test_Suite is
          when Improve.Argument_Error => Invalid := True;
       end;
       Assert (Invalid, "storage codec accepted a noncanonical plan identity");
+      Invalid := False;
+      begin
+         declare
+            Ignored : constant Positive := Improve.Storage_Codec.Plan_Row_Id ("PLAN-0123456");
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Improve.Argument_Error => Invalid := True;
+      end;
+      Assert (Invalid, "storage codec accepted a zero-extended plan identity");
       Invalid := False;
       begin
          declare

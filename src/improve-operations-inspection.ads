@@ -1,7 +1,5 @@
-with Ada.Strings.Unbounded;
 with Improve.Config;
-with Improve.Model;
-with Improve.Source;
+with Improve.Results;
 with Improve.Storage;
 with Improve.Tasks;
 with Ada_Quality.Reporting;
@@ -10,21 +8,11 @@ with Ada_Quality.Reporting;
 package Improve.Operations.Inspection is
    --  Assemble assessment-aware inspection models independently of presentation.
 
-   type Project_Result is record
-      Values   : Ada_Quality.Reporting.Project_Vectors.Vector;
-      Snapshot : Ada.Strings.Unbounded.Unbounded_String;
-   end record;
+   subtype Project_Result is Improve.Results.Project_List;
    --  Registered projects and the reporting snapshot from which they were read.
-   --  @field Values Registered projects in stable reporting order.
-   --  @field Snapshot Read-only reporting snapshot identity.
 
-   type Finding_Result is record
-      Selected : Improve.Source.Selection;
-      Values   : Improve.Model.Finding_Vectors.Vector;
-   end record;
+   subtype Finding_Result is Improve.Results.Finding_List;
    --  One completed assessment selection and its normalized remediation findings.
-   --  @field Selected Completed assessment and project provenance.
-   --  @field Values Normalized remediation findings in deterministic order.
 
    function Projects
      (Quality_Path : String;
@@ -55,7 +43,7 @@ package Improve.Operations.Inspection is
       Filter           : String;
       Maximum_Items    : Positive;
       Require_Quality  : Boolean := False;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Improve.Tasks.View_Vectors.Vector;
@@ -79,7 +67,7 @@ package Improve.Operations.Inspection is
       Project_Selector : String;
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Improve.Tasks.Status_Vectors.Vector;

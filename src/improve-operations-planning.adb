@@ -52,9 +52,9 @@ package body Improve.Operations.Planning is
          begin
             Improve.Storage.Open
               (State, State_Path, Writable => True,
-               Limits => Improve.Operations.Storage_Read_Limits (Settings));
+               Limits => Improve.Operations.Storage_Limits (Settings));
             Saved := Improve.Storage.Save
-              (State, Draft, Improve.Operations.Storage_Read_Limits (Settings));
+              (State, Draft, Improve.Operations.Storage_Limits (Settings));
             Improve.Storage.Close (State);
             return (Plan => Saved.Plan, Existing => Saved.Existing);
          end;
@@ -65,7 +65,7 @@ package body Improve.Operations.Planning is
      (State_Path : String;
       Plan_Id    : String;
       Revision   : Natural := 0;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
       return Improve.Model.Plan_Revision is
       State : Improve.Storage.Store;
    begin
@@ -85,10 +85,10 @@ package body Improve.Operations.Planning is
       Quality_Path     : String;
       Project_Selector : String;
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
-      return Improve.Storage.Summary_Vectors.Vector is
+      return Improve.State.Summary_Vectors.Vector is
       Quality : Improve.Source.Repository;
       State   : Improve.Storage.Store;
    begin
@@ -100,7 +100,7 @@ package body Improve.Operations.Planning is
          Improve.Source.Close (Quality);
          Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
          declare
-            Values : constant Improve.Storage.Summary_Vectors.Vector :=
+            Values : constant Improve.State.Summary_Vectors.Vector :=
               Improve.Storage.List (State, Project, Maximum_Items, Limits);
          begin
             Improve.Storage.Close (State);
@@ -112,7 +112,7 @@ package body Improve.Operations.Planning is
    function Approve
      (State_Path : String;
       Plan_Id    : String;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
       return Improve.Model.Plan_Revision is
       State : Improve.Storage.Store;
       Plan  : Improve.Model.Plan_Revision;

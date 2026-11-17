@@ -4,9 +4,8 @@ function Begin_Publication
    Plan      : Improve.Model.Plan_Revision;
    Task_Kind : String;
    Task_Ids  : Improve.Model.UString_Vectors.Vector;
-   Limits   : Read_Limits := Default_Read_Limits) return Positive is
-   Stored  : constant Improve.Model.Plan_Revision :=
-     Load (Item, To_String (Plan.Plan_Id), Plan.Revision, Limits);
+   Limits   : Persistence_Limits := Default_Persistence_Limits) return Positive is
+   Stored  : Improve.Model.Plan_Revision;
    Tx      : Database.Transactions.Transaction;
    Payload : Unbounded_String;
    Key     : Unbounded_String;
@@ -14,6 +13,9 @@ function Begin_Publication
    Known   : String_Id_Maps.Map;
    Seen    : String_Id_Maps.Map;
    Packed_Size : Natural := 0;
+   Budget : History_Budget := New_History_Budget (Limits);
+   Existing_Row : Natural := 0;
+   Content_Fingerprint : Unbounded_String;
 begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for publication journaling";
@@ -23,9 +25,17 @@ begin
       raise Argument_Error with "publication operation has no resolved task kind";
    elsif Task_Ids.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
       raise Data_Error with "publication operation exceeds configured task limit";
-   elsif Stored.Fingerprint /= Plan.Fingerprint then
-      raise Data_Error with "publication plan revision fingerprint does not match durable state";
    end if;
+   Stored := Load_Exact
+     (Item, To_String (Plan.Plan_Id), Plan.Revision, Limits, Budget);
+   if Stored.Fingerprint /= Plan.Fingerprint then
+      raise Data_Error with "publication plan revision fingerprint does not match durable state";
+   elsif Improve.Model.Plan_Content_Fingerprint (Stored) /=
+     Improve.Model.Plan_Content_Fingerprint (Plan)
+   then
+      raise Data_Error with "publication plan content does not match durable state";
+   end if;
+   Content_Fingerprint := To_Unbounded_String (Improve.Model.Plan_Content_Fingerprint (Stored));
    for Index in 1 .. Natural (Stored.Tasks.Length) loop
       Known.Include (To_String (Stored.Tasks (Index).Id), Index);
    end loop;
@@ -50,6 +60,7 @@ begin
         ((Plan_Id     => Plan.Plan_Id,
           Revision    => Plan.Revision,
           Fingerprint => Plan.Fingerprint,
+          Content_Fingerprint => Content_Fingerprint,
           Task_Kind   => To_Unbounded_String (Task_Kind),
           Task_Ids    => Task_Ids)));
    Require_Payload_Limit
@@ -59,11 +70,14 @@ begin
         ((Plan_Id     => Plan.Plan_Id,
           Revision    => Plan.Revision,
           Fingerprint => Plan.Fingerprint,
+          Content_Fingerprint => Content_Fingerprint,
           Task_Kind   => To_Unbounded_String (Task_Kind),
           Task_Ids    => Task_Ids)));
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
+   Improve.Storage.Allocation.Begin_Transaction (Item);
    declare Cursor : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, To_String (Key)); begin
       while Entity_Tables.Has_Element (Cursor) loop
+         Consume_History (Budget, "publication operation history");
          declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
             if S (Row.Kind) = To_String (Key) and then S (Row.State) = "started" then
                Require_Payload_Limit
@@ -81,24 +95,28 @@ begin
                      raise Data_Error with "publication operation identity conflicts with durable state";
                   end if;
                end;
-               Database.Transactions.Rollback (Tx);
-               return Row.Id;
+               if Existing_Row > 0 then
+                  raise Data_Error with "duplicate pending publication operation";
+               end if;
+               Existing_Row := Row.Id;
             end if;
          end;
          Advance_Kind (Item, Tx, Operations_Table, To_String (Key), Cursor);
       end loop;
    end;
-   Row_Id := Next_Id (Item, Tx, Operations_Table);
+   if Existing_Row > 0 then
+      Rollback_Transaction (Tx, "finish existing publication lookup");
+      return Positive (Existing_Row);
+   end if;
+   Consume_History (Budget, "publication operation history");
+   Row_Id := Improve.Storage.Allocation.Next (Item, Tx, Operations_Table);
    Check
      (Entity_Tables.Insert
         (Tx, Item.DB, Item.Schemas (Operations_Table),
          (Row_Id, 0, WW (To_String (Key)), WW ("started"),
           WW (To_String (Payload)), True, Operations_Table)),
       "journal publication start");
-   Database.Transactions.Commit (Tx);
+   Improve.Storage.Allocation.Flush (Item, Tx);
+   Commit_Transaction (Tx, "commit publication start");
    return Row_Id;
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
 end Begin_Publication;

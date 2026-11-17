@@ -19,7 +19,7 @@ begin
       when Improve.Data_Error => Load_Rejected := True;
    end;
    begin
-      declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+      declare Values : constant Improve.State.Summary_Vectors.Vector :=
         Improve.Storage.List (Store, Plan.Project);
       begin
          pragma Unreferenced (Values);

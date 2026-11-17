@@ -61,7 +61,9 @@ begin
                   "agent_timeout_seconds = 2" & ASCII.LF &
                   "[operations]" & ASCII.LF &
                   "maximum_history_items = 12" & ASCII.LF &
+                  "maximum_migration_rows = 1024" & ASCII.LF &
                   "maximum_persisted_text_bytes = 16384" & ASCII.LF &
+                  "maximum_persisted_total_bytes = 65536" & ASCII.LF &
                   "maximum_recovery_operations = 9" & ASCII.LF &
                   "[workflow]" & ASCII.LF &
                   "task_kind = ""remediation""" & ASCII.LF &
@@ -98,20 +100,24 @@ begin
                      not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
                      Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
                      Value.Maximum_History_Items = 12 and then
+                     Value.Maximum_Migration_Rows = 1_024 and then
                      Value.Maximum_Persisted_Text_Bytes = 16_384 and then
+                     Value.Maximum_Persisted_Total_Bytes = 65_536 and then
                      Value.Maximum_Recovery_Operations = 9 and then Value.Format = Improve.Config.JSON_Format and then
                      Value.Color = Improve.Config.Color_Never and then Value.Require_Initialized and then
                      Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "[quality]") > 0 and then
                      Ada.Strings.Fixed.Index (Improve.Config.Image (Value), "[operations]") > 0,
                      "valid nondefault configuration was not preserved");
                   declare
-                     Limits : constant Improve.Storage.Read_Limits :=
-                       Improve.Operations.Storage_Read_Limits (Value);
+                     Limits : constant Improve.Storage.Persistence_Limits :=
+                       Improve.Operations.Storage_Limits (Value);
                      Quality_Limits : constant Ada_Quality.Reporting.Load_Limits :=
                        Improve.Operations.Quality_Load_Limits (Value);
                   begin
                      Assert
-                       (Limits.Maximum_History = 12 and then Limits.Maximum_Text_Bytes = 16_384 and then
+                       (Limits.Maximum_History = 12 and then Limits.Maximum_Migration_Rows = 1_024 and then
+                        Limits.Maximum_Text_Bytes = 16_384 and then
+                        Limits.Maximum_Total_Bytes = 65_536 and then
                         Limits.Maximum_History /= Value.Maximum_Output_Items and then
                         Quality_Limits.Max_Projects = 70 and then Quality_Limits.Max_Runs = 700 and then
                         Quality_Limits.Max_Findings = 7_000,
@@ -208,6 +214,34 @@ begin
                   end;
                   Assert (Rejected, "schema version 1 accepted version 2 evidence settings");
                end;
+               Write
+                 ("[operations]" & ASCII.LF & "maximum_migration_rows = 1024");
+               declare Rejected : Boolean := False; begin
+                  begin
+                     declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "schema version 1 accepted the migration row limit");
+               end;
+               Write
+                 ("[operations]" & ASCII.LF & "maximum_persisted_total_bytes = 1024");
+               declare Rejected : Boolean := False; begin
+                  begin
+                     declare Value : constant Improve.Config.Settings := Improve.Config.Load (Path);
+                        pragma Unreferenced (Value);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Improve.Argument_Error => Rejected := True;
+                  end;
+                  Assert (Rejected, "schema version 1 accepted the aggregate persistence limit");
+               end;
                Write ("[quality]" & ASCII.LF & "maximum_assessment_bytes = 1024");
                Assert
                  (Improve.Config.Load (Path).Maximum_Normalized_Finding_Bytes =
@@ -259,7 +293,9 @@ begin
                Reject ("agent_timeout_seconds = 3601", "agent timeout", "planning");
                Reject ("maximum_output_items = 100001", "output item limit", "output");
                Reject ("maximum_history_items = 1000001", "history item limit", "operations");
+               Reject ("maximum_migration_rows = 1300000001", "migration row limit", "operations");
                Reject ("maximum_persisted_text_bytes = 16777217", "persisted text limit", "operations");
+               Reject ("maximum_persisted_total_bytes = 2000000001", "persisted total limit", "operations");
                Reject ("maximum_recovery_operations = 10001", "recovery limit", "operations");
                Reject ("require_review = maybe", "boolean", "planning");
                Reject ("database = ""wrong.db""", "misplaced setting", "output");
@@ -385,7 +421,7 @@ begin
                Hygiene_Key  : Unbounded_String;
                Hygiene_Task : Unbounded_String;
                Prior_Ids    : Improve.Model.UString_Vectors.Vector;
-               Mapping      : Improve.Storage.Publication_Record;
+               Mapping      : Improve.State.Publication_Record;
             begin
                Project_Tools.Files.Delete_Tree (Work);
                Ada.Directories.Create_Path (Root & "/src");

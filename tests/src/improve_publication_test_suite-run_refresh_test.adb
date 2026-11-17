@@ -12,7 +12,7 @@ begin
                Planned   : Improve.CLI.Outcome;
                Applied   : Improve.CLI.Outcome;
                Refreshed : Improve.CLI.Outcome;
-               Mapping   : Improve.Storage.Publication_Record;
+               Mapping   : Improve.State.Publication_Record;
                Store     : Stores.Store;
                Recovery  : Stores.Recovery_Report;
                Change    : Stores.Transaction;
@@ -68,7 +68,7 @@ begin
                State   : constant String := To_String (Data.Directory) & "/improve.db";
                Planned : Improve.CLI.Outcome;
                Applied : Improve.CLI.Outcome;
-               Mapping : Improve.Storage.Publication_Record;
+               Mapping : Improve.State.Publication_Record;
                Store   : Stores.Store;
                Recovery : Stores.Recovery_Report;
                Change  : Stores.Transaction;

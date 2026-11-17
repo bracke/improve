@@ -3,9 +3,12 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Containers.Vectors;
 with Ada.Streams;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada_Quality.Types;
 with CryptoLib.Hashes;
+with Database.WAL;
 with Hostkit.Fs;
+with Improve.Canonical_Digests;
 with Project_Tools.Files;
 
 package body Improve.Source is
@@ -68,12 +71,17 @@ package body Improve.Source is
 
       function Operational_File (Path, Relative : String) return Boolean is
          Configured : constant String := To_String (Canonical_State);
+         Configured_WAL : constant String :=
+           (if Configured = "" then ""
+            else Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode
+              (Database.WAL.WAL_Path
+                 (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Configured))));
       begin
          return Relative = ".improve.db" or else Relative = ".improve.db.fts" or else
-           Relative = ".improve.db-wal" or else Relative = ".improve.db-shm" or else
+           Relative = ".improve.db.wal" or else
            (Configured /= "" and then
             (Path = Configured or else Path = Configured & ".fts" or else
-             Path = Configured & "-wal" or else Path = Configured & "-shm"));
+             Path = Configured_WAL));
       end Operational_File;
 
       procedure Walk
@@ -278,41 +286,15 @@ package body Improve.Source is
    function Assessment_Fingerprint
      (Value         : Ada_Quality.Reporting.Assessment_Record;
       Maximum_Bytes : Positive := Positive'Last) return String is
-      Context : CryptoLib.Hashes.SHA256_Context;
-      Used    : Natural := 0;
-
-      procedure Hash_Text (Text : String) is
-         use Ada.Streams;
-         Buffer : Stream_Element_Array (1 .. 65_536);
-         First  : Natural := Text'First;
-      begin
-         while First <= Text'Last loop
-            declare
-               Count : constant Natural := Natural'Min (Buffer'Length, Text'Last - First + 1);
-            begin
-               for Offset in 0 .. Count - 1 loop
-                  Buffer (Buffer'First + Stream_Element_Offset (Offset)) :=
-                    Stream_Element (Character'Pos (Text (First + Offset)));
-               end loop;
-               CryptoLib.Hashes.Update
-                 (Context, Buffer (Buffer'First .. Buffer'First + Stream_Element_Offset (Count) - 1));
-               First := First + Count;
-            end;
-         end loop;
-      end Hash_Text;
+      Digest : Improve.Canonical_Digests.Builder;
 
       procedure Add (Name, Text : String) is
       begin
-         if Text'Length > Maximum_Bytes - Used then
-            raise Data_Error with "assessment exceeds configured evidence byte limit";
-         end if;
-         Used := Used + Text'Length;
-         Hash_Text (Natural'Image (Name'Length) & ":" & Name);
-         Hash_Text (Natural'Image (Text'Length) & ":" & Text);
+         Improve.Canonical_Digests.Add (Digest, Name, Text);
       end Add;
    begin
-      CryptoLib.Hashes.Initialize_SHA256 (Context);
-      Hash_Text ("improve-assessment-v1" & Character'Val (0));
+      Improve.Canonical_Digests.Initialize
+        (Digest, "improve-assessment-v1" & Character'Val (0), Maximum_Bytes);
       Add ("run", Positive'Image (Value.Run.Id));
       Add ("project", Positive'Image (Value.Run.Project_Id));
       Add ("state", Ada_Quality.Types.Assessment_Status'Image (Value.Run.State));
@@ -339,7 +321,7 @@ package body Improve.Source is
             Add ("finding.fingerprint", To_String (Finding.Fingerprint));
          end loop;
       end loop;
-      return "assessment-sha256-v1:" & Hex (CryptoLib.Hashes.Finalize (Context));
+      return Improve.Canonical_Digests.Finish (Digest, "assessment-sha256-v1:");
    end Assessment_Fingerprint;
 
    function Name_Of (Path : String) return String is

@@ -4,6 +4,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada_Quality.Checks;
+with Ada_Quality.Finding_Identity;
 with Ada_Quality.Storage;
 with AUnit.Assertions;
 with Database;
@@ -32,6 +33,7 @@ package body Improve_Test_Support is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
    use AUnit.Assertions;
+   use type Ada_Quality.Types.Indicator_Id;
 
    function Args (Text : String) return Improve.CLI.String_Vectors.Vector is
       Result : Improve.CLI.String_Vectors.Vector;
@@ -50,6 +52,87 @@ package body Improve_Test_Support is
 
    function Id_Image (Value : Positive) return String is
      (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));
+
+   function Finding_Fingerprint
+     (Indicator : Ada_Quality.Types.Indicator_Id;
+      Rule, Path, Message : String) return String is
+     (Ada_Quality.Finding_Identity.Create (Indicator, Rule, Path, Message));
+
+   function Assessment_Fixture
+     (Run, Project : Positive;
+      Target, Source, Policy, Toolchain, Evidence_Prefix : String)
+      return Ada_Quality.Types.Assessment is
+      use Ada_Quality.Types;
+      Result : Assessment;
+   begin
+      Result.Id := Run;
+      Result.Project_Id := Project;
+      Result.Project_Path := To_Unbounded_String (Target);
+      Result.Source_Fingerprint := To_Unbounded_String (Source);
+      Result.Policy_Fingerprint := To_Unbounded_String (Policy);
+      Result.Toolchain_Fingerprint := To_Unbounded_String (Toolchain);
+      Result.Status := Assessment_Completed;
+      for Indicator in Indicator_Id loop
+         Result.Results.Append
+           (Indicator_Result'
+              (Indicator   => Indicator,
+               Execution   => Succeeded,
+               Compliance  => Pass,
+               Applicable  => True,
+               Summary     => To_Unbounded_String ("pass"),
+               Evidence    => To_Unbounded_String (Evidence_Prefix & Image (Indicator)),
+               Measurement => (Kind => Boolean_Value, Boolean_Data => True),
+               Findings    => <>));
+      end loop;
+      return Result;
+   end Assessment_Fixture;
+
+   procedure Set_Result
+     (Value       : in out Ada_Quality.Types.Assessment;
+      Indicator   : Ada_Quality.Types.Indicator_Id;
+      Execution   : Ada_Quality.Types.Execution_Status;
+      Compliance  : Ada_Quality.Types.Compliance_Status;
+      Summary     : String;
+      Measurement : Ada_Quality.Types.Measurement_Value) is
+      Index : constant Positive := Value.Results.First_Index + Ada_Quality.Types.Indicator_Id'Pos (Indicator);
+      Item  : Ada_Quality.Types.Indicator_Result := Value.Results (Index);
+   begin
+      if Item.Indicator /= Indicator then
+         raise Program_Error with "assessment fixture indicator order is inconsistent";
+      end if;
+      Item.Execution := Execution;
+      Item.Compliance := Compliance;
+      Item.Summary := To_Unbounded_String (Summary);
+      Item.Measurement := Measurement;
+      Value.Results.Replace_Element (Index, Item);
+   end Set_Result;
+
+   procedure Add_Finding
+     (Value     : in out Ada_Quality.Types.Assessment;
+      Indicator : Ada_Quality.Types.Indicator_Id;
+      Rule       : String;
+      Level      : Ada_Quality.Types.Severity;
+      Message    : String;
+      Path       : String;
+      Line       : Natural) is
+      Index : constant Positive := Value.Results.First_Index + Ada_Quality.Types.Indicator_Id'Pos (Indicator);
+      Item  : Ada_Quality.Types.Indicator_Result := Value.Results (Index);
+   begin
+      if Item.Indicator /= Indicator then
+         raise Program_Error with "assessment fixture indicator order is inconsistent";
+      end if;
+      Item.Findings.Append
+        (Ada_Quality.Types.Finding'
+           (Indicator     => Indicator,
+            Rule          => To_Unbounded_String (Rule),
+            Level         => Level,
+            Message       => To_Unbounded_String (Message),
+            Relative_Path => To_Unbounded_String (Path),
+            Line          => Line,
+            Fingerprint   => To_Unbounded_String
+              (Finding_Fingerprint (Indicator, Rule, Path, Message))));
+      Value.Results.Replace_Element (Index, Item);
+   end Add_Finding;
 
    procedure Must_Reject (Text, Expected : String) is
       Rejected : Boolean := False;
@@ -96,61 +179,25 @@ package body Improve_Test_Support is
       Project := Ada_Quality.Storage.Add_Project (Store, Target);
       declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
          Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
-         Value.Source_Fingerprint := To_Unbounded_String (Source);
+         Value := Assessment_Fixture
+           (Run, Project, Target, Source, "policy-a", "gnat-15.2.1", "fixture evidence for ");
       end;
-      Value.Id := Run;
-      Value.Project_Id := Project;
-      Value.Project_Path := To_Unbounded_String (Target);
-      Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
-      Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  => Succeeded,
-               Compliance => (if Indicator in STR_01 | TST_03 then Violation else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String (if Indicator in STR_01 | TST_03 then "violation" else "pass"),
-               Evidence    => To_Unbounded_String ("fixture evidence for " & Image (Indicator)),
-               Measurement =>
-                 (if Indicator = TST_03 then (Kind => Decimal_Value, Basis_Points => 8_200)
-                  else (Kind => Boolean_Value, Boolean_Data => Indicator not in STR_01 | TST_03)),
-               Findings    => <>));
-      end loop;
-      declare
-         Structure : Indicator_Result := Value.Results (Value.Results.First_Index);
-         Toolchain : Indicator_Result := Value.Results (Value.Results.First_Index + 8);
-         Finding   : constant Ada_Quality.Types.Finding :=
-           (Indicator     => STR_01,
-            Rule          => To_Unbounded_String ("manifest.invalid"),
-            Level         => High,
-            Message       => To_Unbounded_String ("manifest is invalid"),
-            Relative_Path => To_Unbounded_String ("alire.toml"),
-            Line          => 1,
-            Fingerprint   => To_Unbounded_String ("fixture-manifest"));
-      begin
-         Structure.Findings.Append (Finding);
-         Structure.Findings.Append (Finding);
-         if Multiple_Structure then
-            Structure.Findings.Append
-              (Ada_Quality.Types.Finding'
-                 (Indicator     => STR_01,
-                  Rule          => To_Unbounded_String ("manifest.invalid"),
-                  Level         => Second_Structure_Severity,
-                  Message       => To_Unbounded_String ("manifest has a second invalid field"),
-                  Relative_Path => To_Unbounded_String ("alire.toml"),
-                  Line          => 2,
-                  Fingerprint   => To_Unbounded_String ("fixture-manifest-second")));
-         end if;
-         Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-         Toolchain.Execution := Blocked;
-         Toolchain.Compliance := Unknown;
-         Toolchain.Summary := To_Unbounded_String ("toolchain unavailable");
-         Toolchain.Measurement :=
-           (Kind => Unavailable_Value, Reason => To_Unbounded_String ("toolchain probe unavailable"));
-         Value.Results.Replace_Element (Value.Results.First_Index + 8, Toolchain);
-      end;
+      Set_Result
+        (Value, STR_01, Succeeded, Violation, "violation",
+         (Kind => Boolean_Value, Boolean_Data => False));
+      Set_Result
+        (Value, TST_03, Succeeded, Violation, "violation",
+         (Kind => Decimal_Value, Basis_Points => 8_200));
+      Add_Finding
+        (Value, STR_01, "manifest.invalid", High, "manifest is invalid", "alire.toml", 1);
+      if Multiple_Structure then
+         Add_Finding
+           (Value, STR_01, "manifest.invalid", Second_Structure_Severity,
+            "manifest has a second invalid field", "alire.toml", 2);
+      end if;
+      Set_Result
+        (Value, BLD_04, Blocked, Unknown, "toolchain unavailable",
+         (Kind => Unavailable_Value, Reason => To_Unbounded_String ("toolchain probe unavailable")));
       Run := Ada_Quality.Storage.Publish (Store, Value);
       Later := Ada_Quality.Storage.Start_Assessment (Store, Project, "source-b", "policy-a");
       Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
@@ -179,38 +226,14 @@ package body Improve_Test_Support is
       Project := Ada_Quality.Storage.Add_Project (Store, Target);
       declare Source : constant String := Ada_Quality.Checks.Source_Fingerprint (Target); begin
          Run := Ada_Quality.Storage.Start_Assessment (Store, Project, Source, "policy-a");
-         Value.Source_Fingerprint := To_Unbounded_String (Source);
+         Value := Assessment_Fixture
+           (Run, Project, Target, Source, "policy-a", "gnat-15.2.1", "fixture evidence for ");
       end;
-      Value.Id := Run;
-      Value.Project_Id := Project;
-      Value.Project_Path := To_Unbounded_String (Target);
-      Value.Policy_Fingerprint := To_Unbounded_String ("policy-a");
-      Value.Toolchain_Fingerprint := To_Unbounded_String ("gnat-15.2.1");
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  => Succeeded,
-               Compliance => (if Indicator = STR_01 then Violation else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String (if Indicator = STR_01 then "violation" else "pass"),
-               Evidence    => To_Unbounded_String ("fixture evidence for " & Image (Indicator)),
-               Measurement => (Kind => Boolean_Value, Boolean_Data => Indicator /= STR_01),
-               Findings    => <>));
-      end loop;
-      declare Structure : Indicator_Result := Value.Results.First_Element; begin
-         Structure.Findings.Append
-           (Finding'
-              (Indicator     => STR_01,
-               Rule          => To_Unbounded_String ("manifest.invalid"),
-               Level         => High,
-               Message       => To_Unbounded_String ("manifest is invalid"),
-               Relative_Path => To_Unbounded_String ("alire.toml"),
-               Line          => 1,
-               Fingerprint   => To_Unbounded_String ("fixture-" & Label & "-manifest")));
-         Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-      end;
+      Set_Result
+        (Value, STR_01, Succeeded, Violation, "violation",
+         (Kind => Boolean_Value, Boolean_Data => False));
+      Add_Finding
+        (Value, STR_01, "manifest.invalid", High, "manifest is invalid", "alire.toml", 1);
       Run := Ada_Quality.Storage.Publish (Store, Value);
       Later := Ada_Quality.Storage.Start_Assessment (Store, Project, "interrupted-source", "policy-a");
       Ada_Quality.Storage.Interrupt_Assessment (Store, Later, "fixture interruption");
@@ -299,70 +322,31 @@ package body Improve_Test_Support is
    begin
       Ada_Quality.Storage.Open (Store, To_String (Data.Database));
       Run := Ada_Quality.Storage.Start_Assessment (Store, Data.Project, Effective_Source, Policy);
-      Value.Id := Run;
-      Value.Project_Id := Data.Project;
-      Value.Project_Path := Data.Target;
-      Value.Source_Fingerprint := To_Unbounded_String (Effective_Source);
-      Value.Policy_Fingerprint := To_Unbounded_String (Policy);
-      Value.Toolchain_Fingerprint := To_Unbounded_String (Toolchain);
-      Value.Status := Assessment_Completed;
-      for Indicator in Indicator_Id loop
-         Value.Results.Append
-           (Indicator_Result'
-              (Indicator  => Indicator,
-               Execution  =>
-                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Blocked
-                  else Succeeded),
-               Compliance =>
-                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then Violation
-                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01 then Unknown
-                  else Pass),
-               Applicable => True,
-               Summary     => To_Unbounded_String
-                 (if Structure_State = Structure_Failing and then Indicator = STR_01 then "violation"
-                  elsif Structure_State = Structure_Unmeasurable and then Indicator = STR_01
-                  then "measurement unavailable" else "pass"),
-               Evidence    => To_Unbounded_String ("follow-up evidence for " & Image (Indicator)),
-               Measurement =>
-                 (if Structure_State = Structure_Unmeasurable and then Indicator = STR_01
-                  then (Kind => Unavailable_Value, Reason => To_Unbounded_String ("fixture evidence unavailable"))
-                  else (Kind => Boolean_Value,
-                        Boolean_Data => not (Structure_State = Structure_Failing and then Indicator = STR_01))),
-               Findings => <>));
-      end loop;
-      if Structure_State = Structure_Failing then
-         declare Structure : Indicator_Result := Value.Results.First_Element; begin
-            Structure.Findings.Append
-              (Finding'
-                 (Indicator     => STR_01,
-                  Rule          => To_Unbounded_String ("manifest.invalid"),
-                  Level         => Structure_Severity,
-                  Message       => To_Unbounded_String ("manifest is invalid"),
-                  Relative_Path => To_Unbounded_String ("alire.toml"),
-                  Line          => 1,
-                  Fingerprint   => To_Unbounded_String ("fixture-manifest")));
-            Value.Results.Replace_Element (Value.Results.First_Index, Structure);
-         end;
-      end if;
+      Value := Assessment_Fixture
+        (Run, Data.Project, To_String (Data.Target), Effective_Source, Policy, Toolchain,
+         "follow-up evidence for ");
+      case Structure_State is
+         when All_Pass =>
+            null;
+         when Structure_Failing =>
+            Set_Result
+              (Value, STR_01, Succeeded, Violation, "violation",
+               (Kind => Boolean_Value, Boolean_Data => False));
+            Add_Finding
+              (Value, STR_01, "manifest.invalid", Structure_Severity,
+               "manifest is invalid", "alire.toml", 1);
+         when Structure_Unmeasurable =>
+            Set_Result
+              (Value, STR_01, Blocked, Unknown, "measurement unavailable",
+               (Kind => Unavailable_Value, Reason => To_Unbounded_String ("fixture evidence unavailable")));
+      end case;
       if New_Critical then
-         declare
-            Index    : constant Positive := Value.Results.First_Index + Indicator_Id'Pos (SEC_01);
-            Security : Indicator_Result := Value.Results (Index);
-         begin
-            Security.Compliance := Violation;
-            Security.Summary := To_Unbounded_String ("new critical security violation");
-            Security.Measurement := (Kind => Boolean_Value, Boolean_Data => False);
-            Security.Findings.Append
-              (Finding'
-                 (Indicator     => SEC_01,
-                  Rule          => To_Unbounded_String ("security.new-critical"),
-                  Level         => Critical,
-                  Message       => To_Unbounded_String ("unrelated critical finding"),
-                  Relative_Path => To_Unbounded_String ("src/new_issue.adb"),
-                  Line          => 1,
-                  Fingerprint   => To_Unbounded_String ("fixture-new-critical")));
-            Value.Results.Replace_Element (Index, Security);
-         end;
+         Set_Result
+           (Value, SEC_01, Succeeded, Violation, "new critical security violation",
+            (Kind => Boolean_Value, Boolean_Data => False));
+         Add_Finding
+           (Value, SEC_01, "security.new-critical", Critical,
+            "unrelated critical finding", "src/new_issue.adb", 1);
       end if;
       Run := Ada_Quality.Storage.Publish (Store, Value);
       Ada_Quality.Storage.Close (Store);
@@ -441,6 +425,9 @@ package body Improve_Test_Support is
         (Database.Catalog_State_Key (DB), "indicator_results", Schema);
       Assert (Database.Status.Is_Ok (Status), "indicator schema is unavailable for evidence fixture");
       Database.Transactions.Begin_Write (DB, Tx);
+      Assert
+        (Database.Status.Is_Ok (Database.Transactions.Result (Tx)),
+         "assessment evidence mutation transaction could not be started");
       Status := Quality_Tables.Scan (Tx, DB, Schema, Predicate, Cursor);
       Assert
         (Database.Status.Is_Ok (Status) and then Quality_Tables.Has_Element (Cursor),
@@ -454,12 +441,26 @@ package body Improve_Test_Support is
       Assert
         (Database.Status.Is_Ok (Quality_Tables.Update (Tx, DB, Schema, Row)),
          "assessment evidence could not be mutated");
-      Database.Transactions.Commit (Tx);
+      Assert
+        (Database.Status.Is_Ok (Database.Transactions.Commit (Tx)),
+         "assessment evidence mutation could not be committed");
       Database.Close (DB);
+      Assert
+        (Database.Last_Operation_Succeeded (DB),
+         "quality database could not be closed after evidence mutation");
    exception
       when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
+         if Database.Transactions.Is_Active (Tx) then
+            Assert
+              (Database.Status.Is_Ok (Database.Transactions.Rollback (Tx)),
+               "assessment evidence mutation could not be rolled back");
+         end if;
+         if Database.Is_Open (DB) then
+            Database.Close (DB);
+            Assert
+              (Database.Last_Operation_Succeeded (DB),
+               "quality database could not be closed after evidence mutation failure");
+         end if;
          raise;
    end Replace_Assessment_Evidence;
 

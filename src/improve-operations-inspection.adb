@@ -1,6 +1,9 @@
 with Ada.Containers;
 with Ada.Strings.Fixed;
+with Ada.Strings.Unbounded;
 with Improve.Findings;
+with Improve.Source;
+with Improve.State;
 with Project_Tools.Files;
 
 package body Improve.Operations.Inspection is
@@ -20,10 +23,18 @@ package body Improve.Operations.Inspection is
       Improve.Source.Open
         (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
          Settings.Maximum_Quality_Database_Bytes);
-      Result.Values := Improve.Source.Projects (Quality);
-      if Result.Values.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
-         raise Data_Error with "project query exceeds output.maximum_output_items";
-      end if;
+      declare
+         Values : constant Ada_Quality.Reporting.Project_Vectors.Vector := Improve.Source.Projects (Quality);
+      begin
+         if Values.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
+            raise Data_Error with "project query exceeds output.maximum_output_items";
+         end if;
+         for Value of Values loop
+            Result.Values.Append
+              (Improve.Results.Project_Record'
+                 (Id => Value.Id, Path => Value.Path, Enabled => Value.Enabled, Removed => Value.Removed));
+         end loop;
+      end;
       Result.Snapshot := To_Unbounded_String (Improve.Source.Identity (Quality));
       Improve.Source.Close (Quality);
       return Result;
@@ -44,14 +55,22 @@ package body Improve.Operations.Inspection is
          Project : constant Improve.Model.Project_Reference :=
            Improve.Source.Resolve_Project (Quality, Project_Selector);
       begin
-         Result.Selected := Improve.Source.Select_Assessment
-           (Quality, Project, Run_Id, Settings.Maximum_Assessment_Bytes);
-         Result.Values := Improve.Findings.Normalize
-           (Result.Selected,
-            Improve.Config.Quality_Severity (Settings.Minimum_Severity),
-            Settings.Allow_Investigation_Tasks,
-            Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
-            Settings.Maximum_Normalized_Finding_Bytes);
+         declare
+            Selected : constant Improve.Source.Selection := Improve.Source.Select_Assessment
+              (Quality, Project, Run_Id, Settings.Maximum_Assessment_Bytes);
+         begin
+            Result.Project_Id := Selected.Project.Id;
+            Result.Project := Selected.Project.Name;
+            Result.Run_Id := Selected.Assessment.Run.Id;
+            Result.Assessment_Id := Selected.Baseline.Evidence_Id;
+            Result.Snapshot_Id := Selected.Baseline.Snapshot_Id;
+            Result.Values := Improve.Findings.Normalize
+              (Selected,
+               Improve.Config.Quality_Severity (Settings.Minimum_Severity),
+               Settings.Allow_Investigation_Tasks,
+               Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
+               Settings.Maximum_Normalized_Finding_Bytes);
+         end;
       end;
       Improve.Source.Close (Quality);
       return Result;
@@ -60,7 +79,7 @@ package body Improve.Operations.Inspection is
    type View_Snapshot is record
       Plan    : Improve.Model.Plan_Revision;
       Views   : Improve.Tasks.View_Vectors.Vector;
-      History : Improve.Storage.Inspection_History;
+      History : Improve.State.Inspection_History;
    end record;
 
    function Snapshot_For
@@ -69,8 +88,8 @@ package body Improve.Operations.Inspection is
       Revision           : Natural;
       Current_Assessment : Natural;
       Maximum_Items      : Positive;
-      Limits             : Improve.Storage.Read_Limits) return View_Snapshot is
-      History : constant Improve.Storage.Inspection_History :=
+      Limits             : Improve.Storage.Persistence_Limits) return View_Snapshot is
+      History : constant Improve.State.Inspection_History :=
         Improve.Storage.History
           (State, Plan_Id, Revision, Limits.Maximum_History, Limits);
       Plan : constant Improve.Model.Plan_Revision :=
@@ -99,7 +118,7 @@ package body Improve.Operations.Inspection is
       Filter           : String;
       Maximum_Items    : Positive;
       Require_Quality  : Boolean := False;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Improve.Tasks.View_Vectors.Vector is
@@ -173,7 +192,7 @@ package body Improve.Operations.Inspection is
             end;
          end;
       else
-         declare Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+         declare Summaries : constant Improve.State.Summary_Vectors.Vector :=
            (if Has_Project then Improve.Storage.List (State, Selected_Project, Maximum_Items, Limits)
             else Improve.Storage.List_All (State, Maximum_Items, Limits));
          begin
@@ -215,7 +234,7 @@ package body Improve.Operations.Inspection is
       Project_Selector : String;
       All_Projects     : Boolean;
       Maximum_Items    : Positive;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Improve.Tasks.Status_Vectors.Vector is
@@ -225,7 +244,7 @@ package body Improve.Operations.Inspection is
       Total_Items : Natural := 0;
 
       procedure Add_Project (Project : Improve.Model.Project_Reference; Latest_Run : Natural) is
-         Summaries : constant Improve.Storage.Summary_Vectors.Vector :=
+         Summaries : constant Improve.State.Summary_Vectors.Vector :=
            Improve.Storage.List (State, Project, Maximum_Items, Limits);
          Value     : Improve.Tasks.Project_Status;
          Last_Plan : Improve.Model.Plan_Revision;

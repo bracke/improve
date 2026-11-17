@@ -27,7 +27,9 @@ agent_timeout_seconds = 60
 [operations]
 maximum_recovery_operations = 100
 maximum_history_items = 100000
+maximum_migration_rows = 1000000
 maximum_persisted_text_bytes = 1048576
+maximum_persisted_total_bytes = 67108864
 
 [workflow]
 task_kind = "auto"

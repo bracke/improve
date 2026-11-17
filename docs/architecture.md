@@ -13,18 +13,29 @@ Domain exception types provide stable diagnostic categories. The CLI maps those 
 catalog and supplies escaped technical detail as data; domain and storage packages do not construct terminal or JSON
 presentation.
 
+Application-operation outputs are defined in `Improve.Results`; persistence-neutral plan, publication, verification,
+and journal state is defined separately in `Improve.State`. CLI, terminal, JSON, task, and workflow adapters therefore
+do not depend on the storage adapter. `Improve.Storage` remains the transactional facade; physical namespace constants,
+canonical row mapping, and key construction are isolated in the private `Improve.Persistence_Schema` unit, while typed
+payload codecs and validation remain separate persistence components. Transactional logical-ID reservation is isolated
+in the private `Improve.Storage.Allocation` child, so normal writes do not scan namespace history.
+
 Task inspection obtains only the latest completed run identity needed for freshness classification. It does not decode
 complete assessment evidence; planning and verification retain responsibility for bounded evidence validation.
 
 Quality repositories and Improve stores are controlled owners. Operations close them explicitly only to release a
 successful phase early; exceptional paths rely on finalization so cleanup cannot replace the originating exception.
+Improve storage checks transaction start, commit, and rollback results at the persistence boundary, and explicit store
+closure reports dependency persistence or handle-close failures. Finalization remains best-effort during unwinding.
+If first-time initialization fails, Improve removes only the database artifacts created by that call so retrying the
+previously absent state path starts from a clean boundary.
 
 The assessment database is never created, migrated, recovered, or written by Improve. Improve's own state database
 is a separate boundary. A model_runner commit and an Improve mapping commit are deliberately treated as two durable
 operations joined by a stable origin identifier and recovery, not as a distributed transaction.
 
 Quality reads are bounded before the reporting snapshot is materialized by a configurable database-file limit.
-Assessment identity is then computed with a streaming, versioned SHA-256 encoding that enforces the configured
+Assessment identity is then computed with the shared canonical streaming SHA-256 builder, which enforces the configured
 per-assessment evidence limit without creating another complete copy of the evidence.
 Complete assessment evidence, normalized remediation findings, and working-source content have separate limits.
 Application operations receive them through one typed evidence-limit value so publication and recovery cannot drift
@@ -32,11 +43,17 @@ from planning policy.
 Operational rejection limits are not part of semantic plan identity: changing a limit without changing accepted
 evidence, task grouping, or review policy does not create a new immutable revision.
 
+Approval and publication journaling bind the semantic plan identity to a separate canonical digest of the complete
+persisted plan content. The content digest covers normalized provenance, creation chronology, findings, logical task
+identities, and full task contracts. Reloaded or recovered work must match that digest, so child-row corruption cannot
+inherit an earlier approval or publication authorization.
+
 Plan generation requires the current authoritative Ada Quality source fingerprint to match the selected completed
 assessment. Publication applies a second, harness-state-aware `working-sha256-v4` fingerprint to detect authored
 changes after planning without treating model_runner's own operational state as a source edit. The working identity is
 a length-delimited SHA-256 stream over sorted relative paths and bounded file contents, so path/content boundaries
 cannot produce the same byte stream accidentally.
+Improve state, full-text, and database-provided WAL artifacts are excluded through their actual configured paths.
 The baseline additionally authenticates the selected assessment's complete typed evidence. Publication therefore
 rejects evidence replacement even when the run, source, policy, and toolchain metadata remain unchanged.
 

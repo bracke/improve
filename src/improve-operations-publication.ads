@@ -1,7 +1,7 @@
 with Improve.Model;
 with Improve.Config;
+with Improve.Results;
 with Improve.Storage;
-with Improve.Workflow;
 with Ada_Quality.Reporting;
 
 --  Publication authorization, journaling, and native task creation.
@@ -10,7 +10,7 @@ package Improve.Operations.Publication is
 
    type Result is record
       Plan      : Improve.Model.Plan_Revision;
-      Published : Improve.Workflow.Publication_Result;
+      Published : Improve.Results.Publication_Result;
    end record;
    --  Plan and native task mappings produced by publication.
    --  @field Plan Exact immutable plan revision that was published.
@@ -23,7 +23,7 @@ package Improve.Operations.Publication is
       Selected_Task_Id : String;
       Task_Kind        : String;
       Dry_Run          : Boolean;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) return Result;
    --  Validate approval and source/evidence identity, journal the operation,

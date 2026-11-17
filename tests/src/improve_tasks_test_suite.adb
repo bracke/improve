@@ -4,7 +4,7 @@ with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve.Model;
-with Improve.Storage;
+with Improve.State;
 with Improve.Tasks;
 
 package body Improve_Tasks_Test_Suite is
@@ -60,13 +60,13 @@ package body Improve_Tasks_Test_Suite is
          Verified      : Boolean := False;
          Outcome       : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
          Current_Run   : Natural := 2) is
-         Publications : Improve.Storage.Publication_Vectors.Vector;
-         Evidence     : Improve.Storage.Verification_Vectors.Vector;
+         Publications : Improve.State.Publication_Vectors.Vector;
+         Evidence     : Improve.State.Verification_Vectors.Vector;
          Views        : Improve.Tasks.View_Vectors.Vector;
       begin
          if Harness_State /= "" then
             Publications.Append
-              (Improve.Storage.Publication_Record'
+              (Improve.State.Publication_Record'
                  (Improve_Task_Id => Only.Id,
                   Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
                   Origin          => To_Unbounded_String ("improve:test"),
@@ -77,7 +77,7 @@ package body Improve_Tasks_Test_Suite is
          end if;
          if Verified then
             Evidence.Append
-              (Improve.Storage.Verification_Record'
+              (Improve.State.Verification_Record'
                  (Scope                => Improve.Model.Task_Evaluation,
                   Task_Id              => Only.Id,
                   Plan_Revision        => Plan.Revision,
@@ -97,7 +97,7 @@ package body Improve_Tasks_Test_Suite is
       declare
          Joined    : Improve.Model.Plan_Revision := Plan;
          Unrelated : Improve.Model.Task_Specification := Only;
-         Evidence  : Improve.Storage.Verification_Vectors.Vector;
+         Evidence  : Improve.State.Verification_Vectors.Vector;
          Ordered   : Improve.Tasks.View_Vectors.Vector;
          Reordered : Improve.Tasks.View_Vectors.Vector;
          Summary   : Improve.Tasks.Finding_Summary;
@@ -106,7 +106,7 @@ package body Improve_Tasks_Test_Suite is
          Unrelated.Finding_Keys.Clear;
          Joined.Tasks.Append (Unrelated);
          Evidence.Append
-           (Improve.Storage.Verification_Record'
+           (Improve.State.Verification_Record'
               (Scope                => Improve.Model.Task_Evaluation,
                Task_Id              => Only.Id,
                Plan_Revision        => Joined.Revision,
@@ -117,13 +117,13 @@ package body Improve_Tasks_Test_Suite is
                Comparable           => True,
                Explanation          => To_Unbounded_String ("identity join")));
          Ordered := Improve.Tasks.Build
-           (Joined, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 2);
+           (Joined, Improve.State.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 2);
          Reordered.Append (Ordered.Last_Element);
          Reordered.Append (Ordered.First_Element);
          Summary := Improve.Tasks.Findings (Joined, Reordered);
          Assert (Summary.Resolved = 1, "finding aggregation used task/view position instead of task identity");
          Ordered := Improve.Tasks.Build
-           (Joined, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 0);
+           (Joined, Improve.State.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 0);
          Summary := Improve.Tasks.Findings (Joined, Ordered);
          Assert
            (Ordered.First_Element.Freshness = Improve.Tasks.Freshness_Unknown and then
@@ -134,7 +134,7 @@ package body Improve_Tasks_Test_Suite is
          Original  : Improve.Model.Plan_Revision := Plan;
          Revised   : Improve.Model.Plan_Revision;
          Dependent : Improve.Model.Task_Specification := Only;
-         Evidence  : Improve.Storage.Verification_Vectors.Vector;
+         Evidence  : Improve.State.Verification_Vectors.Vector;
          Views     : Improve.Tasks.View_Vectors.Vector;
       begin
          Dependent.Id := To_Unbounded_String ("IMP-000002");
@@ -144,7 +144,7 @@ package body Improve_Tasks_Test_Suite is
          Revised := Original;
          Revised.Tasks (1).Goal := To_Unbounded_String ("Changed prerequisite contract");
          Evidence.Append
-           (Improve.Storage.Verification_Record'
+           (Improve.State.Verification_Record'
               (Scope                => Improve.Model.Task_Evaluation,
                Task_Id              => Dependent.Id,
                Plan_Revision        => Revised.Revision,
@@ -155,16 +155,16 @@ package body Improve_Tasks_Test_Suite is
                Comparable           => True,
                Explanation          => To_Unbounded_String ("obsolete prerequisite binding")));
          Views := Improve.Tasks.Build
-           (Revised, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 2);
+           (Revised, Improve.State.Publication_Vectors.Empty_Vector, Evidence, Current_Assessment => 2);
          Assert
            (not Views (2).Has_Verification,
             "dependent task reused verification from an obsolete prerequisite contract");
       end;
       declare
-         Publications : Improve.Storage.Publication_Vectors.Vector;
-         Evidence     : Improve.Storage.Verification_Vectors.Vector;
+         Publications : Improve.State.Publication_Vectors.Vector;
+         Evidence     : Improve.State.Verification_Vectors.Vector;
          Rejected     : Boolean := False;
-         Mapping      : constant Improve.Storage.Publication_Record :=
+         Mapping      : constant Improve.State.Publication_Record :=
            (Improve_Task_Id => Only.Id,
             Harness_Task_Id => To_Unbounded_String ("TASK-TEST-001"),
             Origin          => To_Unbounded_String ("improve:test"),
@@ -172,7 +172,7 @@ package body Improve_Tasks_Test_Suite is
               (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Only.Id)),
             State           => To_Unbounded_String ("candidate"),
             Plan_Revision   => Plan.Revision);
-         Verification : constant Improve.Storage.Verification_Record :=
+         Verification : constant Improve.State.Verification_Record :=
            (Scope                => Improve.Model.Task_Evaluation,
             Task_Id              => Only.Id,
             Plan_Revision        => Plan.Revision,
@@ -187,7 +187,7 @@ package body Improve_Tasks_Test_Suite is
          begin
             declare Views : constant Improve.Tasks.View_Vectors.Vector :=
               Improve.Tasks.Build
-                (Plan, Publications, Improve.Storage.Verification_Vectors.Empty_Vector);
+                (Plan, Publications, Improve.State.Verification_Vectors.Empty_Vector);
                pragma Unreferenced (Views);
             begin
                null;
@@ -202,7 +202,7 @@ package body Improve_Tasks_Test_Suite is
          begin
             declare Views : constant Improve.Tasks.View_Vectors.Vector :=
               Improve.Tasks.Build
-                (Plan, Improve.Storage.Publication_Vectors.Empty_Vector, Evidence);
+                (Plan, Improve.State.Publication_Vectors.Empty_Vector, Evidence);
                pragma Unreferenced (Views);
             begin
                null;
@@ -236,8 +236,8 @@ package body Improve_Tasks_Test_Suite is
          not Improve.Tasks.Valid_Filter ("unknown") and then
          Improve.Tasks.Matches
            (Improve.Tasks.Build
-              (Plan, Improve.Storage.Publication_Vectors.Empty_Vector,
-               Improve.Storage.Verification_Vectors.Empty_Vector).First_Element,
+              (Plan, Improve.State.Publication_Vectors.Empty_Vector,
+               Improve.State.Verification_Vectors.Empty_Vector).First_Element,
             "unresolved"),
          "task status filter contract is inconsistent");
    end Run_Test;

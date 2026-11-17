@@ -3,16 +3,12 @@ function Latest_Revision_Id
   (Item     : in out Store;
    Tx       : in out Database.Transactions.Transaction;
    Plan_Row : Positive;
-   Maximum  : Positive;
-   Scanned  : in out Natural) return Natural is
+   Budget   : in out History_Budget) return Natural is
    Result    : Natural := 0;
    Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
 begin
    while Entity_Tables.Has_Element (Revisions) loop
-      if Scanned >= Maximum then
-         raise Data_Error with "plan revision history exceeds configured item limit";
-      end if;
-      Scanned := Scanned + 1;
+      Consume_History (Budget, "plan revision history");
       Result := Natural'Max (Result, Entity_Tables.Element (Revisions).Id);
       Advance_Children (Item, Tx, Revisions_Table, Plan_Row, Revisions);
    end loop;

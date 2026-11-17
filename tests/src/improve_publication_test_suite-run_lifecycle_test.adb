@@ -15,7 +15,7 @@ begin
                Second      : Improve.Storage.Save_Result;
                Published   : Improve.Workflow.Publication_Result;
                Republished : Improve.Workflow.Publication_Result;
-               Mappings    : Improve.Storage.Publication_Vectors.Vector;
+               Mappings    : Improve.State.Publication_Vectors.Vector;
                Harness     : Stores.Store;
                Recovery    : Stores.Recovery_Report;
                Status      : Errors.Error_Info;
@@ -40,7 +40,7 @@ begin
                Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
                         Value.State, First.Plan.Revision));
                end loop;

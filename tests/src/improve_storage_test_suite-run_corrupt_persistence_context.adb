@@ -45,7 +45,9 @@ begin
          Improve.Persistence_Records.Encode_Approval
            ((Plan_Id     => To_Unbounded_String ("PLAN-999999"),
              Revision    => 1,
-             Fingerprint => Stored.Fingerprint)));
+             Fingerprint => Stored.Fingerprint,
+             Content_Fingerprint => To_Unbounded_String
+               (Improve.Model.Plan_Content_Fingerprint (Stored)))));
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error
         (Read_Approval'Access, "approval payload was not bound to its plan row context");
@@ -55,11 +57,11 @@ begin
       Path     : constant String := Root & "/publication-duplicate.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Publications is
-         Values : constant Improve.Storage.Publication_Vectors.Vector :=
+         Values : constant Improve.State.Publication_Vectors.Vector :=
            Improve.Storage.Publications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -79,11 +81,11 @@ begin
       Path     : constant String := Root & "/publication-contract.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Publications is
-         Values : constant Improve.Storage.Publication_Vectors.Vector :=
+         Values : constant Improve.State.Publication_Vectors.Vector :=
            Improve.Storage.Publications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -110,11 +112,11 @@ begin
       Path     : constant String := Root & "/verification-duplicate.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Verifications is
-         Values : constant Improve.Storage.Verification_Vectors.Vector :=
+         Values : constant Improve.State.Verification_Vectors.Vector :=
            Improve.Storage.Verifications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -134,11 +136,11 @@ begin
       Path     : constant String := Root & "/publication.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Publications is
-         Values : constant Improve.Storage.Publication_Vectors.Vector :=
+         Values : constant Improve.State.Publication_Vectors.Vector :=
            Improve.Storage.Publications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -165,11 +167,11 @@ begin
       Path     : constant String := Root & "/verification-revision.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Verifications is
-         Values : constant Improve.Storage.Verification_Vectors.Vector :=
+         Values : constant Improve.State.Verification_Vectors.Vector :=
            Improve.Storage.Verifications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -199,11 +201,11 @@ begin
       Path     : constant String := Root & "/verification.db";
       Store    : Improve.Storage.Store;
       Stored   : Improve.Model.Plan_Revision;
-      Mappings : Improve.Storage.Publication_Vectors.Vector;
-      Evidence : Improve.Storage.Verification_Vectors.Vector;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
 
       procedure Read_Verifications is
-         Values : constant Improve.Storage.Verification_Vectors.Vector :=
+         Values : constant Improve.State.Verification_Vectors.Vector :=
            Improve.Storage.Verifications (Store, "PLAN-000001");
       begin
          pragma Unreferenced (Values);
@@ -230,6 +232,94 @@ begin
       Improve.Storage.Close (Store);
    end;
    declare
+      Path     : constant String := Root & "/publication-malformed-plan.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
+
+      procedure Read_All_Publications is
+         Values : constant Improve.State.Publication_Vectors.Vector :=
+           Improve.Storage.Publications (Store);
+      begin
+         pragma Unreferenced (Values);
+      end Read_All_Publications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Publications (Store, "PLAN-000001", Mappings);
+      Improve.Storage.Close (Store);
+      Replace_Row_Payload
+        (Path, 10, 1,
+         Improve.Persistence_Records.Encode_Publication
+           ((Plan_Id       => To_Unbounded_String ("not-a-plan"),
+             Harness_Id    => Mappings (1).Harness_Task_Id,
+             Origin        => Mappings (1).Origin,
+             Contract      => Mappings (1).Contract,
+             Plan_Revision => Mappings (1).Plan_Revision)));
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_All_Publications'Access,
+         "all-plan publication read leaked a malformed persisted plan identity");
+      Improve.Storage.Close (Store);
+   end;
+   declare
+      Path     : constant String := Root & "/filtered-verification-corruption.db";
+      Store    : Improve.Storage.Store;
+      Stored   : Improve.Model.Plan_Revision;
+      Mappings : Improve.State.Publication_Vectors.Vector;
+      Evidence : Improve.State.Verification_Vectors.Vector;
+
+      procedure Read_Filtered_Verifications is
+         Values : constant Improve.State.Verification_Vectors.Vector :=
+           Improve.Storage.Verifications
+             (Store, Task_Id => To_String (Evidence (1).Task_Id), Maximum => 1);
+      begin
+         pragma Unreferenced (Values);
+      end Read_Filtered_Verifications;
+   begin
+      Seed_One (Path, Store, Stored);
+      History_Records (Stored, Mappings, Evidence);
+      Improve.Storage.Record_Verification (Store, "PLAN-000001", Evidence);
+      Improve.Storage.Close (Store);
+      Replace_Row_Payload
+        (Path, 11, 2,
+         Improve.Persistence_Records.Encode_Verification
+           ((Plan_Id       => To_Unbounded_String ("PLAN-000001"),
+             Assessment_Id => Evidence (2).Assessment_Id,
+             Plan_Revision => Evidence (2).Plan_Revision,
+             Contract      => To_Unbounded_String ("unrelated-contract"),
+             Scope         => Improve.Model.Task_Evaluation,
+             Task_Id       => Evidence (2).Task_Id,
+             Comparable    => Evidence (2).Comparable,
+             Explanation   => Evidence (2).Explanation)));
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Filtered_Verifications'Access,
+         "filtered all-plan verification read ignored unrelated corrupt evidence");
+      Improve.Storage.Close (Store);
+   end;
+   declare
+      Path   : constant String := Root & "/task-identity.db";
+      Store  : Improve.Storage.Store;
+      Stored : Improve.Model.Plan_Revision;
+
+      procedure Read_Task is
+         Value : constant Improve.Model.Plan_Revision :=
+           Improve.Storage.Load_Task (Store, To_String (Stored.Tasks.First_Element.Id));
+      begin
+         pragma Unreferenced (Value);
+      end Read_Task;
+   begin
+      Seed_One (Path, Store, Stored);
+      Improve.Storage.Close (Store);
+      Replace_Row_Payload (Path, Table => 14, Id => 1, Payload => "task_row=999999");
+      Improve.Storage.Open (Store, Path, Writable => False);
+      Expect_Data_Error
+        (Read_Task'Access, "task lookup accepted a corrupt logical-identity index");
+      Improve.Storage.Close (Store);
+   end;
+   declare
       Path      : constant String := Root & "/operation.db";
       Store     : Improve.Storage.Store;
       Stored    : Improve.Model.Plan_Revision;
@@ -237,7 +327,7 @@ begin
       Operation : Positive;
 
       procedure Read_Pending is
-         Values : constant Improve.Storage.Operation_Vectors.Vector :=
+         Values : constant Improve.State.Publication_Operation_Vectors.Vector :=
            Improve.Storage.Pending_Publications (Store);
       begin
          pragma Unreferenced (Values);

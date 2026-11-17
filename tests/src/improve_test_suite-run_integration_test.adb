@@ -83,7 +83,11 @@ begin
                Show_Result := Improve.CLI.Execute (Args ("plan|show|PLAN-000001|--state|" & State & "|--format|json"));
                Assert (Show_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                          (To_String (Show_Result.Output), """stored"":true") > 0 and then
-                       Ada.Strings.Fixed.Index (To_String (Show_Result.Output), "fixture-manifest") > 0,
+                       Ada.Strings.Fixed.Index
+                         (To_String (Show_Result.Output),
+                          Finding_Fingerprint
+                            (Ada_Quality.Types.STR_01, "manifest.invalid", "alire.toml",
+                             "manifest is invalid")) > 0,
                        "stored plan did not round-trip: " & To_String (Show_Result.Errors));
                List_Result := Improve.CLI.Execute
                  (Args ("plan|list|--database|" & To_String (Data.Database) & "|--state|" & State & "|--project|" &
@@ -104,9 +108,11 @@ begin
                Second : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args (Command));
                Store  : Improve.Storage.Store;
             begin
-               Assert (First.Exit_Code = 0 and then Second.Exit_Code = 0, "repeated planning failed");
+               Assert
+                 (First.Exit_Code = 0 and then Second.Exit_Code = 0,
+                  "repeated planning failed: " & To_String (First.Errors) & To_String (Second.Errors));
                Improve.Storage.Open (Store, State, Writable => False);
-               declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+               declare Values : constant Improve.State.Summary_Vectors.Vector :=
                  Improve.Storage.List_All (Store);
                begin
                   Assert (Values.Length = 1 and then Values.First_Element.Revision = 1,

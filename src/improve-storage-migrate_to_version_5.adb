@@ -2,13 +2,13 @@ separate (Improve.Storage)
 procedure Migrate_To_Version_5
   (Item     : in out Store;
    Metadata : in out Entity;
-   Limits   : Read_Limits) is
+   Limits   : Persistence_Limits) is
    Tx : Database.Transactions.Transaction;
 
    package Id_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Positive);
    Plan_Rows      : Id_Vectors.Vector;
-   Revision_Count : Natural := 0;
+   Scanned         : Natural := 0;
 
    procedure Require_Migration_Payload (Text, Context : String) is
    begin
@@ -32,12 +32,13 @@ procedure Migrate_To_Version_5
       return Result;
    end Unique_Project;
 begin
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
    declare Plans : Entity_Tables.Cursor := Scan (Item, Tx, Plans_Table); begin
       while Entity_Tables.Has_Element (Plans) loop
-         if Plan_Rows.Length >= Ada.Containers.Count_Type (Limits.Maximum_History) then
-            raise Data_Error with "schema migration exceeds the configured plan limit";
+         if Scanned >= Limits.Maximum_Migration_Rows then
+            raise Data_Error with "schema migration exceeds configured row limit";
          end if;
+         Scanned := Scanned + 1;
          Plan_Rows.Append (Entity_Tables.Element (Plans).Id);
          Advance (Item, Tx, Plans_Table, Plans);
       end loop;
@@ -61,10 +62,10 @@ begin
             Require_Migration_Payload
               (S (Project_Row.Payload), "migration project payload");
             while Entity_Tables.Has_Element (Revisions) loop
-               if Revision_Count >= Limits.Maximum_History then
-                  raise Data_Error with "schema migration exceeds the configured revision limit";
+               if Scanned >= Limits.Maximum_Migration_Rows then
+                  raise Data_Error with "schema migration exceeds configured row limit";
                end if;
-               Revision_Count := Revision_Count + 1;
+               Scanned := Scanned + 1;
                declare
                   Revision : constant Entity := Entity_Tables.Element (Revisions);
                   Payload  : constant String := S (Revision.Payload);
@@ -139,12 +140,8 @@ begin
    Check
      (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
       "migrate normalized project relationships");
-   Database.Transactions.Commit (Tx);
+   Commit_Transaction (Tx, "commit schema version 5 migration");
 exception
    when Constraint_Error =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
       raise Data_Error with "schema version 5 migration data is malformed";
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
 end Migrate_To_Version_5;

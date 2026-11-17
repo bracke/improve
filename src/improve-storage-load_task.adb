@@ -3,12 +3,13 @@ function Load_Task
   (Item     : in out Store;
    Task_Id  : String;
    Revision : Natural := 0;
-   Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
+   Limits   : Persistence_Limits := Default_Persistence_Limits) return Improve.Model.Plan_Revision is
    Tx               : Database.Transactions.Transaction;
    Revision_Id      : Natural := 0;
-   History_Count    : Natural := 0;
+   Budget           : History_Budget := New_History_Budget (Limits);
+   Seen_Revisions   : String_Id_Maps.Map;
 
-   procedure Consider (Candidate : Positive) is
+   procedure Select_Revision (Candidate : Positive) is
       Row    : Entity;
       Status : Database.Status.Result;
    begin
@@ -24,43 +25,70 @@ function Load_Task
       if Positive'Value (Field (S (Row.Payload), "revision")) = Revision then
          Revision_Id := Candidate;
       end if;
-   end Consider;
+   end Select_Revision;
+
+   procedure Consider_Identity (Identity : Entity) is
+      Payload   : constant String := S (Identity.Payload);
+      Candidate : Positive;
+      Task_Row  : Positive;
+      Task_Entity : Entity;
+      Status    : Database.Status.Result;
+   begin
+      Require_Payload_Limit (Payload, Limits, "task identity payload");
+      if not Identity.Active or else S (Identity.Kind) /= Task_Id or else
+        S (Identity.State) /= "active" or else Identity.Parent_Id = 0
+      then
+         raise Data_Error with "stored task identity index is inconsistent";
+      end if;
+      Candidate := Positive (Identity.Parent_Id);
+      Task_Row := Positive'Value (Field (Payload, "task_row"));
+      if Payload /= Pair ("task_row", Number (Task_Row)) then
+         raise Data_Error with "stored task identity payload is noncanonical";
+      elsif Seen_Revisions.Contains (Number (Candidate)) then
+         raise Data_Error with "duplicate stored task identity revision";
+      end if;
+      Status := Entity_Tables.Find
+        (Tx, Item.DB, Item.Schemas (Tasks_Table), Physical_Key (Tasks_Table, Task_Row), Task_Entity);
+      Check (Status, "read indexed task identity");
+      Require_Payload_Limit (S (Task_Entity.Payload), Limits, "indexed task payload");
+      if not Task_Entity.Active or else Task_Entity.Parent_Id /= Candidate or else
+        Field (S (Task_Entity.Payload), "draft_id") /= Task_Id
+      then
+         raise Data_Error with "stored task identity does not match its task record";
+      end if;
+      Seen_Revisions.Insert (Number (Candidate), Task_Row);
+      Select_Revision (Candidate);
+   end Consider_Identity;
 begin
-   Database.Transactions.Begin_Read (Item.DB, Tx);
+   Begin_Read_Transaction (Item.DB, Tx);
    if Item.Schema_Version >= 4 then
       declare Identities : Entity_Tables.Cursor :=
         Scan_Kind (Item, Tx, Task_Identities_Table, Task_Id);
       begin
          while Entity_Tables.Has_Element (Identities) loop
-            if History_Count >= Limits.Maximum_History then
-               raise Data_Error with "task identity history exceeds configured item limit";
-            end if;
-            History_Count := History_Count + 1;
-            Consider (Positive (Entity_Tables.Element (Identities).Parent_Id));
+            Consume_History (Budget, "task identity history");
+            Consider_Identity (Entity_Tables.Element (Identities));
             Advance_Kind (Item, Tx, Task_Identities_Table, Task_Id, Identities);
          end loop;
       end;
    else
       declare Tasks : Entity_Tables.Cursor := Scan (Item, Tx, Tasks_Table); begin
          while Entity_Tables.Has_Element (Tasks) loop
-            if History_Count >= Limits.Maximum_History then
-               raise Data_Error with "task history exceeds configured item limit";
-            end if;
-            History_Count := History_Count + 1;
+            Consume_History (Budget, "task history");
             declare
                Task_Row : constant Entity := Entity_Tables.Element (Tasks);
                Payload  : constant String := S (Task_Row.Payload);
             begin
                Require_Payload_Limit (Payload, Limits, "task payload");
                if Field_Or (Payload, "draft_id", "") = Task_Id then
-                  Consider (Positive (Task_Row.Parent_Id));
+                  Select_Revision (Positive (Task_Row.Parent_Id));
                end if;
             end;
             Advance (Item, Tx, Tasks_Table, Tasks);
          end loop;
       end;
    end if;
-   Database.Transactions.Rollback (Tx);
+   Rollback_Transaction (Tx, "finish historical task query");
    if Revision_Id = 0 then
       raise Argument_Error with
         "unknown Improve task " & Task_Id &
@@ -69,9 +97,5 @@ begin
    return Load_Revision (Item, Positive (Revision_Id), Limits);
 exception
    when Constraint_Error =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
       raise Data_Error with "stored task revision is malformed";
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
 end Load_Task;

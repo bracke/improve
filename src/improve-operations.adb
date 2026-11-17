@@ -6,7 +6,7 @@ package body Improve.Operations is
 
    function Publication_Namespace
      (State_Path : String;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Initialize : Boolean := False) return String is
       State : Improve.Storage.Store;
    begin
@@ -37,25 +37,28 @@ package body Improve.Operations is
       end if;
    end Require_Project_Identity;
 
-   function Storage_Read_Limits
-     (Settings : Improve.Config.Settings) return Improve.Storage.Read_Limits is
+   function Storage_Limits
+     (Settings : Improve.Config.Settings) return Improve.Storage.Persistence_Limits is
       Tasks    : constant Positive := Settings.Maximum_Tasks_Per_Plan;
       Findings : constant Positive := Tasks * Settings.Maximum_Findings_Per_Task;
    begin
       return
-        (Maximum_Findings     => Findings,
-         Maximum_Tasks        => Tasks,
-         Maximum_Task_Details => Tasks * 16,
-         Maximum_Task_Links   => Findings + Tasks * 16,
-         Maximum_History      => Settings.Maximum_History_Items,
-         Maximum_Text_Bytes   => Settings.Maximum_Persisted_Text_Bytes);
-   end Storage_Read_Limits;
+        (Maximum_Findings          => Findings,
+         Maximum_Tasks             => Tasks,
+         Maximum_Task_Details      => Tasks * 16,
+         Maximum_Task_Associations => Findings + Tasks * 16,
+         Maximum_History           => Settings.Maximum_History_Items,
+         Maximum_Migration_Rows    => Settings.Maximum_Migration_Rows,
+         Maximum_Text_Bytes        => Settings.Maximum_Persisted_Text_Bytes,
+         Maximum_Total_Bytes       => Settings.Maximum_Persisted_Total_Bytes);
+   end Storage_Limits;
 
    function Quality_Load_Limits
      (Settings : Improve.Config.Settings) return Ada_Quality.Reporting.Load_Limits is
      ((Max_Projects => Settings.Maximum_Quality_Projects,
        Max_Runs     => Settings.Maximum_Quality_Runs,
-       Max_Findings => Settings.Maximum_Quality_Findings));
+       Max_Findings => Settings.Maximum_Quality_Findings,
+       others       => <>));
 
    function Planning_Policy
      (Settings : Improve.Config.Settings) return Improve.Planner.Policy is

@@ -1,6 +1,7 @@
 with Ada.Strings.Unbounded;
 with Improve.Model;
 with Improve.Publication_Authorization;
+with Improve.State;
 with Improve.Workflow;
 with Project_Tools.Files;
 
@@ -12,11 +13,11 @@ package body Improve.Operations.Recovery is
       Quality_Path    : String;
       Requested_Kind : String;
       Maximum         : Positive;
-      Limits          : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits          : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits  : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) return Result is
       State   : Improve.Storage.Store;
-      Pending : Improve.Storage.Operation_Vectors.Vector;
+      Pending : Improve.State.Publication_Operation_Vectors.Vector;
       Value   : Result;
       Namespace : constant String := Improve.Operations.Publication_Namespace
         (State_Path, Limits, Initialize => True);
@@ -32,7 +33,7 @@ package body Improve.Operations.Recovery is
          declare
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Storage.Load (State, To_String (Operation.Plan_Id), Operation.Revision, Limits);
-            Existing : constant Improve.Storage.Publication_Vectors.Vector :=
+            Existing : constant Improve.State.Publication_Vectors.Vector :=
               Improve.Storage.Publications
                 (State, To_String (Operation.Plan_Id), Limits.Maximum_History, Limits);
             Approved : constant Boolean :=
@@ -42,6 +43,10 @@ package body Improve.Operations.Recovery is
             Improve.Storage.Close (State);
             if Length (Operation.Fingerprint) > 0 and then Plan.Fingerprint /= Operation.Fingerprint then
                raise Data_Error with "pending publication revision fingerprint does not match durable state";
+            elsif Length (Operation.Content_Fingerprint) = 0 or else
+              Improve.Model.Plan_Content_Fingerprint (Plan) /= To_String (Operation.Content_Fingerprint)
+            then
+               raise Data_Error with "pending publication plan content does not match durable state";
             end if;
             if (for some Task_Id of Operation.Task_Ids =>
                   (for all Spec of Plan.Tasks => Spec.Id /= Task_Id))
@@ -60,7 +65,7 @@ package body Improve.Operations.Recovery is
                All_Existing : constant Boolean :=
                  (for all Published_Task of Existing_Result.Tasks => Published_Task.Recovered);
                Published : Improve.Workflow.Publication_Result;
-               Mappings  : Improve.Storage.Publication_Vectors.Vector;
+               Mappings  : Improve.State.Publication_Vectors.Vector;
             begin
                if All_Existing then
                   Published := Existing_Result;
@@ -83,7 +88,7 @@ package body Improve.Operations.Recovery is
                end if;
                for Published_Task of Published.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Improve_Task_Id => Published_Task.Improve_Id,
                         Harness_Task_Id => Published_Task.Harness_Id,
                         Origin          => Published_Task.Origin,

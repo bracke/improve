@@ -1,24 +1,43 @@
 separate (Improve.Storage)
 procedure Migrate_To_Version_3
   (Item     : in out Store;
-   Metadata : in out Entity) is
-   package Entity_Vectors is new Ada.Containers.Vectors (Positive, Entity);
+   Metadata : in out Entity;
+   Limits   : Persistence_Limits) is
+   package Id_Vectors is new Ada.Containers.Vectors (Positive, Positive);
    Tx      : Database.Transactions.Transaction;
-   Pending : Entity_Vectors.Vector;
+   Pending : Id_Vectors.Vector;
+   Scanned : Natural := 0;
 
    procedure Backfill_Parents (Table : Positive) is
       Cursor : Entity_Tables.Cursor := Scan (Item, Tx, Table);
    begin
       Pending.Clear;
       while Entity_Tables.Has_Element (Cursor) loop
+         if Scanned >= Limits.Maximum_Migration_Rows then
+            raise Data_Error with "schema migration exceeds configured row limit";
+         end if;
+         Scanned := Scanned + 1;
          declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
-            if Row.Parent_Id = 0 then Pending.Append (Row); end if;
+            if Row.Parent_Id = 0 then
+               declare Payload : constant String := S (Row.Payload); begin
+                  if Payload'Length > Limits.Maximum_Text_Bytes then
+                     raise Data_Error with "legacy history payload exceeds configured persisted-text limit";
+                  end if;
+                  Pending.Append (Row.Id);
+               end;
+            end if;
          end;
          Advance (Item, Tx, Table, Cursor);
       end loop;
-      for Row of Pending loop
-         declare Updated : Entity := Row; begin
-            Updated.Parent_Id := Plan_Row_Id (Field (S (Row.Payload), "plan_id"));
+      for Id of Pending loop
+         declare
+            Updated : Entity;
+            Status  : constant Database.Status.Result :=
+              Entity_Tables.Find
+                (Tx, Item.DB, Item.Schemas (Table), Physical_Key (Table, Id), Updated);
+         begin
+            Check (Status, "reload legacy history row");
+            Updated.Parent_Id := Plan_Row_Id (Field (S (Updated.Payload), "plan_id"));
             Check
               (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Table), Updated),
                "backfill indexed plan relationship");
@@ -26,7 +45,7 @@ procedure Migrate_To_Version_3
       end loop;
    end Backfill_Parents;
 begin
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
    Backfill_Parents (Publications_Table);
    Backfill_Parents (Verifications_Table);
    Metadata.State := WW ("3");
@@ -34,9 +53,5 @@ begin
    Check
      (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
       "migrate Improve schema metadata");
-   Database.Transactions.Commit (Tx);
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
+   Commit_Transaction (Tx, "commit schema version 3 migration");
 end Migrate_To_Version_3;

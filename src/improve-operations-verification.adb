@@ -4,7 +4,9 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Improve.Source;
+with Improve.State;
 with Improve.Storage;
+with Improve.Verification;
 
 package body Improve.Operations.Verification is
    use Ada.Strings.Unbounded;
@@ -40,7 +42,7 @@ package body Improve.Operations.Verification is
       Previously_Verified : Improve.Model.UString_Vectors.Vector;
       Contracts           : Contract_Maps.Map;
       Verified_Ids        : String_Sets.Set;
-      Limits : constant Improve.Storage.Read_Limits := Improve.Operations.Storage_Read_Limits (Settings);
+      Limits : constant Improve.Storage.Persistence_Limits := Improve.Operations.Storage_Limits (Settings);
    begin
       Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
       if Task_Id /= "" then
@@ -55,7 +57,7 @@ package body Improve.Operations.Verification is
                Settings.Maximum_Quality_Database_Bytes);
             Project := Improve.Source.Resolve_Project (Quality, Project_Selector);
             Improve.Source.Close (Quality);
-            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+            declare Values : constant Improve.State.Summary_Vectors.Vector :=
               Improve.Storage.List (State, Project, Limits.Maximum_History, Limits);
             begin
                if Values.Is_Empty then
@@ -121,7 +123,7 @@ package body Improve.Operations.Verification is
                  Improve.Verification.Evaluate
                    (Plan, Current, Improve.Operations.Verification_Policy (Settings),
                     Task_Id, Previously_Verified);
-               Records : Improve.Storage.Verification_Vectors.Vector;
+               Records : Improve.State.Verification_Vectors.Vector;
             begin
                for Task_Result of Report.Tasks loop
                   declare Identity : constant String := To_String (Task_Result.Task_Id); begin
@@ -129,7 +131,7 @@ package body Improve.Operations.Verification is
                         raise Data_Error with "verification returned an unknown task " & Identity;
                      end if;
                      Records.Append
-                       (Improve.Storage.Verification_Record'
+                       (Improve.State.Verification_Record'
                           (Scope                => Improve.Model.Task_Evaluation,
                            Task_Id              => Task_Result.Task_Id,
                            Plan_Revision        => Plan.Revision,
@@ -142,7 +144,7 @@ package body Improve.Operations.Verification is
                end loop;
                if Task_Id = "" then
                   Records.Append
-                    (Improve.Storage.Verification_Record'
+                    (Improve.State.Verification_Record'
                        (Scope                => Improve.Model.Plan_Evaluation,
                         Task_Id              => Null_Unbounded_String,
                         Plan_Revision        => Plan.Revision,
@@ -152,7 +154,7 @@ package body Improve.Operations.Verification is
                         Comparable           => Report.Comparable,
                         Explanation          => Report.Explanation));
                   Records.Append
-                    (Improve.Storage.Verification_Record'
+                    (Improve.State.Verification_Record'
                        (Scope                => Improve.Model.Project_Evaluation,
                         Task_Id              => Null_Unbounded_String,
                         Plan_Revision        => Plan.Revision,

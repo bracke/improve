@@ -18,7 +18,7 @@ package Improve.Operations is
 
    function Publication_Namespace
      (State_Path : String;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Initialize : Boolean := False) return String;
    --  Return the persistent namespace used to authenticate native task ownership.
    --  @param State_Path Improve-owned state database path.
@@ -26,9 +26,9 @@ package Improve.Operations is
    --  @param Initialize Whether a writable command may establish a missing legacy identity.
    --  @return Persistent identity, or a path-qualified preview identity for legacy read-only state.
 
-   function Storage_Read_Limits
-     (Settings : Improve.Config.Settings) return Improve.Storage.Read_Limits;
-   --  Derive hard persistence reconstruction limits from validated configuration.
+   function Storage_Limits
+     (Settings : Improve.Config.Settings) return Improve.Storage.Persistence_Limits;
+   --  Derive hard persistence read and write limits from validated configuration.
    --  @param Settings Validated Improve configuration.
    --  @return Limits for one immutable plan revision.
 

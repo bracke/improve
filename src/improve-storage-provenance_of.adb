@@ -4,8 +4,18 @@ function Provenance_Of
    Tx       : in out Database.Transactions.Transaction;
    Revision : Entity;
    Payload  : String;
-   Limits   : Read_Limits) return Stored_Provenance is
+   Limits   : Persistence_Limits;
+   Consumed_Bytes : in out Natural) return Stored_Provenance is
    Result : Stored_Provenance;
+
+   procedure Consume (Text, Context : String) is
+   begin
+      Require_Payload_Limit (Text, Limits, Context);
+      if Text'Length > Limits.Maximum_Total_Bytes - Consumed_Bytes then
+         raise Data_Error with "plan reconstruction exceeds configured aggregate byte limit";
+      end if;
+      Consumed_Bytes := Consumed_Bytes + Text'Length;
+   end Consume;
 
    function Required (Table, Id : Positive; Context : String) return Entity is
       Value  : Entity;
@@ -20,7 +30,6 @@ function Provenance_Of
       return Value;
    end Required;
 begin
-   Require_Payload_Limit (Payload, Limits, "plan provenance payload");
    if Item.Schema_Version < 5 then
       Result.Project :=
         (Positive'Value (Field (Payload, "project_id")),
@@ -47,8 +56,15 @@ begin
       Project_Data : constant String := S (Project_Row.Payload);
       Baseline_Data : constant String := S (Baseline_Row.Payload);
    begin
-      Require_Payload_Limit (Project_Data, Limits, "project reference payload");
-      Require_Payload_Limit (Baseline_Data, Limits, "assessment baseline payload");
+      Consume (S (Plan_Row.Kind), "plan identity");
+      Consume (S (Plan_Row.State), "plan state");
+      Consume (S (Plan_Row.Payload), "plan payload");
+      Consume (S (Project_Row.Kind), "project reference identity");
+      Consume (S (Project_Row.State), "project reference state");
+      Consume (Project_Data, "project reference payload");
+      Consume (S (Baseline_Row.Kind), "assessment baseline identity");
+      Consume (S (Baseline_Row.State), "assessment baseline state");
+      Consume (Baseline_Data, "assessment baseline payload");
       Result.Project :=
         (Positive'Value (Field (Project_Data, "quality_project_id")),
          To_Unbounded_String (Field (Project_Data, "name")),

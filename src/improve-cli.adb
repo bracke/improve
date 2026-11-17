@@ -14,7 +14,7 @@ with Improve.Operations.Reconciliation;
 with Improve.Operations.Recovery;
 with Improve.Operations.Verification;
 with Improve.Presentation;
-with Improve.Storage;
+with Improve.State;
 with Improve.Tasks;
 with Improve.Text;
 with Project_Tools.Files;
@@ -88,25 +88,41 @@ package body Improve.CLI is
    function State_Path (Item : Invocation) return String is
      (if Item.Has_State then To_String (Item.State) else ".improve.db");
 
+   function Render_Terminal
+     (Item     : Invocation;
+      Renderer : not null access function return String) return String is
+      Style : Improve.Presentation.Styling_Scope :=
+        Improve.Presentation.Configure (Terminal_Format, Item.Color);
+      pragma Unreferenced (Style);
+   begin
+      return Renderer.all;
+   end Render_Terminal;
+
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Inspected : constant Improve.Operations.Inspection.Project_Result :=
         Improve.Operations.Inspection.Projects (Quality_Path (Item, Settings), Settings);
+
+      function Render return String is
+        (Improve.Presentation.Projects (Inspected.Values));
    begin
       if Item.Format = JSON_Format then
-         return Improve.JSON.Projects (Inspected.Values, To_String (Inspected.Snapshot));
+         return Improve.JSON.Projects (Inspected);
       end if;
-      return Improve.Presentation.Projects (Inspected.Values);
+      return Render_Terminal (Item, Render'Access);
    end Projects_Output;
 
    function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Inspected : constant Improve.Operations.Inspection.Finding_Result :=
         Improve.Operations.Inspection.Findings
           (Quality_Path (Item, Settings), To_String (Item.Project), Item.Run_Id, Settings);
+
+      function Render return String is
+        (Improve.Presentation.Findings (Inspected));
    begin
       if Item.Format = JSON_Format then
-         return Improve.JSON.Findings (Inspected.Selected, Inspected.Values);
+         return Improve.JSON.Findings (Inspected);
       end if;
-      return Improve.Presentation.Findings (Inspected.Selected, Inspected.Values);
+      return Render_Terminal (Item, Render'Access);
    end Findings_Output;
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -116,10 +132,13 @@ package body Improve.CLI is
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Operations.Planning.Approve
                 (State_Path (Item), To_String (Item.Target),
-                 Improve.Operations.Storage_Read_Limits (Settings));
+                 Improve.Operations.Storage_Limits (Settings));
+
+            function Render return String is
+              (Improve.Presentation.Plan_Approval (Plan));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
-            return Improve.Presentation.Plan_Approval (Plan);
+            return Render_Terminal (Item, Render'Access);
          end;
       elsif Item.Plan_Action = Show_Plan then
          declare
@@ -127,23 +146,29 @@ package body Improve.CLI is
               Improve.Operations.Planning.Load
                 (State_Path (Item), To_String (Item.Target),
                  (if Item.Has_Revision then Item.Revision else 0),
-                 Improve.Operations.Storage_Read_Limits (Settings));
+                 Improve.Operations.Storage_Limits (Settings));
+
+            function Render return String is
+              (Improve.Presentation.Plan (Plan));
          begin
             Require_Output_Items (Plan.Tasks.Length, Settings.Maximum_Output_Items, "plan task output");
             if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
-            return Improve.Presentation.Plan (Plan);
+            return Render_Terminal (Item, Render'Access);
          end;
       elsif Item.Plan_Action = List_Plans then
          declare
-            Values : constant Improve.Storage.Summary_Vectors.Vector :=
+            Values : constant Improve.State.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
-                 Settings.Maximum_Output_Items, Improve.Operations.Storage_Read_Limits (Settings),
+                 Settings.Maximum_Output_Items, Improve.Operations.Storage_Limits (Settings),
                  Improve.Operations.Quality_Load_Limits (Settings),
                  Improve.Config.Evidence_Limits_Of (Settings));
+
+            function Render return String is
+              (Improve.Presentation.Plans (Values));
          begin
             if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
-            return Improve.Presentation.Plans (Values);
+            return Render_Terminal (Item, Render'Access);
          end;
       end if;
       declare
@@ -152,10 +177,14 @@ package body Improve.CLI is
              (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
               Item.Run_Id, Settings, Item.Dry_Run);
          Plan   : constant Improve.Model.Plan_Revision := Executed.Plan;
+
+         function Render return String is
+           (Improve.Presentation.Generated_Plan (Plan, Item.Dry_Run, Executed.Existing));
       begin
-         return
-           (if Item.Format = JSON_Format then Improve.JSON.Plan (Plan, Item.Dry_Run)
-            else Improve.Presentation.Generated_Plan (Plan, Item.Dry_Run, Executed.Existing));
+         if Item.Format = JSON_Format then
+            return Improve.JSON.Plan (Plan, Item.Dry_Run);
+         end if;
+         return Render_Terminal (Item, Render'Access);
       end;
    end Plan_Output;
 
@@ -168,9 +197,13 @@ package body Improve.CLI is
            Selected_Task_Id => (if Item.Has_Task then To_String (Item.Task_Id) else ""),
            Task_Kind        => To_String (Settings.Task_Kind),
            Dry_Run          => Item.Dry_Run,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Limits           => Improve.Operations.Storage_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
+
+      function Render return String is
+        (Improve.Presentation.Publication
+           (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run));
    begin
       Require_Output_Items
         (Executed.Published.Tasks.Length, Settings.Maximum_Output_Items, "publication output");
@@ -178,9 +211,7 @@ package body Improve.CLI is
          return Improve.JSON.Publication
            (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
       end if;
-      return
-        Improve.Presentation.Publication
-          (To_String (Executed.Plan.Plan_Id), Executed.Published, Item.Dry_Run);
+      return Render_Terminal (Item, Render'Access);
    end Apply_Output;
 
    function Tasks_Output
@@ -199,12 +230,15 @@ package body Improve.CLI is
            Maximum_Items    => Settings.Maximum_Output_Items,
            Require_Quality  =>
              Item.Has_Database or else Quality_Database_Configured,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Limits           => Improve.Operations.Storage_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
+
+      function Render return String is
+        (Improve.Presentation.Tasks (Filtered));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
-      return Improve.Presentation.Tasks (Filtered);
+      return Render_Terminal (Item, Render'Access);
    end Tasks_Output;
 
    function Status_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -215,24 +249,30 @@ package body Improve.CLI is
            Project_Selector => (if Item.All_Projects then "" else To_String (Item.Project)),
            All_Projects     => Item.All_Projects,
            Maximum_Items    => Settings.Maximum_Output_Items,
-           Limits           => Improve.Operations.Storage_Read_Limits (Settings),
+           Limits           => Improve.Operations.Storage_Limits (Settings),
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
+
+      function Render return String is
+        (Improve.Presentation.Status (Values));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Status (Values); end if;
-      return Improve.Presentation.Status (Values);
+      return Render_Terminal (Item, Render'Access);
    end Status_Output;
 
    function Recover_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Report : constant Improve.Operations.Recovery.Result :=
         Improve.Operations.Recovery.Run
           (State_Path (Item), Quality_Path (Item, Settings), To_String (Settings.Task_Kind),
-           Settings.Maximum_Recovery_Operations, Improve.Operations.Storage_Read_Limits (Settings),
+           Settings.Maximum_Recovery_Operations, Improve.Operations.Storage_Limits (Settings),
            Improve.Operations.Quality_Load_Limits (Settings),
            Improve.Config.Evidence_Limits_Of (Settings));
+
+      function Render return String is
+        (Improve.Presentation.Recovery (Report));
    begin
       if Item.Format = JSON_Format then return Improve.JSON.Recovery (Report); end if;
-      return Improve.Presentation.Recovery (Report);
+      return Render_Terminal (Item, Render'Access);
    end Recover_Output;
 
    function Verify_Output
@@ -249,6 +289,10 @@ package body Improve.CLI is
            Revision         => (if Item.Has_Revision then Item.Revision else 0),
            Run_Id           => Item.Run_Id,
            Settings         => Settings);
+
+      function Render return String is
+        (Improve.Presentation.Verification
+           (To_String (Executed.Plan.Plan_Id), Executed.Report, Command));
    begin
       Negative := Executed.Report.Outcome /= Improve.Model.Verified;
       Require_Output_Items
@@ -256,9 +300,7 @@ package body Improve.CLI is
       if Item.Format = JSON_Format then
          return Improve.JSON.Verification (Executed.Report, Command);
       end if;
-      return
-        Improve.Presentation.Verification
-          (To_String (Executed.Plan.Plan_Id), Executed.Report, Command);
+      return Render_Terminal (Item, Render'Access);
    end Verify_Output;
 
    function Refresh_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -267,7 +309,7 @@ package body Improve.CLI is
       Improve.Operations.Reconciliation.Run
         (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
          To_String (Settings.Task_Kind),
-         Improve.Operations.Storage_Read_Limits (Settings),
+         Improve.Operations.Storage_Limits (Settings),
          Improve.Operations.Quality_Load_Limits (Settings),
          Improve.Config.Evidence_Limits_Of (Settings));
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
@@ -278,10 +320,10 @@ package body Improve.CLI is
       Configuration : Improve.Config.Loaded_Configuration;
       Negative : out Boolean) return String is
       Settings : constant Improve.Config.Settings := Configuration.Values;
-      Style : Improve.Presentation.Styling_Scope :=
-        Improve.Presentation.Configure (Item.Format, Item.Color);
-      pragma Unreferenced (Style);
       Plain : Unbounded_String;
+
+      function Render_Config return String is
+        (Improve.Presentation.Header (Message ("config.title")) & LF & Improve.Config.Image (Settings));
    begin
       Negative := False;
       case Item.Command is
@@ -295,8 +337,11 @@ package body Improve.CLI is
                end if;
                Plain := To_Unbounded_String (Message ("config.valid") & LF);
             else
-               Plain := To_Unbounded_String
-                 (Improve.Presentation.Header (Message ("config.title")) & LF & Improve.Config.Image (Settings));
+               if Item.Format = JSON_Format then
+                  Plain := To_Unbounded_String (Message ("config.title") & LF & Improve.Config.Image (Settings));
+               else
+                  return Render_Terminal (Item, Render_Config'Access);
+               end if;
             end if;
          when Projects_Command => return Projects_Output (Item, Settings);
          when Findings_Command => return Findings_Output (Item, Settings);

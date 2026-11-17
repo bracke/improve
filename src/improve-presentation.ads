@@ -1,13 +1,9 @@
 with Ada.Finalization;
 with Improve.Config;
-with Ada_Quality.Reporting;
 with Improve.Model;
-with Improve.Operations.Recovery;
-with Improve.Source;
-with Improve.Storage;
+with Improve.Results;
+with Improve.State;
 with Improve.Tasks;
-with Improve.Verification;
-with Improve.Workflow;
 with Terminal_Styles;
 
 --  Terminal styling policy kept separate from command data.
@@ -35,17 +31,14 @@ package Improve.Presentation is
    --  @param Text Untrusted diagnostic, path, title, or evidence text.
    --  @return Single-line terminal-safe text.
 
-   function Projects (Values : Ada_Quality.Reporting.Project_Vectors.Vector) return String;
+   function Projects (Values : Improve.Results.Project_Vectors.Vector) return String;
    --  Render registered projects for terminal output.
    --  @param Values Registered projects.
    --  @return Human-readable project table.
 
-   function Findings
-     (Selected : Improve.Source.Selection;
-      Values   : Improve.Model.Finding_Vectors.Vector) return String;
+   function Findings (Value : Improve.Results.Finding_List) return String;
    --  Render normalized findings for terminal output.
-   --  @param Selected Assessment selection.
-   --  @param Values Normalized findings.
+   --  @param Value Assessment provenance and normalized findings.
    --  @return Human-readable finding table.
 
    function Plan (Value : Improve.Model.Plan_Revision) return String;
@@ -53,7 +46,7 @@ package Improve.Presentation is
    --  @param Value Plan revision.
    --  @return Human-readable plan.
 
-   function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String;
+   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String;
    --  Render plan summaries.
    --  @param Values Plan summaries.
    --  @return Human-readable plan list.
@@ -75,7 +68,7 @@ package Improve.Presentation is
 
    function Publication
      (Plan_Id : String;
-      Value   : Improve.Workflow.Publication_Result;
+      Value   : Improve.Results.Publication_Result;
       Dry_Run : Boolean) return String;
    --  Render native task publication mappings.
    --  @param Plan_Id Published plan identity.
@@ -93,14 +86,14 @@ package Improve.Presentation is
    --  @param Values Project status records.
    --  @return Human-readable status report.
 
-   function Recovery (Value : Improve.Operations.Recovery.Result) return String;
+   function Recovery (Value : Improve.Results.Recovery_Result) return String;
    --  Render publication recovery counts.
    --  @param Value Recovery report.
    --  @return Human-readable recovery result.
 
    function Verification
      (Plan_Id : String;
-      Value   : Improve.Verification.Report;
+      Value   : Improve.Results.Verification_Report;
       Command : String) return String;
    --  Render verification or refresh outcomes.
    --  @param Plan_Id Evaluated plan identity.
@@ -108,6 +101,10 @@ package Improve.Presentation is
    --  @param Command Command name selecting the heading.
    --  @return Human-readable verification result.
 private
+   function Waiting_Styling_Tasks return Natural;
+   --  Return the number of tasks queued for the presentation styling lock.
+   --  @return Number of queued tasks.
+
    type Styling_Scope is new Ada.Finalization.Limited_Controlled with record
       Previous : Terminal_Styles.Color_Policy := Terminal_Styles.Color_Auto;
       Acquired : Boolean := False;

@@ -1,11 +1,7 @@
-with Ada_Quality.Reporting;
 with Improve.Model;
-with Improve.Operations.Recovery;
-with Improve.Source;
-with Improve.Storage;
+with Improve.Results;
+with Improve.State;
 with Improve.Tasks;
-with Improve.Workflow;
-with Improve.Verification;
 
 --  Versioned deterministic JSON serialization of read-only quality evidence.
 package Improve.JSON is
@@ -18,20 +14,14 @@ package Improve.JSON is
    --  @param Value Rendered text value.
    --  @return One versioned JSON document.
 
-   function Projects
-     (Values      : Ada_Quality.Reporting.Project_Vectors.Vector;
-      Snapshot_Id : String) return String;
+   function Projects (Value : Improve.Results.Project_List) return String;
    --  Serialize the active project registry.
-   --  @param Values Registry projects.
-   --  @param Snapshot_Id Reporting snapshot identity.
+   --  @param Value Registry projects and reporting snapshot identity.
    --  @return One versioned JSON document.
 
-   function Findings
-     (Selected : Improve.Source.Selection;
-      Values   : Improve.Model.Finding_Vectors.Vector) return String;
+   function Findings (Value : Improve.Results.Finding_List) return String;
    --  Serialize normalized remediation candidates.
-   --  @param Selected Assessment selection and provenance.
-   --  @param Values Normalized findings.
+   --  @param Value Assessment selection, provenance, and normalized findings.
    --  @return One versioned JSON document.
 
    function Plan (Value : Improve.Model.Plan_Revision; Dry_Run : Boolean) return String;
@@ -40,7 +30,7 @@ package Improve.JSON is
    --  @param Dry_Run Whether the plan was calculated without persistence.
    --  @return One versioned JSON document.
 
-   function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String;
+   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String;
    --  Serialize persisted plan summaries.
    --  @param Values Persisted plan summaries.
    --  @return One versioned JSON document.
@@ -51,7 +41,7 @@ package Improve.JSON is
    --  @return One versioned JSON document.
 
    function Publication
-     (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String;
+     (Plan_Id : String; Value : Improve.Results.Publication_Result; Dry_Run : Boolean) return String;
    --  Serialize native harness publication or preview results.
    --  @param Plan_Id Stable Improve plan identity.
    --  @param Value Harness publication result.
@@ -59,7 +49,7 @@ package Improve.JSON is
    --  @return One versioned JSON document.
 
    function Verification
-     (Value   : Improve.Verification.Report;
+     (Value   : Improve.Results.Verification_Report;
       Command : String := "verify") return String;
    --  Serialize an independent quality verification report.
    --  @param Value Verification report.
@@ -79,7 +69,7 @@ package Improve.JSON is
    --  @param Values Project status summaries.
    --  @return One versioned JSON document.
 
-   function Recovery (Value : Improve.Operations.Recovery.Result) return String;
+   function Recovery (Value : Improve.Results.Recovery_Result) return String;
    --  Serialize publication recovery results.
    --  @param Value Recovery report.
    --  @return One versioned JSON document.

@@ -7,7 +7,7 @@ begin
       for Spec of Selected loop
          for Index of Predecessor_Indexes_Of (Spec) loop
             declare
-               Mapping : Improve.Storage.Publication_Record renames Existing (Index);
+               Mapping : Improve.State.Publication_Record renames Existing (Index);
                Target  : constant String := Retirement_Target (Mapping);
             begin
                if Target /= "" then

@@ -4,7 +4,7 @@ package body Improve.Recovery is
       Quality_Path    : String;
       Requested_Kind : String;
       Maximum         : Positive;
-      Limits          : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits          : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits  : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
       return Recovery_Report is

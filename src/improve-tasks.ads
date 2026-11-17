@@ -1,11 +1,14 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Improve.Model;
-with Improve.Storage;
+with Improve.State;
 
 --  Deterministic read models over Improve plans and cached harness state.
 package Improve.Tasks is
    --  Stable inspection views derived from immutable plans, publication mappings, and verification evidence.
+
+   Default_View_Maximum : constant Positive := 10_000;
+   --  Default upper bound for task views materialized by library callers.
 
    subtype UString is Ada.Strings.Unbounded.Unbounded_String;
    --  Shared owned string representation.
@@ -81,10 +84,10 @@ package Improve.Tasks is
 
    function Build
      (Plan          : Improve.Model.Plan_Revision;
-      Publications  : Improve.Storage.Publication_Vectors.Vector;
-      Verifications : Improve.Storage.Verification_Vectors.Vector;
+      Publications  : Improve.State.Publication_Vectors.Vector;
+      Verifications : Improve.State.Verification_Vectors.Vector;
       Current_Assessment : Natural := 0;
-      Maximum_Items : Positive := Improve.Storage.Default_Query_Maximum) return View_Vectors.Vector;
+      Maximum_Items : Positive := Default_View_Maximum) return View_Vectors.Vector;
    --  Build one stable view per task in plan order.
    --  @param Plan Immutable plan revision.
    --  @param Publications Publication mappings for the plan.

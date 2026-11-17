@@ -10,6 +10,10 @@ package Improve_Test_Support is
 
    function Id_Image (Value : Positive) return String;
 
+   function Finding_Fingerprint
+     (Indicator : Ada_Quality.Types.Indicator_Id;
+      Rule, Path, Message : String) return String;
+
    procedure Must_Reject (Text, Expected : String);
 
    type Fixture is record

@@ -11,7 +11,7 @@ package Improve.Operations.Reconciliation is
       Quality_Path     : String;
       Project_Selector : String;
       Requested_Kind   : String;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits);
    --  Reconcile every stored publication mapping for one database-qualified project.

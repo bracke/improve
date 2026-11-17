@@ -19,6 +19,7 @@ with Improve.Operations.Inspection;
 with Improve.Planner;
 with Improve.Recovery;
 with Improve.Refinement;
+with Improve.State;
 with Improve.Storage;
 with Improve.Tasks;
 with Improve.Verification;

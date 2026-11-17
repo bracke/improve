@@ -196,13 +196,18 @@ package body Improve.Storage_Codec is
    end Id_Image;
 
    function Plan_Row_Id (Plan_Id : String) return Positive is
+      Value : Positive;
    begin
-      if Plan_Id'Length /= 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
+      if Plan_Id'Length < 11 or else Plan_Id (Plan_Id'First .. Plan_Id'First + 4) /= "PLAN-" then
          raise Argument_Error with "invalid plan identity " & Plan_Id;
       elsif (for some Value of Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last) => Value not in '0' .. '9') then
          raise Argument_Error with "invalid plan identity " & Plan_Id;
       end if;
-      return Positive'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
+      Value := Positive'Value (Plan_Id (Plan_Id'First + 5 .. Plan_Id'Last));
+      if Id_Image ("PLAN-", Value) /= Plan_Id then
+         raise Argument_Error with "invalid plan identity " & Plan_Id;
+      end if;
+      return Value;
    exception
       when Constraint_Error => raise Argument_Error with "invalid plan identity " & Plan_Id;
    end Plan_Row_Id;

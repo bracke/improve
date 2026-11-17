@@ -3,7 +3,8 @@ procedure Cache_Contracts
   (Item      : in out Store;
    Plan_Id   : String;
    Revision  : Positive;
-   Limits    : Read_Limits;
+   Limits    : Persistence_Limits;
+   Budget    : in out History_Budget;
    Contracts : in out String_Value_Maps.Map) is
    Marker : constant String := Contract_Key (Plan_Id, Revision, "@plan");
 begin
@@ -11,7 +12,8 @@ begin
       return;
    end if;
    declare
-      Plan     : constant Improve.Model.Plan_Revision := Load (Item, Plan_Id, Revision, Limits);
+      Plan     : constant Improve.Model.Plan_Revision :=
+        Load_Exact (Item, Plan_Id, Revision, Limits, Budget);
       Bindings : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
    begin

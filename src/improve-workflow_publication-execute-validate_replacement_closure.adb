@@ -47,7 +47,7 @@ begin
       then
          for Index of Predecessor_Indexes_Of (Spec) loop
             declare
-               Mapping      : Improve.Storage.Publication_Record renames Existing (Index);
+               Mapping      : Improve.State.Publication_Record renames Existing (Index);
                Definition   : Records.Item;
                Native_State : constant String := Tasks.State_Of
                  (Store, To_String (Mapping.Harness_Task_Id));

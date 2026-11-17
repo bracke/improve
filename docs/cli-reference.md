@@ -25,8 +25,9 @@ evidence or project state, and 4 for storage, integrity, publication, or interna
 
 `improve plan --project PROJECT` stores an immutable plan revision. `improve plan show PLAN-ID` inspects the latest
 revision and `improve plan list --project PROJECT` lists stable plan identities. When planning policy requires review,
-`improve plan approve PLAN-ID` records approval for the exact current revision and fingerprint. Approval is idempotent
-and never transfers to a newer revision.
+`improve plan approve PLAN-ID` records approval for the exact current revision, semantic fingerprint, and complete
+persisted-content fingerprint. Approval is idempotent for identical content and never transfers to a newer revision or
+to altered durable task or finding records.
 
 Historical plan and task state remains directly addressable. `plan show PLAN-ID --revision N` inspects an exact
 revision; `tasks --task IMP-ID --revision N` and `verify --task IMP-ID --revision N --run RUN` resolve the task through
@@ -82,8 +83,9 @@ current or when the current assessment is unknown. This freshness rule applies t
 partially resolved, still failing, and inconclusive measurement outcomes.
 
 Every collection output is bounded by `output.maximum_output_items`, including projects, findings, plans,
-publication results, tasks, status, and verification results. Historical evidence reads use the independent
-`operations.maximum_history_items` limit, and assessment normalization has separate finding and byte limits.
+publication results, tasks, status, and verification results. Historical evidence reads and appends use the independent
+`operations.maximum_history_items` operation-wide budget, schema upgrades use `operations.maximum_migration_rows`,
+and assessment normalization has separate finding and byte limits.
 Read-only queries never initialize, migrate, or repair Improve state.
 
 ## Recovery

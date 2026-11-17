@@ -1,5 +1,6 @@
 with Improve.Config;
 with Improve.Model;
+with Improve.State;
 with Improve.Storage;
 with Ada_Quality.Reporting;
 
@@ -35,7 +36,7 @@ package Improve.Operations.Planning is
      (State_Path : String;
       Plan_Id    : String;
       Revision   : Natural := 0;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
       return Improve.Model.Plan_Revision;
    --  Load the latest or an exact immutable plan revision.
    --  @param State_Path Existing Improve state database path.
@@ -49,10 +50,10 @@ package Improve.Operations.Planning is
       Quality_Path     : String;
       Project_Selector : String;
       Maximum_Items    : Positive := Improve.Storage.Default_Query_Maximum;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits)
-      return Improve.Storage.Summary_Vectors.Vector;
+      return Improve.State.Summary_Vectors.Vector;
    --  List stored plans for one database-qualified project.
    --  @param State_Path Existing Improve state database path.
    --  @param Quality_Path Read-only Ada Quality database path.
@@ -66,7 +67,7 @@ package Improve.Operations.Planning is
    function Approve
      (State_Path : String;
       Plan_Id    : String;
-      Limits     : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits)
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
       return Improve.Model.Plan_Revision;
    --  Approve the latest immutable revision and return it.
    --  @param State_Path Existing Improve state database path.

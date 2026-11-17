@@ -4,8 +4,8 @@ function Execute
    Publication_Namespace : String;
    Plan              : Improve.Model.Plan_Revision;
    Requested_Kind    : String;
-   Existing          : Improve.Storage.Publication_Vectors.Vector :=
-     Improve.Storage.Publication_Vectors.Empty_Vector;
+   Existing          : Improve.State.Publication_Vectors.Vector :=
+     Improve.State.Publication_Vectors.Empty_Vector;
    Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
      Improve.Model.UString_Vectors.Empty_Vector;
    Existing_Only     : Boolean := False;
@@ -54,7 +54,7 @@ function Execute
             then
                if Current_Mappings.Contains (Identity) then
                   declare
-                     Current : Improve.Storage.Publication_Record renames
+                     Current : Improve.State.Publication_Record renames
                        Existing (Current_Mappings.Element (Identity));
                   begin
                      if Existing (Index).Plan_Revision > Current.Plan_Revision then
@@ -128,7 +128,7 @@ function Execute
       else "");
 
    function Is_Predecessor
-     (Mapping : Improve.Storage.Publication_Record;
+     (Mapping : Improve.State.Publication_Record;
       Spec    : Improve.Model.Task_Specification) return Boolean is
       (Mapping.Improve_Task_Id = Spec.Id and then
       To_String (Mapping.Contract) /= Contract_Of (Spec.Id) and then
@@ -168,7 +168,7 @@ function Execute
    function Has_Current_Mapping (Spec : Improve.Model.Task_Specification) return Boolean is
      (Current_Mappings.Contains (To_String (Spec.Id)));
 
-   function Retirement_Target (Mapping : Improve.Storage.Publication_Record) return String is
+   function Retirement_Target (Mapping : Improve.State.Publication_Record) return String is
       Definition : Records.Item;
       Current    : Unbounded_String;
       Core       : Unbounded_String;
@@ -210,7 +210,7 @@ function Execute
    begin
       if Current_Mappings.Contains (To_String (Task_Id)) then
          declare
-            Mapping : Improve.Storage.Publication_Record renames
+            Mapping : Improve.State.Publication_Record renames
               Existing (Current_Mappings.Element (To_String (Task_Id)));
             Definition : Records.Item;
          begin

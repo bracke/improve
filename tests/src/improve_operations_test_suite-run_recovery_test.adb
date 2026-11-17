@@ -174,8 +174,8 @@ begin
                Applied    : Improve.CLI.Outcome;
                Replanned  : Improve.CLI.Outcome;
                Run        : Positive;
-               Old_Map    : Improve.Storage.Publication_Record;
-               New_Map    : Improve.Storage.Publication_Record;
+               Old_Map    : Improve.State.Publication_Record;
+               New_Map    : Improve.State.Publication_Record;
                Harness    : Stores.Store;
                Status     : Errors.Error_Info;
             begin

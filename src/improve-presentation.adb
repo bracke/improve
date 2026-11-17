@@ -21,6 +21,7 @@ package body Improve.Presentation is
          Acquired : out Boolean);
       entry Wait_Acquire (Owner : Ada.Task_Identification.Task_Id);
       procedure Release (Owner : Ada.Task_Identification.Task_Id);
+      function Waiting_Tasks return Natural;
    private
       Current_Owner : Ada.Task_Identification.Task_Id := Ada.Task_Identification.Null_Task_Id;
       Depth         : Natural := 0;
@@ -59,7 +60,13 @@ package body Improve.Presentation is
             Current_Owner := Ada.Task_Identification.Null_Task_Id;
          end if;
       end Release;
+
+      function Waiting_Tasks return Natural is
+        (Wait_Acquire'Count);
    end Styling_Lock;
+
+   function Waiting_Styling_Tasks return Natural is
+     (Styling_Lock.Waiting_Tasks);
 
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
@@ -152,7 +159,7 @@ package body Improve.Presentation is
       end if;
    end Append_Plan_Tasks;
 
-   function Projects (Values : Ada_Quality.Reporting.Project_Vectors.Vector) return String is
+   function Projects (Values : Improve.Results.Project_Vectors.Vector) return String is
       Result : Unbounded_String;
    begin
       Append (Result, Header (Message ("projects.title")) & LF);
@@ -171,9 +178,7 @@ package body Improve.Presentation is
       return To_String (Result);
    end Projects;
 
-   function Findings
-     (Selected : Improve.Source.Selection;
-      Values   : Improve.Model.Finding_Vectors.Vector) return String is
+   function Findings (Value : Improve.Results.Finding_List) return String is
       Result : Unbounded_String;
    begin
       Append
@@ -181,25 +186,25 @@ package body Improve.Presentation is
          Header
            (Message
               ("findings.title",
-               [Arg ("project", To_String (Selected.Project.Name)),
-                Arg ("run", Number (Selected.Assessment.Run.Id))])) & LF);
-      if Values.Is_Empty then
+               [Arg ("project", To_String (Value.Project)),
+                Arg ("run", Number (Value.Run_Id))])) & LF);
+      if Value.Values.Is_Empty then
          Append (Result, Message ("findings.none") & LF);
       else
          Append
            (Result, Message ("label.indicator") & "  " & Message ("label.severity") & "  " &
             Message ("label.location") & "  " & Message ("label.message") & LF);
-         for Value of Values loop
+         for Finding of Value.Values loop
             declare
                Location : constant String :=
-                 (if Length (Value.Relative_Path) = 0 then "-"
-                  elsif Value.Line = 0 then To_String (Value.Relative_Path)
-                  else To_String (Value.Relative_Path) & ":" & Number (Value.Line));
+                 (if Length (Finding.Relative_Path) = 0 then "-"
+                  elsif Finding.Line = 0 then To_String (Finding.Relative_Path)
+                  else To_String (Finding.Relative_Path) & ":" & Number (Finding.Line));
             begin
                Append
-                 (Result, Ada_Quality.Types.Image (Value.Indicator) & "  " &
-                  Ada_Quality.Types.Severity'Image (Value.Level) & "  " & Safe_Text (Location) & "  " &
-                  Safe_Text (To_String (Value.Message)) & LF);
+                 (Result, Ada_Quality.Types.Image (Finding.Indicator) & "  " &
+                  Ada_Quality.Types.Severity'Image (Finding.Level) & "  " & Safe_Text (Location) & "  " &
+                  Safe_Text (To_String (Finding.Message)) & LF);
             end;
          end loop;
       end if;
@@ -222,7 +227,7 @@ package body Improve.Presentation is
       return To_String (Result);
    end Plan;
 
-   function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String is
+   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String is
       Result : Unbounded_String;
    begin
       Append (Result, Header (Message ("plan.list.title")) & LF);
@@ -271,7 +276,7 @@ package body Improve.Presentation is
 
    function Publication
      (Plan_Id : String;
-      Value   : Improve.Workflow.Publication_Result;
+      Value   : Improve.Results.Publication_Result;
       Dry_Run : Boolean) return String is
       Result : Unbounded_String;
    begin
@@ -393,7 +398,7 @@ package body Improve.Presentation is
       return To_String (Result);
    end Status;
 
-   function Recovery (Value : Improve.Operations.Recovery.Result) return String is
+   function Recovery (Value : Improve.Results.Recovery_Result) return String is
      (Header (Message ("recover.title")) & LF &
       Message
         ("recover.complete",
@@ -402,7 +407,7 @@ package body Improve.Presentation is
 
    function Verification
      (Plan_Id : String;
-      Value   : Improve.Verification.Report;
+      Value   : Improve.Results.Verification_Report;
       Command : String) return String is
       Result : Unbounded_String;
    begin

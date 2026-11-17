@@ -23,7 +23,9 @@ package body Improve.Config is
       Minimum_Severity, Maximum_Tasks_Per_Plan, Maximum_Findings_Per_Task,
       Allow_Investigation_Tasks, Require_Review, Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
       Agent_Max_Response_Bytes, Agent_Timeout_Seconds,
-      Maximum_Recovery_Operations, Maximum_History_Items, Maximum_Persisted_Text_Bytes,
+      Maximum_Recovery_Operations, Maximum_History_Items, Maximum_Migration_Rows,
+      Maximum_Persisted_Text_Bytes,
+      Maximum_Persisted_Total_Bytes,
       Workflow_Task_Kind, Workflow_Publication, Require_Initialized_Project,
       Require_Fresh_Measurement, Require_Same_Policy, Require_Same_Toolchain,
       Require_No_New_Critical_Findings,
@@ -74,7 +76,9 @@ package body Improve.Config is
       Define ("planning", "agent_timeout_seconds", "60", Positive_Value, 1, 3_600),
       Define ("operations", "maximum_recovery_operations", "100", Positive_Value, 1, 10_000),
       Define ("operations", "maximum_history_items", "100000", Positive_Value, 1, 1_000_000),
+      Define ("operations", "maximum_migration_rows", "1000000", Positive_Value, 1, 1_300_000_000),
       Define ("operations", "maximum_persisted_text_bytes", "1048576", Positive_Value, 1, 16_777_216),
+      Define ("operations", "maximum_persisted_total_bytes", "67108864", Positive_Value, 1, 2_000_000_000),
       Define ("workflow", "task_kind", "auto", String_Value),
       Define ("workflow", "publication", "candidate", Enum_Value),
       Define ("workflow", "require_initialized_project", "true", Boolean_Value),
@@ -232,7 +236,9 @@ package body Improve.Config is
        Agent_Timeout_Seconds     => Default_Positive (Agent_Timeout_Seconds),
        Maximum_Output_Items      => Default_Positive (Maximum_Output_Items),
        Maximum_History_Items     => Default_Positive (Maximum_History_Items),
+       Maximum_Migration_Rows    => Default_Positive (Maximum_Migration_Rows),
        Maximum_Persisted_Text_Bytes => Default_Positive (Maximum_Persisted_Text_Bytes),
+       Maximum_Persisted_Total_Bytes => Default_Positive (Maximum_Persisted_Total_Bytes),
        Maximum_Recovery_Operations => Default_Positive (Maximum_Recovery_Operations),
        Task_Kind                 => To_Unbounded_String (Default_String (Workflow_Task_Kind)),
        Publication               => Candidate_Publication,
@@ -356,8 +362,12 @@ package body Improve.Config is
                   Result.Maximum_Recovery_Operations := Positive_Setting (Id);
                when Maximum_History_Items =>
                   Result.Maximum_History_Items := Positive_Setting (Id);
+               when Maximum_Migration_Rows =>
+                  Result.Maximum_Migration_Rows := Positive_Setting (Id);
                when Maximum_Persisted_Text_Bytes =>
                   Result.Maximum_Persisted_Text_Bytes := Positive_Setting (Id);
+               when Maximum_Persisted_Total_Bytes =>
+                  Result.Maximum_Persisted_Total_Bytes := Positive_Setting (Id);
                when Workflow_Task_Kind =>
                   Result.Task_Kind := To_Unbounded_String (String_Setting (Id));
                when Require_Initialized_Project =>
@@ -389,9 +399,10 @@ package body Improve.Config is
             raise Argument_Error with "configuration schema_version must be 1 or 2";
          elsif Version = 1 and then
            (Present (Maximum_Normalized_Finding_Bytes) or else
-            Present (Maximum_Source_File_Bytes) or else Present (Maximum_Source_Total_Bytes))
+            Present (Maximum_Source_File_Bytes) or else Present (Maximum_Source_Total_Bytes) or else
+            Present (Maximum_Migration_Rows) or else Present (Maximum_Persisted_Total_Bytes))
          then
-            raise Argument_Error with "new quality evidence limits require configuration schema_version 2";
+            raise Argument_Error with "new bounded-evidence settings require configuration schema_version 2";
          elsif String_Setting (Quality_Selection) /= "latest_completed" then
             raise Argument_Error with "quality.selection must be latest_completed";
          elsif String_Setting (Workflow_Publication) /= "candidate" then
@@ -451,7 +462,9 @@ package body Improve.Config is
          when Agent_Timeout_Seconds => return Number (Item.Agent_Timeout_Seconds);
          when Maximum_Recovery_Operations => return Number (Item.Maximum_Recovery_Operations);
          when Maximum_History_Items => return Number (Item.Maximum_History_Items);
+         when Maximum_Migration_Rows => return Number (Item.Maximum_Migration_Rows);
          when Maximum_Persisted_Text_Bytes => return Number (Item.Maximum_Persisted_Text_Bytes);
+         when Maximum_Persisted_Total_Bytes => return Number (Item.Maximum_Persisted_Total_Bytes);
          when Workflow_Task_Kind => return To_String (Item.Task_Kind);
          when Workflow_Publication => return "candidate";
          when Require_Initialized_Project => return Boolean_Image (Item.Require_Initialized);

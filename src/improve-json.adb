@@ -44,23 +44,21 @@ package body Improve.JSON is
 
    function Lower (Text : String) return String is (Ada.Characters.Handling.To_Lower (Text));
 
-   function Projects
-     (Values      : Ada_Quality.Reporting.Project_Vectors.Vector;
-      Snapshot_Id : String) return String is
+   function Projects (Value : Improve.Results.Project_List) return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "projects");
       Data    : Node renames Context.Data;
       List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Data, "snapshot", Doc.New_String (Snapshot_Id));
-      for Value of Values loop
+      Doc.Insert (Data, "snapshot", Doc.New_String (To_String (Value.Snapshot)));
+      for Project of Value.Values loop
          declare
             Item : constant Node := Doc.New_Object;
          begin
-            Doc.Insert (Item, "id", Doc.New_Integer (Long_Long_Integer (Value.Id)));
-            Doc.Insert (Item, "path", Doc.New_String (To_String (Value.Path)));
-            Doc.Insert (Item, "enabled", Doc.New_Boolean (Value.Enabled));
-            Doc.Insert (Item, "removed", Doc.New_Boolean (Value.Removed));
+            Doc.Insert (Item, "id", Doc.New_Integer (Long_Long_Integer (Project.Id)));
+            Doc.Insert (Item, "path", Doc.New_String (To_String (Project.Path)));
+            Doc.Insert (Item, "enabled", Doc.New_Boolean (Project.Enabled));
+            Doc.Insert (Item, "removed", Doc.New_Boolean (Project.Removed));
             Doc.Append (List, Item);
          end;
       end loop;
@@ -68,35 +66,33 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Projects;
 
-   function Findings
-     (Selected : Improve.Source.Selection;
-      Values   : Improve.Model.Finding_Vectors.Vector) return String is
+   function Findings (Value : Improve.Results.Finding_List) return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "findings");
       Data    : Node renames Context.Data;
       List    : constant Node := Doc.New_Array;
    begin
-      Doc.Insert (Data, "project_id", Doc.New_Integer (Long_Long_Integer (Selected.Project.Id)));
-      Doc.Insert (Data, "project", Doc.New_String (To_String (Selected.Project.Name)));
-      Doc.Insert (Data, "run_id", Doc.New_Integer (Long_Long_Integer (Selected.Assessment.Run.Id)));
-      Doc.Insert (Data, "assessment", Doc.New_String (To_String (Selected.Baseline.Evidence_Id)));
-      Doc.Insert (Data, "snapshot", Doc.New_String (To_String (Selected.Baseline.Snapshot_Id)));
-      for Value of Values loop
+      Doc.Insert (Data, "project_id", Doc.New_Integer (Long_Long_Integer (Value.Project_Id)));
+      Doc.Insert (Data, "project", Doc.New_String (To_String (Value.Project)));
+      Doc.Insert (Data, "run_id", Doc.New_Integer (Long_Long_Integer (Value.Run_Id)));
+      Doc.Insert (Data, "assessment", Doc.New_String (To_String (Value.Assessment_Id)));
+      Doc.Insert (Data, "snapshot", Doc.New_String (To_String (Value.Snapshot_Id)));
+      for Finding of Value.Values loop
          declare
             Item : constant Node := Doc.New_Object;
          begin
-            Doc.Insert (Item, "indicator", Doc.New_String (Ada_Quality.Types.Image (Value.Indicator)));
-            Doc.Insert (Item, "rule", Doc.New_String (To_String (Value.Rule)));
+            Doc.Insert (Item, "indicator", Doc.New_String (Ada_Quality.Types.Image (Finding.Indicator)));
+            Doc.Insert (Item, "rule", Doc.New_String (To_String (Finding.Rule)));
             Doc.Insert
-              (Item, "severity", Doc.New_String (Lower (Ada_Quality.Types.Severity'Image (Value.Level))));
-            Doc.Insert (Item, "path", Doc.New_String (To_String (Value.Relative_Path)));
-            Doc.Insert (Item, "line", Doc.New_Integer (Long_Long_Integer (Value.Line)));
-            Doc.Insert (Item, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
-            Doc.Insert (Item, "subject", Doc.New_String (To_String (Value.Semantic_Subject)));
-            Doc.Insert (Item, "message", Doc.New_String (To_String (Value.Message)));
-            Doc.Insert (Item, "evidence", Doc.New_String (To_String (Value.Evidence)));
-            Doc.Insert (Item, "candidate_kind", Doc.New_String (Improve.Model.Image (Value.Kind)));
-            Doc.Insert (Item, "indicator_level", Doc.New_Boolean (Value.Indicator_Level));
+              (Item, "severity", Doc.New_String (Lower (Ada_Quality.Types.Severity'Image (Finding.Level))));
+            Doc.Insert (Item, "path", Doc.New_String (To_String (Finding.Relative_Path)));
+            Doc.Insert (Item, "line", Doc.New_Integer (Long_Long_Integer (Finding.Line)));
+            Doc.Insert (Item, "fingerprint", Doc.New_String (To_String (Finding.Fingerprint)));
+            Doc.Insert (Item, "subject", Doc.New_String (To_String (Finding.Semantic_Subject)));
+            Doc.Insert (Item, "message", Doc.New_String (To_String (Finding.Message)));
+            Doc.Insert (Item, "evidence", Doc.New_String (To_String (Finding.Evidence)));
+            Doc.Insert (Item, "candidate_kind", Doc.New_String (Improve.Model.Image (Finding.Kind)));
+            Doc.Insert (Item, "indicator_level", Doc.New_Boolean (Finding.Indicator_Level));
             Doc.Append (List, Item);
          end;
       end loop;
@@ -158,7 +154,7 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Plan;
 
-   function Plans (Values : Improve.Storage.Summary_Vectors.Vector) return String is
+   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "plan list");
       Data    : Node renames Context.Data;
@@ -193,7 +189,7 @@ package body Improve.JSON is
    end Plan_Approval;
 
    function Publication
-     (Plan_Id : String; Value : Improve.Workflow.Publication_Result; Dry_Run : Boolean) return String is
+     (Plan_Id : String; Value : Improve.Results.Publication_Result; Dry_Run : Boolean) return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "apply");
       Data    : Node renames Context.Data;
@@ -217,7 +213,7 @@ package body Improve.JSON is
    end Publication;
 
    function Verification
-     (Value   : Improve.Verification.Report;
+     (Value   : Improve.Results.Verification_Report;
       Command : String := "verify") return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, Command);
@@ -361,7 +357,7 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Status;
 
-   function Recovery (Value : Improve.Operations.Recovery.Result) return String is
+   function Recovery (Value : Improve.Results.Recovery_Result) return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "recover");
       Data    : Node renames Context.Data;

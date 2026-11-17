@@ -4,8 +4,6 @@ with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve_Coverage_Units;
-with Project_Tools.Files;
-with Project_Tools.Test_Fixtures;
 
 package body Improve_Coverage_Units_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -19,74 +17,81 @@ package body Improve_Coverage_Units_Test_Suite is
 
    overriding procedure Run_Test (Item : in out Coverage_Case) is
       pragma Unreferenced (Item);
-      Root : constant String := Project_Tools.Test_Fixtures.Fresh_Temp_Dir ("improve-coverage-units");
 
-      procedure Write (Name, Text : String) is
+      function Unit (Stem : String) return Ada_Quality.Coverage.Production_Unit is
+        ((Stem          => To_Unbounded_String (Stem),
+          Body_Path     => Null_Unbounded_String,
+          Spec_Path     => Null_Unbounded_String,
+          Subunit_Paths => <>));
+
+      procedure Add_Subunit
+        (Owner : in out Ada_Quality.Coverage.Production_Unit;
+         Path  : String) is
       begin
-         Project_Tools.Files.Write_Text_File (Project_Tools.Files.Join (Root, Name), Text);
-      end Write;
-
-      function Unit (Stem, Body_Name : String) return Ada_Quality.Coverage.Production_Unit is
-        ((To_Unbounded_String (Stem), To_Unbounded_String (Project_Tools.Files.Join (Root, Body_Name)),
-          Null_Unbounded_String));
+         Owner.Subunit_Paths.Append (To_Unbounded_String (Path));
+      end Add_Subunit;
 
       procedure Require_Failure
         (Value : Ada_Quality.Coverage.Production_Unit;
+         Units : Ada_Quality.Coverage.Production_Unit_Vectors.Vector;
          Label : String) is
          Rejected : Boolean := False;
       begin
          begin
-            declare Result : constant String := Improve_Coverage_Units.Compilation_Stem (Value); begin
-               Rejected := Result = "";
+            declare
+               Result : constant String := Improve_Coverage_Units.Compilation_Stem (Value, Units);
+               pragma Unreferenced (Result);
+            begin
+               null;
             end;
          exception
             when Program_Error => Rejected := True;
          end;
          Assert (Rejected, Label);
       end Require_Failure;
+
+      Root   : Ada_Quality.Coverage.Production_Unit := Unit ("root-parent");
+      Nested : Ada_Quality.Coverage.Production_Unit := Unit ("root-parent-nested");
+      Leaf   : constant Ada_Quality.Coverage.Production_Unit := Unit ("ordinary");
+      Units  : Ada_Quality.Coverage.Production_Unit_Vectors.Vector;
    begin
-      Write
-        ("ordinary.adb",
-         "procedure Ordinary is" & ASCII.LF &
-         "   Text : constant String := ""separate (Fake.Parent)"";" & ASCII.LF &
-         "begin" & ASCII.LF & "   null; -- separate (Ignored.Parent)" & ASCII.LF & "end Ordinary;" & ASCII.LF);
+      Add_Subunit (Root, "/source/root-parent-nested.adb");
+      Add_Subunit (Nested, "/source/root-parent-nested-child.adb");
+      Units.Append (Root);
+      Units.Append (Nested);
+      Units.Append (Leaf);
       Assert
-        (Improve_Coverage_Units.Compilation_Stem (Unit ("ordinary", "ordinary.adb")) = "ordinary",
-         "coverage parser treated comments or strings as a subunit declaration");
-
-      Write ("root-parent.adb", "procedure Root.Parent is begin null; end Root.Parent;" & ASCII.LF);
-      Write
-        ("root-parent-child.adb",
-         "-- context before the subunit" & ASCII.LF & "separate -- parent follows" & ASCII.LF &
-         "  (Root.Parent)" & ASCII.LF & "procedure Child is begin null; end Child;" & ASCII.LF);
+        (Improve_Coverage_Units.Compilation_Stem (Leaf, Units) = "ordinary",
+         "coverage inventory changed an ordinary compilation stem");
       Assert
-        (Improve_Coverage_Units.Compilation_Stem
-           (Unit ("root-parent-child", "root-parent-child.adb")) = "root-parent",
-         "coverage parser did not resolve a commented subunit context clause");
+        (Improve_Coverage_Units.Compilation_Stem (Nested, Units) = "root-parent",
+         "coverage inventory did not resolve nested subunit ownership");
 
-      Write
-        ("root-parent-nested.adb",
-         "separate (Root.Parent) procedure Nested is begin null; end Nested;" & ASCII.LF);
-      Write
-        ("root-parent-nested-child.adb",
-         "separate (Root.Parent.Nested) procedure Child is begin null; end Child;" & ASCII.LF);
-      Assert
-        (Improve_Coverage_Units.Compilation_Stem
-           (Unit ("root-parent-nested-child", "root-parent-nested-child.adb")) = "root-parent",
-         "coverage parser did not resolve nested subunits to their compilation body");
+      declare
+         Left      : Ada_Quality.Coverage.Production_Unit := Unit ("left");
+         Right     : Ada_Quality.Coverage.Production_Unit := Unit ("right");
+         Child     : constant Ada_Quality.Coverage.Production_Unit := Unit ("shared-child");
+         Ambiguous : Ada_Quality.Coverage.Production_Unit_Vectors.Vector;
+      begin
+         Add_Subunit (Left, "/left/shared-child.adb");
+         Add_Subunit (Right, "/right/shared-child.adb");
+         Ambiguous.Append (Left);
+         Ambiguous.Append (Right);
+         Ambiguous.Append (Child);
+         Require_Failure (Child, Ambiguous, "ambiguous typed subunit ownership was accepted");
+      end;
 
-      Write ("malformed.adb", "separate (Root-Parent) procedure Broken is begin null; end Broken;" & ASCII.LF);
-      Require_Failure (Unit ("malformed", "malformed.adb"), "malformed subunit parent was accepted");
-
-      Write ("cycle-child.adb", "separate (Cycle_A) procedure Child is begin null; end Child;" & ASCII.LF);
-      Write ("cycle_a.adb", "separate (Cycle_B) procedure Cycle_A is begin null; end Cycle_A;" & ASCII.LF);
-      Write ("cycle_b.adb", "separate (Cycle_A) procedure Cycle_B is begin null; end Cycle_B;" & ASCII.LF);
-      Require_Failure (Unit ("cycle-child", "cycle-child.adb"), "cyclic subunit parents were accepted");
-      Project_Tools.Test_Fixtures.Cleanup (Root);
-   exception
-      when others =>
-         Project_Tools.Test_Fixtures.Cleanup (Root);
-         raise;
+      declare
+         Left  : Ada_Quality.Coverage.Production_Unit := Unit ("cycle-left");
+         Right : Ada_Quality.Coverage.Production_Unit := Unit ("cycle-right");
+         Cycle : Ada_Quality.Coverage.Production_Unit_Vectors.Vector;
+      begin
+         Add_Subunit (Left, "/cycle/cycle-right.adb");
+         Add_Subunit (Right, "/cycle/cycle-left.adb");
+         Cycle.Append (Left);
+         Cycle.Append (Right);
+         Require_Failure (Left, Cycle, "cyclic typed subunit ownership was accepted");
+      end;
    end Run_Test;
 
    function Suite return AUnit.Test_Suites.Access_Test_Suite is

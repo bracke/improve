@@ -1,46 +1,24 @@
-with Ada.Containers.Vectors;
-with Ada.Strings.Unbounded;
 with Improve.Model;
-with Improve.Storage;
+with Improve.Results;
+with Improve.State;
 
 --  Native model_runner task publication adapter.
 package Improve.Workflow is
    --  Transactional adapter to native model_runner tasks and state.
 
-   type Published_Task is record
-      Improve_Id : Ada.Strings.Unbounded.Unbounded_String;
-      Harness_Id : Ada.Strings.Unbounded.Unbounded_String;
-      Origin     : Ada.Strings.Unbounded.Unbounded_String;
-      Contract   : Ada.Strings.Unbounded.Unbounded_String;
-      State      : Ada.Strings.Unbounded.Unbounded_String;
-      Recovered  : Boolean := False;
-   end record;
-   --  Verified native publication mapping.
-   --  @field Improve_Id Stable Improve task identity.
-   --  @field Harness_Id Native model_runner task identity.
-   --  @field Origin Stable authenticated Improve provenance.
-   --  @field Contract Complete execution contract represented by the native task.
-   --  @field State Harness-owned runtime state.
-   --  @field Recovered Whether an existing task was safely adopted.
+   subtype Published_Task is Improve.Results.Published_Task;
+   --  Storage-independent native publication mapping.
 
-   package Published_Vectors is new Ada.Containers.Vectors (Positive, Published_Task);
-   --  Ordered publication mappings.
-
-   type Publication_Result is record
-      Task_Kind : Ada.Strings.Unbounded.Unbounded_String;
-      Tasks     : Published_Vectors.Vector;
-   end record;
-   --  Result of native task translation and publication.
-   --  @field Task_Kind Resolved compatible harness task kind.
-   --  @field Tasks Published or safely recovered task mappings.
+   subtype Publication_Result is Improve.Results.Publication_Result;
+   --  Storage-independent native publication result.
 
    function Publish
      (Project_Directory : String;
       Publication_Namespace : String;
       Plan              : Improve.Model.Plan_Revision;
       Requested_Kind    : String;
-      Existing          : Improve.Storage.Publication_Vectors.Vector :=
-        Improve.Storage.Publication_Vectors.Empty_Vector;
+      Existing          : Improve.State.Publication_Vectors.Vector :=
+        Improve.State.Publication_Vectors.Empty_Vector;
       Selected_Task_Ids : Improve.Model.UString_Vectors.Vector :=
         Improve.Model.UString_Vectors.Empty_Vector;
       Existing_Only     : Boolean := False;

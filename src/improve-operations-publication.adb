@@ -1,5 +1,7 @@
 with Ada.Strings.Unbounded;
 with Improve.Publication_Authorization;
+with Improve.State;
+with Improve.Workflow;
 
 package body Improve.Operations.Publication is
    use Ada.Strings.Unbounded;
@@ -11,13 +13,13 @@ package body Improve.Operations.Publication is
       Selected_Task_Id : String;
       Task_Kind        : String;
       Dry_Run          : Boolean;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) return Result
    is
       State        : Improve.Storage.Store;
       Plan         : Improve.Model.Plan_Revision;
-      Existing     : Improve.Storage.Publication_Vectors.Vector;
+      Existing     : Improve.State.Publication_Vectors.Vector;
       Selected     : Improve.Model.UString_Vectors.Vector;
       Approved     : Boolean := False;
       Operation_Id : Natural := 0;
@@ -76,10 +78,10 @@ package body Improve.Operations.Publication is
               Plan, Task_Kind, Existing, Selected, False, Dry_Run);
       begin
          if not Dry_Run then
-            declare Mappings : Improve.Storage.Publication_Vectors.Vector; begin
+            declare Mappings : Improve.State.Publication_Vectors.Vector; begin
                for Value of Published.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract, Value.State, Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);

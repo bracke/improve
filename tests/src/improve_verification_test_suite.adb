@@ -7,6 +7,7 @@ with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve.CLI;
 with Improve.Model;
+with Improve.State;
 with Improve.Storage;
 with Improve_Test_Support;
 
@@ -56,7 +57,7 @@ begin
                Assert (Result.Exit_Code = 0, "repeated verification was not idempotent");
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => False);
-                  declare Values : constant Improve.Storage.Verification_Vectors.Vector :=
+                  declare Values : constant Improve.State.Verification_Vectors.Vector :=
                     Improve.Storage.Verifications (Improve_State, "PLAN-000001");
                   begin
                      Assert (Values.Length = 5, "repeated verification duplicated historical evidence");
@@ -393,7 +394,10 @@ begin
                Structure_Key : Unbounded_String;
             begin
                for Finding of First.Findings loop
-                  if To_String (Finding.Fingerprint) = "fixture-manifest" then
+                  if To_String (Finding.Fingerprint) =
+                    Finding_Fingerprint
+                      (Ada_Quality.Types.STR_01, "manifest.invalid", "alire.toml", "manifest is invalid")
+                  then
                      Structure_Key := To_Unbounded_String (Improve.Model.Finding_Key (Finding));
                      exit;
                   end if;

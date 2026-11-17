@@ -3,80 +3,51 @@ separate (Improve.Storage)
 function Save
   (Item   : in out Store;
    Value  : Improve.Model.Plan_Revision;
-   Limits : Read_Limits := Default_Read_Limits) return Save_Result is
+   Limits : Persistence_Limits := Default_Persistence_Limits) return Save_Result is
       Tx : Database.Transactions.Transaction;
       Stored : Improve.Model.Plan_Revision := Value;
       Existing_Revision : Natural;
-      History_Count : Natural := 0;
+      Budget        : History_Budget := New_History_Budget (Limits);
+      Read_Bytes    : Natural := 0;
+      Written_Bytes : Natural := 0;
 
-      procedure Require_Text (Text, Context : String) is
+      procedure Consume_Read_Row (Kind, State, Payload, Context : String) is
       begin
-         if Text'Length > Limits.Maximum_Text_Bytes then
-            raise Data_Error with Context & " exceeds configured persisted-text limit";
-         end if;
-      end Require_Text;
+         Consume_Persistence_Row
+           (Limits, Kind, State, Payload, Context, Read_Bytes, "read");
+      end Consume_Read_Row;
 
-      procedure Validate_Write is
-         Detail_Count : Natural := 0;
-         Link_Count   : Natural := 0;
-
-         procedure Add_Count (Count, Maximum : Natural; Total : in out Natural; Context : String) is
-         begin
-            if Count > Maximum - Total then
-               raise Data_Error with Context;
-            end if;
-            Total := Total + Count;
-         end Add_Count;
+      procedure Consume_Write_Row (Kind, State, Payload, Context : String) is
       begin
-         if Value.Findings.Length > Ada.Containers.Count_Type (Limits.Maximum_Findings) then
-            raise Data_Error with "plan exceeds configured finding write limit";
-         elsif Value.Tasks.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
-            raise Data_Error with "plan exceeds configured task write limit";
-         end if;
-         Require_Text (Revision_Payload (Value, 1, 1), "plan revision payload");
-         for Finding of Value.Findings loop
-            Require_Text (Finding_Payload (Finding), "finding payload");
-         end loop;
-         for Spec of Value.Tasks loop
-            Add_Count (7, Limits.Maximum_Task_Details, Detail_Count,
-                       "plan exceeds configured task-detail write limit");
-            Add_Count
-              (Natural (Spec.Relevant_Files.Length) + Natural (Spec.Finding_Keys.Length) +
-               Natural (Spec.Dependencies.Length),
-               Limits.Maximum_Task_Links, Link_Count,
-               "plan exceeds configured task-link write limit");
-            Require_Text (Task_Payload (Spec), "task payload");
-            Require_Text (Pack (Spec.Finding_Keys), "task finding links");
-            Require_Text (Pack (Spec.Dependencies), "task dependency links");
-            Require_Text (To_String (Spec.Goal), "task goal");
-            Require_Text (To_String (Spec.Problem), "task problem");
-            Require_Text (To_String (Spec.Evidence), "task evidence");
-            Require_Text (To_String (Spec.Out_Of_Scope), "task exclusions");
-            Require_Text (To_String (Spec.Requirements), "task requirements");
-            Require_Text (To_String (Spec.Acceptance), "task acceptance");
-            Require_Text (To_String (Spec.Verification), "task verification");
-         end loop;
-      end Validate_Write;
+         Consume_Persistence_Row
+           (Limits, Kind, State, Payload, Context, Written_Bytes, "write");
+      end Consume_Write_Row;
+
    begin
       if not Item.Opened or else not Item.Writable then
          raise Data_Error with "Improve state is not open for writing";
       end if;
-      Improve.Model.Validate (Value);
-      Validate_Write;
-      Database.Transactions.Begin_Write (Item.DB, Tx);
-      Existing_Revision := Find_Revision (Item, Tx, To_String (Value.Fingerprint));
+      Validate_Save_Value (Value, Limits);
+      Begin_Write_Transaction (Item.DB, Tx);
+      Improve.Storage.Allocation.Begin_Transaction (Item);
+      Existing_Revision :=
+        Find_Revision (Item, Tx, To_String (Value.Fingerprint), Budget);
       if Existing_Revision > 0 then
-         Database.Transactions.Rollback (Tx);
-         return
-           (Plan => Load (Item, "@revision:" & Number (Existing_Revision), Limits),
-            Existing => True);
+         Rollback_Transaction (Tx, "finish existing plan lookup");
+         declare
+            Existing : constant Improve.Model.Plan_Revision :=
+              Load_Revision (Item, Positive (Existing_Revision), Limits);
+         begin
+            Require_Idempotent_Equivalent (Existing, Value);
+            return (Plan => Existing, Existing => True);
+         end;
       end if;
       Stored.Created_At := Ada.Calendar.Clock;
       declare
          Project_Row  : Positive := 1;
-         Baseline_Row : constant Positive := Next_Id (Item, Tx, Baselines_Table);
+         Baseline_Row : constant Positive := Improve.Storage.Allocation.Next (Item, Tx, Baselines_Table);
          Plan_Row     : Positive := 1;
-         Revision_Row : constant Positive := Next_Id (Item, Tx, Revisions_Table);
+         Revision_Row : constant Positive := Improve.Storage.Allocation.Next (Item, Tx, Revisions_Table);
          Revision_No  : Positive := 1;
          Previous_Revision : Natural := 0;
          Cursor       : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Plans_Table, Project_Key (Stored.Project));
@@ -99,6 +70,11 @@ function Save
             begin
                Check (Status, "read persisted project reference");
                declare Payload : constant String := S (Project_Entity.Payload); begin
+                  Consume_Read_Row
+                    (S (Entity_Tables.Element (Cursor).Kind), S (Entity_Tables.Element (Cursor).State),
+                     S (Entity_Tables.Element (Cursor).Payload), "persisted plan");
+                  Consume_Read_Row
+                    (S (Project_Entity.Kind), S (Project_Entity.State), Payload, "persisted project");
                   if S (Project_Entity.Kind) /= S (Entity_Tables.Element (Cursor).Kind) or else
                     Positive'Value (Field (Payload, "quality_project_id")) /= Stored.Project.Id or else
                     Field (Payload, "name") /= To_String (Stored.Project.Name) or else
@@ -112,13 +88,11 @@ function Save
             declare Revisions : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Plan_Row);
             begin
                while Entity_Tables.Has_Element (Revisions) loop
-                  if History_Count >= Limits.Maximum_History then
-                     raise Data_Error with "plan revision history exceeds configured item limit";
-                  end if;
-                  History_Count := History_Count + 1;
+                  Consume_History (Budget, "plan revision history");
                   if Entity_Tables.Element (Revisions).Parent_Id = Plan_Row then
-                     Require_Text
-                       (S (Entity_Tables.Element (Revisions).Payload), "plan revision payload");
+                     Consume_Read_Row
+                       (S (Entity_Tables.Element (Revisions).Kind), S (Entity_Tables.Element (Revisions).State),
+                        S (Entity_Tables.Element (Revisions).Payload), "persisted plan revision");
                      Previous_Revision := Natural'Max
                        (Previous_Revision, Entity_Tables.Element (Revisions).Id);
                      Revision_No := Positive'Max
@@ -130,39 +104,68 @@ function Save
                end loop;
             end;
          else
-            Project_Row := Next_Id (Item, Tx, Projects_Table);
-            Plan_Row := Next_Id (Item, Tx, Plans_Table);
-            Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Projects_Table),
-                   (Project_Row, 0, WW (Project_Key (Stored.Project)), WW ("active"), WW
-                     (Pair ("name", To_String (Stored.Project.Name)) & LF &
-                      Pair ("path", To_String (Stored.Project.Path)) & LF &
-                      Pair ("quality_database", To_String (Stored.Project.Database_Id)) & LF &
-                      Pair ("quality_project_id", Number (Stored.Project.Id))),
-                    True, Projects_Table)), "store project");
-            Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Plans_Table),
-                   (Plan_Row, Project_Row, WW (Project_Key (Stored.Project)), WW ("active"), WW (""), True,
-                    Plans_Table)),
-                   "store plan");
+            Project_Row := Improve.Storage.Allocation.Next (Item, Tx, Projects_Table);
+            Plan_Row := Improve.Storage.Allocation.Next (Item, Tx, Plans_Table);
+            declare
+               Key : constant String := Project_Key (Stored.Project);
+               Payload : constant String :=
+                 Pair ("name", To_String (Stored.Project.Name)) & LF &
+                 Pair ("path", To_String (Stored.Project.Path)) & LF &
+                 Pair ("quality_database", To_String (Stored.Project.Database_Id)) & LF &
+                 Pair ("quality_project_id", Number (Stored.Project.Id));
+            begin
+               Consume_Write_Row (Key, "active", Payload, "project reference");
+               Consume_Write_Row (Key, "active", "", "plan");
+               Check
+                 (Entity_Tables.Insert
+                    (Tx, Item.DB, Item.Schemas (Projects_Table),
+                     (Project_Row, 0, WW (Key), WW ("active"), WW (Payload), True, Projects_Table)),
+                  "store project");
+               Check
+                 (Entity_Tables.Insert
+                    (Tx, Item.DB, Item.Schemas (Plans_Table),
+                     (Plan_Row, Project_Row, WW (Key), WW ("active"), WW (""), True, Plans_Table)),
+                  "store plan");
+            end;
          end if;
-         Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Baselines_Table),
-                (Baseline_Row, Project_Row, WW (Number (Stored.Baseline.Run_Id)), WW ("completed"),
-                 WW (Pair ("source", To_String (Stored.Baseline.Source_Id)) & LF &
-                     Pair ("policy", To_String (Stored.Baseline.Policy_Id)) & LF &
-                     Pair ("toolchain", To_String (Stored.Baseline.Toolchain_Id)) & LF &
-                     Pair ("assessment", To_String (Stored.Baseline.Evidence_Id)) & LF &
-                     Pair ("snapshot", To_String (Stored.Baseline.Snapshot_Id))), True, Baselines_Table)),
-                "store baseline");
          Stored.Plan_Id := To_Unbounded_String (Id_Image ("PLAN-", Plan_Row));
          Stored.Revision := Revision_No;
-         Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Revisions_Table),
-                (Revision_Row, Plan_Row, WW (To_String (Stored.Fingerprint)), WW (To_String (Stored.Review_Status)),
-                 WW (Revision_Payload (Stored, Baseline_Row, Revision_No)), True, Revisions_Table)),
-                "store plan revision");
+         declare
+            Baseline_Kind : constant String := Number (Stored.Baseline.Run_Id);
+            Baseline_Payload : constant String :=
+              Pair ("source", To_String (Stored.Baseline.Source_Id)) & LF &
+              Pair ("policy", To_String (Stored.Baseline.Policy_Id)) & LF &
+              Pair ("toolchain", To_String (Stored.Baseline.Toolchain_Id)) & LF &
+              Pair ("assessment", To_String (Stored.Baseline.Evidence_Id)) & LF &
+              Pair ("snapshot", To_String (Stored.Baseline.Snapshot_Id));
+            Revision_Kind : constant String := To_String (Stored.Fingerprint);
+            Revision_State : constant String := To_String (Stored.Review_Status);
+            Revision_Data : constant String := Revision_Payload (Stored, Baseline_Row, Revision_No);
+         begin
+            Consume_Write_Row (Baseline_Kind, "completed", Baseline_Payload, "assessment baseline");
+            Consume_Write_Row (Revision_Kind, Revision_State, Revision_Data, "plan revision");
+            Consume_History (Budget, "plan revision history");
+            Check
+              (Entity_Tables.Insert
+                 (Tx, Item.DB, Item.Schemas (Baselines_Table),
+                  (Baseline_Row, Project_Row, WW (Baseline_Kind), WW ("completed"),
+                   WW (Baseline_Payload), True, Baselines_Table)),
+               "store baseline");
+            Check
+              (Entity_Tables.Insert
+                 (Tx, Item.DB, Item.Schemas (Revisions_Table),
+                  (Revision_Row, Plan_Row, WW (Revision_Kind), WW (Revision_State),
+                   WW (Revision_Data), True, Revisions_Table)),
+               "store plan revision");
+         end;
          declare
             Finding_Row : Positive;
          begin
             for Finding of Stored.Findings loop
-               Finding_Row := Next_Id (Item, Tx, Findings_Table);
+               Finding_Row := Improve.Storage.Allocation.Next (Item, Tx, Findings_Table);
+               Consume_Write_Row
+                 (To_String (Finding.Fingerprint), Improve.Model.Image (Finding.Kind),
+                  Finding_Payload (Finding), "finding");
                Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Findings_Table),
                       (Finding_Row, Revision_Row, WW (To_String (Finding.Fingerprint)),
                        WW (Improve.Model.Image (Finding.Kind)), WW (Finding_Payload (Finding)), True, Findings_Table)),
@@ -171,120 +174,22 @@ function Save
          end;
          declare
             First_Task_Row : constant Positive :=
-              Reserve_Ids (Item, Tx, Tasks_Table, Natural (Stored.Tasks.Length));
+              (if Stored.Tasks.Is_Empty then 1
+               else Improve.Storage.Allocation.Reserve
+                 (Item, Tx, Tasks_Table, Positive (Stored.Tasks.Length)));
             Assigned_Ids : String_Id_Maps.Map;
             Previous_Tasks : String_Value_Maps.Map;
             Assigned_By_Original : String_Value_Maps.Map;
-
-            function Identity_Key
-              (Category, Title, Acceptance, Finding_Set : String) return String is
-              (Stable_Digest
-                 (Number (Category'Length) & ":" & Category & Number (Title'Length) & ":" & Title &
-                  Number (Acceptance'Length) & ":" & Acceptance & Number (Finding_Set'Length) & ":" & Finding_Set));
-
-            procedure Index_Previous_Tasks is
-               Tasks : Entity_Tables.Cursor;
-               Task_Count   : Natural := 0;
-               Detail_Count : Natural := 0;
-            begin
-               if Previous_Revision = 0 then
-                  return;
-               end if;
-               Tasks := Scan_Children (Item, Tx, Tasks_Table, Positive (Previous_Revision));
-               while Entity_Tables.Has_Element (Tasks) loop
-                  if Task_Count >= Limits.Maximum_Tasks then
-                     raise Data_Error with "previous plan revision exceeds configured task limit";
-                  end if;
-                  Task_Count := Task_Count + 1;
-                  declare
-                     Row        : constant Entity := Entity_Tables.Element (Tasks);
-                     Payload    : constant String := S (Row.Payload);
-                     Acceptance : Unbounded_String :=
-                       To_Unbounded_String (Field_Or (Payload, "acceptance", ""));
-                     Details    : Entity_Tables.Cursor :=
-                       Scan_Children (Item, Tx, Task_Details_Table, Row.Id);
-                     Seen_Details : String_Id_Maps.Map;
-                  begin
-                     Require_Text (Payload, "previous task payload");
-                     while Entity_Tables.Has_Element (Details) loop
-                        if Detail_Count >= Limits.Maximum_Task_Details then
-                           raise Data_Error with "previous plan revision exceeds configured task-detail limit";
-                        end if;
-                        Detail_Count := Detail_Count + 1;
-                        declare
-                           Detail : constant Entity := Entity_Tables.Element (Details);
-                           Name   : constant String := S (Detail.Kind);
-                        begin
-                           Require_Text (S (Detail.Payload), "previous task detail");
-                           if Seen_Details.Contains (Name) then
-                              raise Data_Error with "duplicate persisted task detail " & Name;
-                           end if;
-                           Seen_Details.Insert (Name, Detail.Id);
-                           if Length (Acceptance) = 0 and then Name = "acceptance" then
-                              Acceptance := To_Unbounded_String (S (Detail.Payload));
-                           end if;
-                        end;
-                        Advance_Children (Item, Tx, Task_Details_Table, Row.Id, Details);
-                     end loop;
-                     declare
-                        Key : constant String :=
-                          Identity_Key
-                            (S (Row.Kind), Field (Payload, "title"), To_String (Acceptance),
-                             Stored_Finding_Set (Payload));
-                     begin
-                        if not Previous_Tasks.Contains (Key) then
-                           Previous_Tasks.Insert (Key, To_Unbounded_String (Field (Payload, "draft_id")));
-                        end if;
-                     end;
-                  end;
-                  Advance_Children (Item, Tx, Tasks_Table, Positive (Previous_Revision), Tasks);
-               end loop;
-            end Index_Previous_Tasks;
-
-            function Previous_Task_Id
-              (Spec : Improve.Model.Task_Specification) return Ada.Strings.Unbounded.Unbounded_String is
-               Key : constant String :=
-                 Identity_Key
-                   (To_String (Spec.Category), To_String (Spec.Title), To_String (Spec.Acceptance),
-                    Stable_Digest (Pack (Spec.Finding_Keys)));
-            begin
-               if Previous_Tasks.Contains (Key) then
-                  return Previous_Tasks.Element (Key);
-               end if;
-               declare
-                  Legacy : Improve.Model.UString_Vectors.Vector;
-               begin
-                  for Link of Spec.Finding_Keys loop
-                     declare Matched : Boolean := False; begin
-                        for Finding of Stored.Findings loop
-                           if To_String (Link) = Improve.Model.Finding_Key (Finding) then
-                              Legacy.Append (Finding.Fingerprint);
-                              Matched := True;
-                              exit;
-                           end if;
-                        end loop;
-                        if not Matched then Legacy.Append (Link); end if;
-                     end;
-                  end loop;
-                  declare
-                     Legacy_Key : constant String :=
-                       Identity_Key
-                         (To_String (Spec.Category), To_String (Spec.Title), To_String (Spec.Acceptance),
-                          Stable_Digest (Pack (Legacy)));
-                  begin
-                     return
-                       (if Previous_Tasks.Contains (Legacy_Key) then Previous_Tasks.Element (Legacy_Key)
-                        else Null_Unbounded_String);
-                  end;
-               end;
-            end Previous_Task_Id;
          begin
-            Index_Previous_Tasks;
+            if not Stored.Tasks.Is_Empty then
+               Index_Previous_Tasks
+                 (Item, Tx, Previous_Revision, Limits, Read_Bytes, Previous_Tasks);
+            end if;
             for Index in 1 .. Natural (Stored.Tasks.Length) loop
                declare
                   Original : constant Ada.Strings.Unbounded.Unbounded_String := Stored.Tasks (Index).Id;
                   Prior : constant Ada.Strings.Unbounded.Unbounded_String :=
-                    Previous_Task_Id (Stored.Tasks (Index));
+                    Previous_Task_Id (Stored.Tasks (Index), Stored.Findings, Previous_Tasks);
                   Identity : constant Ada.Strings.Unbounded.Unbounded_String :=
                     (if Length (Prior) > 0 and then not Assigned_Ids.Contains (To_String (Prior)) then Prior
                      else To_Unbounded_String (Id_Image ("IMP-", First_Task_Row + Index - 1)));
@@ -313,24 +218,34 @@ function Save
                   end loop;
                   Persisted.Dependencies := Translated;
                   Stored.Tasks.Replace_Element (Index, Persisted);
+                  Consume_Write_Row
+                    (To_String (Persisted.Category), Improve.Model.Image (Persisted.Kind),
+                     Task_Payload (Persisted), "task");
                   Check (Entity_Tables.Insert (Tx, Item.DB, Item.Schemas (Tasks_Table),
                          (Task_Row, Revision_Row, WW (To_String (Persisted.Category)),
                           WW (Improve.Model.Image (Persisted.Kind)), WW (Task_Payload (Persisted)), True, Tasks_Table)),
                          "store task");
-                  Check
-                    (Entity_Tables.Insert
-                       (Tx, Item.DB, Item.Schemas (Task_Identities_Table),
-                        (Next_Id (Item, Tx, Task_Identities_Table), Revision_Row,
-                         WW (To_String (Persisted.Id)), WW ("active"),
-                         WW (Pair ("task_row", Number (Task_Row))), True, Task_Identities_Table)),
-                     "index task identity");
+                  declare
+                     Identity : constant String := To_String (Persisted.Id);
+                     Payload  : constant String := Pair ("task_row", Number (Task_Row));
+                  begin
+                     Consume_Write_Row (Identity, "active", Payload, "task identity index");
+                     Check
+                       (Entity_Tables.Insert
+                          (Tx, Item.DB, Item.Schemas (Task_Identities_Table),
+                           (Improve.Storage.Allocation.Next (Item, Tx, Task_Identities_Table), Revision_Row,
+                            WW (Identity), WW ("active"), WW (Payload), True, Task_Identities_Table)),
+                        "index task identity");
+                  end;
                   declare
                      procedure Add_Detail (Name, Value : String) is
                      begin
+                        Consume_Write_Row (Name, "value", Value, "task detail");
                         Check
                           (Entity_Tables.Insert
                              (Tx, Item.DB, Item.Schemas (Task_Details_Table),
-                              (Next_Id (Item, Tx, Task_Details_Table), Task_Row, WW (Name), WW ("value"),
+                              (Improve.Storage.Allocation.Next (Item, Tx, Task_Details_Table), Task_Row,
+                               WW (Name), WW ("value"),
                                WW (Value), True, Task_Details_Table)),
                            "store task detail");
                      end Add_Detail;
@@ -344,18 +259,21 @@ function Save
                      Add_Detail ("verification", To_String (Persisted.Verification));
                   end;
                   for Key of Persisted.Finding_Keys loop
+                     Consume_Write_Row (To_String (Key), "linked", "", "task finding link");
                      Check
                        (Entity_Tables.Insert
                           (Tx, Item.DB, Item.Schemas (Task_Findings_Table),
-                           (Next_Id (Item, Tx, Task_Findings_Table), Task_Row, WW (To_String (Key)),
+                           (Improve.Storage.Allocation.Next (Item, Tx, Task_Findings_Table), Task_Row,
+                            WW (To_String (Key)),
                             WW ("linked"), WW (""), True, Task_Findings_Table)),
                         "store task finding link");
                   end loop;
                   for Dependency of Persisted.Dependencies loop
+                     Consume_Write_Row (To_String (Dependency), "required", "", "task dependency link");
                      Check
                        (Entity_Tables.Insert
                           (Tx, Item.DB, Item.Schemas (Task_Dependencies_Table),
-                           (Next_Id (Item, Tx, Task_Dependencies_Table), Task_Row,
+                           (Improve.Storage.Allocation.Next (Item, Tx, Task_Dependencies_Table), Task_Row,
                             WW (To_String (Dependency)), WW ("required"), WW (""), True,
                             Task_Dependencies_Table)),
                         "store task dependency");
@@ -364,10 +282,7 @@ function Save
             end loop;
          end;
       end;
-      Database.Transactions.Commit (Tx);
+      Improve.Storage.Allocation.Flush (Item, Tx);
+      Commit_Transaction (Tx, "commit plan revision");
       return (Plan => Stored, Existing => False);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         raise;
    end Save;

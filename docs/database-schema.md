@@ -1,6 +1,6 @@
 # Improve state schema
 
-Improve owns schema version 6 of its state database. It uses the existing `database` crate and its typed rows,
+Improve owns schema version 7 of its state database. It uses the existing `database` crate and its typed rows,
 transactions, write-ahead recovery, process locking, and read-only open mode. Ada Quality and model runner state are
 never stored here.
 
@@ -41,6 +41,13 @@ revision is returned instead of inserting duplicate work.
 Plan identities use `PLAN-NNNNNN`; task identities use `IMP-NNNNNN`. Draft dependency identities are translated to the
 persisted task identities before rows are inserted. Historical evidence is never updated or deleted by plan creation.
 
+Schema version 7 stores one logical identity counter for each writable namespace. A write transaction reserves IDs in
+memory and flushes each affected counter exactly once before commit. Counter updates therefore roll back with their
+owning records, survive process restarts, and cannot be reused by a later writable handle. Migration initializes each
+counter from a scan bounded by the dedicated migration-row budget; normal writes then use the transactional counter as
+the single allocation authority. The migration budget is independent of per-operation history materialization and can
+be raised to cover the complete representable state database.
+
 When a newer immutable revision contains the same task category, title, acceptance contract, and exact finding set as
 the immediately preceding revision, it reuses that task's logical `IMP-NNNNNN` identity. The new revision still gets a
 new physical task row and remains immutable. Changed or newly introduced work receives a new logical identity. This
@@ -66,12 +73,15 @@ project records retain the immutable plan fingerprint. Thus two revisions can be
 without conflicting, while an identical evaluation remains idempotent.
 
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
-perform recovery. Writable open initializes a missing version-5 database and upgrades older supported state before
+perform recovery. Writable open initializes a missing version-7 database and upgrades older supported state before
 writing. The version-3 migration backfills indexed plan parents for publication and verification records; the version-4
 migration builds the logical-task history index. Version 5 links plans and baselines to database-qualified local
 project references and validates duplicated provenance so
 normal plan-scoped access does not scan their complete history. Read-only access remains compatible with older state
 without migrating it. Missing or unknown schema metadata is rejected rather than guessed.
+
+Version 6 adds the persistent state-store UUID used for harness publication provenance. Version 7 initializes durable
+logical identity counters from the greatest existing identity in each namespace.
 
 Version-5 migration bounds plan count, revision count, and payload size before updating data. Summary and full-plan
 reads use the same normalized project and baseline relationships; duplicated revision provenance remains an audited
@@ -88,16 +98,19 @@ Publication and verification readers revalidate the stored plan revision and exa
 records. A payload with a valid plan identity but an unknown revision or mismatched contract is rejected as corrupt.
 
 Mandatory review approval is an append-only `operations` event keyed by stable plan identity and exact revision. The
-event also stores the immutable revision fingerprint. Publication accepts the approval only when all three values
-match, so a subsequent revision requires a separate approval even when some logical task identities are retained.
+event stores both the immutable semantic revision fingerprint and a canonical digest of the complete persisted plan.
+Publication accepts the approval only when the identity, revision, and both fingerprints match. A subsequent revision
+or altered creation timestamp, finding, task, detail, or association row therefore requires separate approval. The
+current `plan-content-sha256-v2` digest includes creation chronology; earlier content-digest versions fail closed and
+require renewed approval.
 
 ## Publication operation journal
 
 Before a non-preview publication opens the harness store, Improve verifies exact-revision approval and appends a
-`started` operation containing the plan identity, immutable revision, fingerprint, resolved native task kind, and exact
-ordered task identities. Its stable key combines the revision, task kind, and task selection, so retrying the same
-authorization reuses the entry. After the harness transaction commits, Improve records the native task mappings and
-appends a `completed` child entry in its own transaction.
+`started` operation containing the plan identity, immutable revision, semantic and persisted-content fingerprints,
+resolved native task kind, and exact ordered task identities. Its stable key combines the content, revision, task kind,
+and task selection, so retrying the same authorization reuses the entry. After the harness transaction commits,
+Improve records the native task mappings and appends a `completed` child entry in its own transaction.
 
 The two databases are deliberately not treated as one atomic store. If the process stops between those commits,
 `recover` reads the unmatched `started` entry and republishes through model_runner's origin-aware idempotency contract.
@@ -106,6 +119,7 @@ interpreted as pending publications. Plan persistence does not write into the pu
 completion matching uses both the operation key and explicit parent identity.
 
 Configured persistence limits apply consistently to full loads, summaries, migrations, contract validation, and
-history reads and writes. Schema migration is bounded by the same limits supplied when writable state is opened.
+history reads and writes. Every row-scanning schema migration uses the dedicated migration budget supplied when
+writable state is opened, rather than treating a database-wide scan as a history query.
 Entity-specific typed codecs own publication, verification, approval, and publication-operation payloads. Writers
 validate the complete encoded payload before committing it, and readers enforce the same byte contract while decoding.

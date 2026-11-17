@@ -21,7 +21,7 @@ begin
          end loop;
          if Current_Mappings.Contains (To_String (Spec.Id)) then
             declare
-               Mapping : Improve.Storage.Publication_Record renames
+               Mapping : Improve.State.Publication_Record renames
                  Existing (Current_Mappings.Element (To_String (Spec.Id)));
             begin
                declare

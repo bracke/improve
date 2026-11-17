@@ -1,19 +1,19 @@
 with Ada.Exceptions;
+with Ada.Real_Time;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
-with Ada_Quality.Reporting;
 with Improve.CLI;
 with Improve.Config;
 with Improve.Presentation;
-with Improve.Recovery;
-with Improve.Storage;
+with Improve.Presentation.Testing;
+with Improve.Results;
+with Improve.State;
 with Improve.Tasks;
-with Improve.Verification;
-with Improve.Workflow;
 with Project_Tools.Files;
+with Terminal_Styles;
 
 package body Improve_CLI_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -21,11 +21,12 @@ package body Improve_CLI_Test_Suite is
    use type Improve.CLI.Command_Kind;
    use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
+   use type Terminal_Styles.Color_Policy;
 
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
-      JSON_Disables_Color, Terminal_Text_Sanitized, Help_Smoke, Version_Smoke, Quiet_Smoke,
-      Verbose_Smoke, Config_Smoke, Invalid_Smoke);
+      JSON_Disables_Color, Terminal_Text_Sanitized, Styling_Concurrency, Help_Smoke, Version_Smoke,
+      Quiet_Smoke, Verbose_Smoke, Config_Smoke, Invalid_Smoke);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -69,6 +70,139 @@ package body Improve_CLI_Test_Suite is
       Assert (Rejected, "expected rejection containing '" & Expected & "'");
    end Must_Reject;
 
+   procedure Check_Styling_Concurrency is
+      protected type Start_Gate is
+         procedure Open;
+         entry Wait;
+      private
+         Ready : Boolean := False;
+      end Start_Gate;
+
+      protected body Start_Gate is
+         procedure Open is
+         begin
+            Ready := True;
+         end Open;
+
+         entry Wait when Ready is
+         begin
+            null;
+         end Wait;
+      end Start_Gate;
+
+      protected type Completion is
+         procedure Set (Value : Boolean; Detail : String := "");
+         entry Wait (Value : out Boolean; Detail : out Unbounded_String);
+      private
+         Done    : Boolean := False;
+         Success : Boolean := False;
+         Message : Unbounded_String;
+      end Completion;
+
+      protected body Completion is
+         procedure Set (Value : Boolean; Detail : String := "") is
+         begin
+            Success := Value;
+            Message := To_Unbounded_String (Detail);
+            Done := True;
+         end Set;
+
+         entry Wait (Value : out Boolean; Detail : out Unbounded_String) when Done is
+         begin
+            Value := Success;
+            Detail := Message;
+         end Wait;
+      end Completion;
+
+      procedure Exercise
+        (Arguments            : String;
+         Should_Wait_For_Lock : Boolean;
+         Label                : String) is
+         Start    : Start_Gate;
+         Finished : Completion;
+         Completed  : Boolean := False;
+         Successful : Boolean := False;
+         Failure    : Unbounded_String;
+
+         task Worker;
+
+         task body Worker is
+            Result : Improve.CLI.Outcome;
+         begin
+            Start.Wait;
+            Result := Improve.CLI.Execute (Args (Arguments));
+            Finished.Set (Result.Exit_Code = 0);
+         exception
+            when Error : others =>
+               Finished.Set (False, Ada.Exceptions.Exception_Information (Error));
+         end Worker;
+
+         procedure Await_Worker is
+         begin
+            Completed := False;
+            select
+               Finished.Wait (Successful, Failure);
+               Completed := True;
+            or
+               delay 2.0;
+            end select;
+            if not Completed then
+               abort Worker;
+            end if;
+            Assert (Completed, Label & " worker did not complete");
+         end Await_Worker;
+
+         Previous : constant Terminal_Styles.Color_Policy :=
+           Terminal_Styles.Current_Color_Policy;
+      begin
+         declare
+            Style : Improve.Presentation.Styling_Scope :=
+              Improve.Presentation.Configure
+                (Improve.Config.Terminal_Format, Improve.Config.Color_Always);
+            pragma Unreferenced (Style);
+         begin
+            Start.Open;
+            if Should_Wait_For_Lock then
+               declare
+                  use type Ada.Real_Time.Time;
+                  Deadline : constant Ada.Real_Time.Time :=
+                    Ada.Real_Time.Clock + Ada.Real_Time.To_Time_Span (2.0);
+               begin
+                  while Improve.Presentation.Testing.Waiting_Tasks = 0
+                    and then Ada.Real_Time.Clock < Deadline
+                  loop
+                     delay 0.001;
+                  end loop;
+                  if Improve.Presentation.Testing.Waiting_Tasks = 0 then
+                     abort Worker;
+                  end if;
+                  Assert
+                    (Improve.Presentation.Testing.Waiting_Tasks > 0,
+                     Label & " did not reach the terminal-style lock");
+               end;
+            else
+               Await_Worker;
+            end if;
+            Assert
+              (Terminal_Styles.Current_Color_Policy = Terminal_Styles.Color_Always,
+               Label & " changed another task's active terminal policy");
+         end;
+         if Should_Wait_For_Lock then
+            Await_Worker;
+         end if;
+         Assert
+           (Successful,
+            Label & " execution failed" &
+              (if Length (Failure) = 0 then "" else ": " & To_String (Failure)));
+         Assert
+           (Terminal_Styles.Current_Color_Policy = Previous,
+            Label & " did not restore the terminal policy");
+      end Exercise;
+   begin
+      Exercise ("version|--format|json", False, "JSON rendering");
+      Exercise ("config|--format|terminal|--color|never", True, "terminal rendering");
+   end Check_Styling_Concurrency;
+
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
       case Item.Id is
@@ -110,10 +244,10 @@ package body Improve_CLI_Test_Suite is
                Unicode_Safe : constant String := Improve.Presentation.Safe_Text (Unicode_Unsafe);
                Invalid_UTF8_Safe : constant String :=
                  Improve.Presentation.Safe_Text ("raw" & Character'Val (16#9B#) & "control");
-               Publications : constant Improve.Workflow.Publication_Result := (others => <>);
-               Recovery     : constant Improve.Recovery.Recovery_Report :=
+               Publications : constant Improve.Results.Publication_Result := (others => <>);
+               Recovery     : constant Improve.Results.Recovery_Result :=
                  (Operations_Recovered => 1, Tasks_Recovered => 2);
-               Verification : constant Improve.Verification.Report :=
+               Verification : constant Improve.Results.Verification_Report :=
                  (Plan_Id          => To_Unbounded_String ("PLAN-000001"),
                   Baseline_Run     => 1,
                   Verification_Run => 2,
@@ -132,9 +266,9 @@ package body Improve_CLI_Test_Suite is
                     (Invalid_UTF8_Safe, String'(1 => Character'Val (16#9B#))) = 0,
                   "terminal sanitizer retained an invalid encoded control byte");
                Assert
-                 (Improve.Presentation.Projects (Ada_Quality.Reporting.Project_Vectors.Empty_Vector)'Length > 0
+                 (Improve.Presentation.Projects (Improve.Results.Project_Vectors.Empty_Vector)'Length > 0
                   and then
-                  Improve.Presentation.Plans (Improve.Storage.Summary_Vectors.Empty_Vector)'Length > 0 and then
+                  Improve.Presentation.Plans (Improve.State.Summary_Vectors.Empty_Vector)'Length > 0 and then
                   Improve.Presentation.Tasks (Improve.Tasks.View_Vectors.Empty_Vector)'Length > 0 and then
                   Improve.Presentation.Status (Improve.Tasks.Status_Vectors.Empty_Vector) = "" and then
                   Improve.Presentation.Publication ("PLAN-000001", Publications, True)'Length > 0 and then
@@ -142,6 +276,8 @@ package body Improve_CLI_Test_Suite is
                   Improve.Presentation.Verification ("PLAN-000001", Verification, "refresh")'Length > 0,
                   "terminal empty-state rendering failed");
             end;
+         when Styling_Concurrency =>
+            Check_Styling_Concurrency;
          when Help_Smoke =>
             declare
                Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("help"));

@@ -96,7 +96,7 @@ begin
                        "repeated apply did not recover by stable origin: " & To_String (Retry_Result.Errors));
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => False);
-                  declare Mappings : constant Improve.Storage.Publication_Vectors.Vector :=
+                  declare Mappings : constant Improve.State.Publication_Vectors.Vector :=
                     Improve.Storage.Publications (Improve_State, "PLAN-000001");
                   begin
                      Assert (Mappings.Length = 3, "publication mappings were not persisted exactly once");
@@ -191,7 +191,7 @@ begin
                Draft      : Improve.Model.Plan_Revision := Draft_For (Data);
                Published  : Improve.Workflow.Publication_Result;
                Republished : Improve.Workflow.Publication_Result;
-               Mappings   : Improve.Storage.Publication_Vectors.Vector;
+               Mappings   : Improve.State.Publication_Vectors.Vector;
                Harness    : Stores.Store;
                Recovery   : Stores.Recovery_Report;
                Status     : Errors.Error_Info;
@@ -219,7 +219,7 @@ begin
                   First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
                         Value.State, First.Plan.Revision));
                end loop;
@@ -281,10 +281,10 @@ begin
                      "normal work selection retained both predecessor and replacement");
                end;
                Stores.Close (Harness);
-               declare Replacement_Mappings : Improve.Storage.Publication_Vectors.Vector; begin
+               declare Replacement_Mappings : Improve.State.Publication_Vectors.Vector; begin
                   for Value of Republished.Tasks loop
                      Replacement_Mappings.Append
-                       (Improve.Storage.Publication_Record'
+                       (Improve.State.Publication_Record'
                           (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
                            Value.State, Second.Plan.Revision));
                   end loop;
@@ -328,7 +328,7 @@ begin
                      "status JSON selected the obsolete native contract mapping");
                   declare
                      Improve_State : Improve.Storage.Store;
-                     History       : Improve.Storage.Publication_Vectors.Vector;
+                     History       : Improve.State.Publication_Vectors.Vector;
                      Old_State     : Unbounded_String;
                   begin
                      Improve.Storage.Open (Improve_State, State, Writable => False);

@@ -1,6 +1,6 @@
 with Improve.Config;
 with Improve.Model;
-with Improve.Verification;
+with Improve.Results;
 
 --  Assessment-scoped verification selection and persistence.
 package Improve.Operations.Verification is
@@ -8,7 +8,7 @@ package Improve.Operations.Verification is
 
    type Result is record
       Plan   : Improve.Model.Plan_Revision;
-      Report : Improve.Verification.Report;
+      Report : Improve.Results.Verification_Report;
    end record;
    --  Exact plan and assessment comparison produced by verification.
    --  @field Plan Immutable plan revision whose contract was evaluated.

@@ -3,13 +3,13 @@ procedure Record_Publications
   (Item    : in out Store;
    Plan_Id : String;
    Values  : Publication_Vectors.Vector;
-   Limits  : Read_Limits := Default_Read_Limits) is
+   Limits  : Persistence_Limits := Default_Persistence_Limits) is
    Tx     : Database.Transactions.Transaction;
    Row_Id : Positive;
    Stored : String_Value_Maps.Map;
    Contracts : String_Value_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
-   History_Count : Natural := 0;
+   Budget : History_Budget := New_History_Budget (Limits);
 
    function Mapping_Key (Task_Id, Contract : String) return String is
      (Task_Id & Character'Val (0) & Contract);
@@ -20,7 +20,8 @@ begin
       raise Data_Error with "publication recording exceeds configured task limit";
    end if;
    for Value of Values loop
-      Cache_Contracts (Item, Plan_Id, Value.Plan_Revision, Limits, Contracts);
+      Cache_Contracts
+        (Item, Plan_Id, Value.Plan_Revision, Limits, Budget, Contracts);
       declare
          Key : constant String :=
            Contract_Key (Plan_Id, Value.Plan_Revision, To_String (Value.Improve_Task_Id));
@@ -34,13 +35,11 @@ begin
          end if;
       end;
    end loop;
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
+   Improve.Storage.Allocation.Begin_Transaction (Item);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
-         if History_Count >= Limits.Maximum_History then
-            raise Data_Error with "publication history exceeds configured item limit";
-         end if;
-         History_Count := History_Count + 1;
+         Consume_History (Budget, "publication history");
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
@@ -82,11 +81,9 @@ begin
             raise Data_Error with "published task identity is already mapped to unrelated work";
          end if;
          if not Existing then
-            if History_Count >= Limits.Maximum_History then
-               raise Data_Error with "publication history exceeds configured item limit";
-            end if;
+            Consume_History (Budget, "publication history");
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
-            Row_Id := Next_Id (Item, Tx, Publications_Table);
+            Row_Id := Improve.Storage.Allocation.Next (Item, Tx, Publications_Table);
             Check
               (Entity_Tables.Insert
                  (Tx, Item.DB, Item.Schemas (Publications_Table),
@@ -94,13 +91,9 @@ begin
                    WW (Payload), True, Publications_Table)),
                "record publication mapping");
             Stored.Insert (Key, To_Unbounded_String (Expected));
-            History_Count := History_Count + 1;
          end if;
       end;
    end loop;
-   Database.Transactions.Commit (Tx);
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
+   Improve.Storage.Allocation.Flush (Item, Tx);
+   Commit_Transaction (Tx, "commit publication records");
 end Record_Publications;

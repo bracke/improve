@@ -1,6 +1,5 @@
-with Ada.Containers.Vectors;
-with Ada.Strings.Unbounded;
 with Improve.Model;
+with Improve.Results;
 with Improve.Source;
 
 --  Independent comparison of remediation intent with completed measurements.
@@ -23,46 +22,11 @@ package Improve.Verification is
    --  @field Require_Same_Toolchain Whether toolchain identity must match.
    --  @field Require_No_New_Critical_Findings Whether unrelated critical findings cause regression.
 
-   type Task_Result is record
-      Task_Id     : Ada.Strings.Unbounded.Unbounded_String;
-      Outcome     : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
-      Matched     : Natural := 0;
-      Total       : Natural := 0;
-      Explanation : Ada.Strings.Unbounded.Unbounded_String;
-   end record;
-   --  Verification conclusion for one Improve task.
-   --  @field Task_Id Stable Improve task identity.
-   --  @field Outcome Independent quality outcome.
-   --  @field Matched Associated findings matched in current evidence.
-   --  @field Total Mandatory associated findings.
-   --  @field Explanation Evidence-based conclusion.
+   subtype Task_Result is Improve.Results.Verification_Task_Result;
+   --  Application-result verification conclusion for one Improve task.
 
-   package Result_Vectors is new Ada.Containers.Vectors (Positive, Task_Result);
-   --  Ordered task verification results.
-
-   type Report is record
-      Plan_Id          : Ada.Strings.Unbounded.Unbounded_String;
-      Baseline_Run     : Positive;
-      Verification_Run : Positive;
-      Outcome          : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
-      Plan_Outcome     : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
-      Project_Outcome  : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
-      Comparable       : Boolean := False;
-      New_Critical     : Natural := 0;
-      Explanation      : Ada.Strings.Unbounded.Unbounded_String;
-      Tasks            : Result_Vectors.Vector;
-   end record;
-   --  Verification report for a plan or selected task.
-   --  @field Plan_Id Stable plan identity.
-   --  @field Baseline_Run Original assessment identity.
-   --  @field Verification_Run Current completed assessment identity.
-   --  @field Outcome Aggregate quality outcome.
-   --  @field Plan_Outcome Complete plan outcome, or unverified for task-only evaluation.
-   --  @field Project_Outcome Complete assessment outcome, or unverified for task-only evaluation.
-   --  @field Comparable Whether the evidence can establish an outcome.
-   --  @field New_Critical New unrelated critical findings.
-   --  @field Explanation Comparability and outcome explanation.
-   --  @field Tasks Per-task conclusions.
+   subtype Report is Improve.Results.Verification_Report;
+   --  Application-result verification report for a plan or selected task.
 
    function Evaluate
      (Plan     : Improve.Model.Plan_Revision;

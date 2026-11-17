@@ -78,5 +78,7 @@ package body Improve.Persistence_Validation is
      (Value : Improve.Persistence_Records.Publication_Operation_Data) return String is
      ("publish:" & To_String (Value.Plan_Id) & ":" & Number (Value.Revision) & ":" &
       Stable_Digest
-        (To_String (Value.Task_Kind) & Character'Val (0) & Pack (Value.Task_Ids)));
+        ((if Length (Value.Content_Fingerprint) = 0 then ""
+          else To_String (Value.Content_Fingerprint) & Character'Val (0)) &
+         To_String (Value.Task_Kind) & Character'Val (0) & Pack (Value.Task_Ids)));
 end Improve.Persistence_Validation;

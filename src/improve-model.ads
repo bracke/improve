@@ -226,6 +226,11 @@ package Improve.Model is
    --  @field Fingerprint Deterministic revision identity.
    --  @field Review_Status Review state.
 
+   function Plan_Content_Fingerprint (Item : Plan_Revision) return String;
+   --  Fingerprint the complete persisted remediation content independently of its semantic revision identity.
+   --  @param Item Persisted or publication-bound plan revision.
+   --  @return Stable content fingerprint covering provenance, findings, task identities, and task contracts.
+
    procedure Validate (Plan : Plan_Revision);
    --  Validate the complete remediation graph and every task-to-finding relationship.
    --  @param Plan Plan revision to validate at a trust boundary.

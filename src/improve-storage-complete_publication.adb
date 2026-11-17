@@ -2,17 +2,19 @@ separate (Improve.Storage)
 procedure Complete_Publication
   (Item         : in out Store;
    Operation_Id : Positive;
-   Limits       : Read_Limits := Default_Read_Limits) is
+   Limits       : Persistence_Limits := Default_Persistence_Limits) is
    Tx      : Database.Transactions.Transaction;
    Started : Entity;
    Found   : Boolean := False;
+   Completion_Found : Boolean := False;
    Row_Id  : Positive;
-   History_Count : Natural := 0;
+   Budget : History_Budget := New_History_Budget (Limits);
 begin
    if not Item.Opened or else not Item.Writable then
       raise Data_Error with "Improve state is not open for publication completion";
    end if;
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
+   Improve.Storage.Allocation.Begin_Transaction (Item);
    declare
       Status : constant Database.Status.Result :=
         Entity_Tables.Find
@@ -20,6 +22,7 @@ begin
            Physical_Key (Operations_Table, Operation_Id), Started);
    begin
       if Database.Status.Is_Ok (Status) and then S (Started.State) = "started" then
+         Consume_History (Budget, "publication operation history");
          Require_Payload_Limit
            (S (Started.Payload), Limits, "publication operation payload");
          declare
@@ -40,38 +43,33 @@ begin
       end if;
    end;
    if not Found then raise Data_Error with "unknown publication operation"; end if;
-   declare Ends : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Operations_Table, S (Started.Kind)); begin
+   declare Ends : Entity_Tables.Cursor := Scan_Children (Item, Tx, Operations_Table, Operation_Id); begin
       while Entity_Tables.Has_Element (Ends) loop
+         Consume_History (Budget, "publication completion history");
          declare Completion : constant Entity := Entity_Tables.Element (Ends); begin
-            if Completion.Parent_Id = Operation_Id and then
-              S (Completion.State) = "completed"
-            then
-               if History_Count >= Limits.Maximum_History then
-                  raise Data_Error with "publication completion history exceeds configured item limit";
-               end if;
-               History_Count := History_Count + 1;
-               if S (Completion.Payload) /= S (Started.Payload) then
-                  raise Data_Error with "publication completion does not match its operation";
-               end if;
-               Database.Transactions.Rollback (Tx);
-               return;
+            if S (Completion.Kind) /= S (Started.Kind) or else S (Completion.State) /= "completed" then
+               raise Data_Error with "publication completion identity is inconsistent";
+            elsif S (Completion.Payload) /= S (Started.Payload) then
+               raise Data_Error with "publication completion does not match its operation";
+            elsif Completion_Found then
+               raise Data_Error with "duplicate publication completion";
             end if;
+            Completion_Found := True;
          end;
-         Advance_Kind (Item, Tx, Operations_Table, S (Started.Kind), Ends);
+         Advance_Children (Item, Tx, Operations_Table, Operation_Id, Ends);
       end loop;
    end;
-   if History_Count >= Limits.Maximum_History then
-      raise Data_Error with "publication completion history exceeds configured item limit";
+   if Completion_Found then
+      Rollback_Transaction (Tx, "finish existing publication completion lookup");
+      return;
    end if;
-   Row_Id := Next_Id (Item, Tx, Operations_Table);
+   Consume_History (Budget, "publication completion history");
+   Row_Id := Improve.Storage.Allocation.Next (Item, Tx, Operations_Table);
    Check
      (Entity_Tables.Insert
         (Tx, Item.DB, Item.Schemas (Operations_Table),
          (Row_Id, Operation_Id, Started.Kind, WW ("completed"), Started.Payload, True, Operations_Table)),
       "journal publication completion");
-   Database.Transactions.Commit (Tx);
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
+   Improve.Storage.Allocation.Flush (Item, Tx);
+   Commit_Transaction (Tx, "commit publication completion");
 end Complete_Publication;

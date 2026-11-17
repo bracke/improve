@@ -1,128 +1,34 @@
 with Ada.Calendar;
+with Ada.Containers.Doubly_Linked_Lists;
+with Ada.Containers.Vectors;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
 with Ada.Strings.Hash;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada_Quality.Types;
 with Database.Predicates;
-with Database.Rows;
 with Database.Status;
-with Database.Tables;
+with Database.Storage.File_IO;
 with Database.Transactions;
-with Database.Types;
 with Database.UUIDs;
 with Database.Values;
+with Database.WAL;
 with Improve.Persistence_Records;
 with Improve.Persistence_Validation;
+with Improve.Storage.Allocation;
 with Improve.Storage_Codec;
-with Interfaces;
+with Improve.Storage_Values;
 
 package body Improve.Storage is
    use Ada.Strings.Unbounded;
    use Ada.Strings.Wide_Wide_Unbounded;
    use Improve.Storage_Codec;
+   use Improve.Storage_Values;
+   use Improve.Persistence_Schema;
    use type Ada.Containers.Count_Type;
    use type Database.Status_Code;
    use type Database.Predicates.Predicate;
    LF : constant Character := Character'Val (10);
-   Schema_Metadata_Table     : constant Positive := 1;
-   Projects_Table            : constant Positive := 2;
-   Baselines_Table           : constant Positive := 3;
-   Findings_Table            : constant Positive := 4;
-   Plans_Table               : constant Positive := 5;
-   Revisions_Table           : constant Positive := 6;
-   Tasks_Table               : constant Positive := 7;
-   Task_Findings_Table       : constant Positive := 8;
-   Task_Dependencies_Table   : constant Positive := 9;
-   Publications_Table        : constant Positive := 10;
-   Verifications_Table       : constant Positive := 11;
-   Operations_Table          : constant Positive := 12;
-   Task_Details_Table        : constant Positive := 13;
-   Task_Identities_Table     : constant Positive := 14;
-   Namespace_Stride          : constant Positive := 100_000_000;
-   Maximum_Logical_Id        : constant Positive := Namespace_Stride;
-
-   Table_Names : constant array (Positive range 1 .. Logical_Table_Count) of access constant Wide_Wide_String :=
-     [new Wide_Wide_String'("schema_metadata"), new Wide_Wide_String'("projects"),
-      new Wide_Wide_String'("assessment_baselines"), new Wide_Wide_String'("finding_references"),
-      new Wide_Wide_String'("plans"), new Wide_Wide_String'("plan_revisions"),
-      new Wide_Wide_String'("remediation_tasks"), new Wide_Wide_String'("task_finding_links"),
-      new Wide_Wide_String'("task_dependencies"), new Wide_Wide_String'("publications"),
-      new Wide_Wide_String'("verification_records"), new Wide_Wide_String'("operations"),
-      new Wide_Wide_String'("task_details"), new Wide_Wide_String'("task_identities")];
-
-   function Logical_Table_List return String is
-      Result : Unbounded_String;
-   begin
-      for Table in Table_Names'Range loop
-         if Table > Table_Names'First then Append (Result, ","); end if;
-         Append (Result, Decode (Table_Names (Table).all));
-      end loop;
-      return To_String (Result);
-   end Logical_Table_List;
-
-   type Entity is record
-      Id        : Positive;
-      Parent_Id : Natural := 0;
-      Kind      : Unbounded_Wide_Wide_String;
-      State     : Unbounded_Wide_Wide_String;
-      Payload   : Unbounded_Wide_Wide_String;
-      Active    : Boolean := True;
-      Table_Id  : Positive := 1;
-   end record;
-
-   function Physical_Key (Table, Id : Positive) return Positive is
-   begin
-      if Table > Logical_Table_Count then
-         raise Data_Error with "stored namespace identity is outside the Improve schema";
-      elsif Id > Maximum_Logical_Id then
-         raise Data_Error with "Improve logical identity space is exhausted";
-      end if;
-      return (Table - 1) * Namespace_Stride + Id;
-   end Physical_Key;
-
-   function To_Row (Item : Entity) return Database.Rows.Row is
-      Result : Database.Rows.Row;
-   begin
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Physical_Key (Item.Table_Id, Item.Id))));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Item.Table_Id)));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Item.Id)));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Item.Parent_Id)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Item.Kind)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Item.State)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Item.Payload)));
-      Database.Rows.Append (Result, Database.Values.From_Boolean (Item.Active));
-      return Result;
-   end To_Row;
-
-   function From_Row (Row : Database.Rows.Row) return Entity is
-      Stored_Key : constant Positive := Positive (Database.Rows.Get (Row, 0).Int);
-      Table      : constant Positive := Positive (Database.Rows.Get (Row, 1).Int);
-      Id         : constant Positive := Positive (Database.Rows.Get (Row, 2).Int);
-   begin
-      if Stored_Key /= Physical_Key (Table, Id) then
-         raise Data_Error with "stored Improve physical identity is inconsistent";
-      end if;
-      return
-        (Id        => Id,
-         Parent_Id => Natural (Database.Rows.Get (Row, 3).Int),
-         Kind      => Database.Rows.Get (Row, 4).Text,
-         State     => Database.Rows.Get (Row, 5).Text,
-         Payload   => Database.Rows.Get (Row, 6).Text,
-         Active    => Database.Rows.Get (Row, 7).Bool,
-         Table_Id  => Table);
-   exception
-      when Constraint_Error =>
-         raise Data_Error with "stored Improve physical identity is malformed";
-   end From_Row;
-
-   function Key_Of (Item : Entity) return Positive is (Physical_Key (Item.Table_Id, Item.Id));
-   function Key_Value (Key : Positive) return Database.Values.Value is
-     (Database.Values.From_Integer (Integer (Key)));
-
-   package Entity_Tables is new Database.Tables.Typed
-     (Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
-
    package String_Id_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (Key_Type => String, Element_Type => Positive, Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
 
@@ -132,20 +38,17 @@ package body Improve.Storage is
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
 
-   function New_Schema (Name : Wide_Wide_String) return Database.Schema.Table_Schema is
-      Result : Database.Schema.Table_Schema;
-   begin
-      Result.Name := To_Unbounded_Wide_Wide_String (Name);
-      Database.Schema.Add_Column (Result, "physical_id", Database.Types.Integer_Value, False, True);
-      Database.Schema.Add_Column (Result, "table_id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "parent_id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "kind", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "state", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "payload", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "active", Database.Types.Boolean_Value, False);
-      return Result;
-   end New_Schema;
+   type History_Budget is record
+      Limit    : Positive;
+      Consumed : Natural := 0;
+   end record;
+
+   function New_History_Budget (Limits : Persistence_Limits) return History_Budget is
+     (Limit => Limits.Maximum_History, Consumed => 0);
+
+   procedure Consume_History
+     (Budget  : in out History_Budget;
+      Context : String) is separate;
 
    procedure Check (Status : Database.Status.Result; Context : String) is
    begin
@@ -153,6 +56,36 @@ package body Improve.Storage is
          raise Data_Error with Context & ": " & Decode (To_Wide_Wide_String (Status.Message));
       end if;
    end Check;
+
+   procedure Begin_Read_Transaction
+     (DB : in out Database.Handle;
+      Tx : out Database.Transactions.Transaction) is
+   begin
+      Database.Transactions.Begin_Read (DB, Tx);
+      Check (Database.Transactions.Result (Tx), "begin Improve read transaction");
+   end Begin_Read_Transaction;
+
+   procedure Begin_Write_Transaction
+     (DB : in out Database.Handle;
+      Tx : out Database.Transactions.Transaction) is
+   begin
+      Database.Transactions.Begin_Write (DB, Tx);
+      Check (Database.Transactions.Result (Tx), "begin Improve write transaction");
+   end Begin_Write_Transaction;
+
+   procedure Commit_Transaction
+     (Tx      : in out Database.Transactions.Transaction;
+      Context : String) is
+   begin
+      Check (Database.Transactions.Commit (Tx), Context);
+   end Commit_Transaction;
+
+   procedure Rollback_Transaction
+     (Tx      : in out Database.Transactions.Transaction;
+      Context : String) is
+   begin
+      Check (Database.Transactions.Rollback (Tx), Context);
+   end Rollback_Transaction;
 
    function Scan
      (Item      : in out Store;
@@ -284,70 +217,35 @@ package body Improve.Storage is
          "advance state record scan");
    end Advance_State;
 
-   function Next_Id
-     (Item : in out Store; Tx : in out Database.Transactions.Transaction; Table : Positive) return Positive is
-      Result : Positive;
-   begin
-      if Item.Next_Ids (Table) = 0 then
-         declare
-            Cursor  : Entity_Tables.Cursor := Scan (Item, Tx, Table);
-            Highest : Natural := 0;
-         begin
-            while Entity_Tables.Has_Element (Cursor) loop
-               Highest := Natural'Max (Highest, Entity_Tables.Element (Cursor).Id);
-               Advance (Item, Tx, Table, Cursor);
-            end loop;
-            if Highest >= Maximum_Logical_Id then
-               raise Data_Error with "Improve logical identity space is exhausted";
-            end if;
-            Item.Next_Ids (Table) := Highest + 1;
-         end;
-      end if;
-      if Item.Next_Ids (Table) > Maximum_Logical_Id then
-         raise Data_Error with "Improve logical identity space is exhausted";
-      end if;
-      Result := Positive (Item.Next_Ids (Table));
-      Item.Next_Ids (Table) := Item.Next_Ids (Table) + 1;
-      return Result;
-   end Next_Id;
-
-   function Reserve_Ids
-     (Item  : in out Store;
-      Tx    : in out Database.Transactions.Transaction;
-      Table : Positive;
-      Count : Natural) return Positive is
-      First : constant Positive := Next_Id (Item, Tx, Table);
-      Reserved : constant Natural := Natural'Max (1, Count);
-   begin
-      if Reserved - 1 > Maximum_Logical_Id - First then
-         raise Data_Error with "Improve logical identity space is exhausted";
-      end if;
-      Item.Next_Ids (Table) := Item.Next_Ids (Table) + Reserved - 1;
-      return First;
-   end Reserve_Ids;
-
    procedure Migrate_To_Version_3
      (Item     : in out Store;
-      Metadata : in out Entity) is separate;
+      Metadata : in out Entity;
+      Limits   : Persistence_Limits) is separate;
 
    procedure Migrate_To_Version_4
      (Item     : in out Store;
-      Metadata : in out Entity) is separate;
+      Metadata : in out Entity;
+      Limits   : Persistence_Limits) is separate;
 
    procedure Migrate_To_Version_5
      (Item     : in out Store;
       Metadata : in out Entity;
-      Limits   : Read_Limits) is separate;
+      Limits   : Persistence_Limits) is separate;
 
    procedure Migrate_To_Version_6
      (Item     : in out Store;
       Metadata : in out Entity) is separate;
 
+   procedure Migrate_To_Version_7
+     (Item     : in out Store;
+      Metadata : in out Entity;
+      Limits   : Persistence_Limits) is separate;
+
    procedure Open
      (Item     : in out Store;
       Path     : String;
       Writable : Boolean;
-      Limits   : Read_Limits := Default_Read_Limits) is separate;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) is separate;
 
    procedure Close (Item : in out Store) is separate;
 
@@ -379,6 +277,12 @@ package body Improve.Storage is
       return Stable_Digest (Field (Payload, "finding_keys"));
    end Stored_Finding_Set;
 
+   function Task_Identity_Key
+     (Category, Title, Acceptance, Finding_Set : String) return String is
+     (Stable_Digest
+        (Number (Category'Length) & ":" & Category & Number (Title'Length) & ":" & Title &
+         Number (Acceptance'Length) & ":" & Acceptance & Number (Finding_Set'Length) & ":" & Finding_Set));
+
    function Revision_Payload (Value : Improve.Model.Plan_Revision; Baseline_Id, Revision : Positive) return String is
      (Pair ("revision", Number (Revision)) & LF & Pair ("baseline_id", Number (Baseline_Id)) & LF &
       Pair ("project_id", Number (Value.Project.Id)) & LF & Pair ("project", To_String (Value.Project.Name)) & LF &
@@ -396,10 +300,22 @@ package body Improve.Storage is
       Pair ("created_at", Timestamp (Value.Created_At)));
 
    function Find_Revision
-     (Item : in out Store; Tx : in out Database.Transactions.Transaction; Fingerprint : String) return Natural is
-      Cursor : constant Entity_Tables.Cursor := Scan_Kind (Item, Tx, Revisions_Table, Fingerprint);
+     (Item        : in out Store;
+      Tx          : in out Database.Transactions.Transaction;
+      Fingerprint : String;
+      Budget      : in out History_Budget) return Natural is
+      Cursor  : Entity_Tables.Cursor := Scan_Kind (Item, Tx, Revisions_Table, Fingerprint);
+      Found   : Natural := 0;
    begin
-      return (if Entity_Tables.Has_Element (Cursor) then Entity_Tables.Element (Cursor).Id else 0);
+      while Entity_Tables.Has_Element (Cursor) loop
+         if Found > 0 then
+            raise Data_Error with "duplicate persisted plan revision fingerprint";
+         end if;
+         Consume_History (Budget, "plan fingerprint history");
+         Found := Entity_Tables.Element (Cursor).Id;
+         Advance_Kind (Item, Tx, Revisions_Table, Fingerprint, Cursor);
+      end loop;
+      return Found;
    end Find_Revision;
 
    function Project_Key (Value : Improve.Model.Project_Reference) return String is
@@ -407,63 +323,36 @@ package body Improve.Storage is
         (To_String (Value.Database_Id) & Character'Val (0) & Number (Value.Id) & Character'Val (0) &
          To_String (Value.Path)));
 
-   function Legacy_Project_Key (Value : Improve.Model.Project_Reference) return String is
-      use type Interfaces.Unsigned_64;
-      Text : constant String :=
-        To_String (Value.Database_Id) & Character'Val (0) & Number (Value.Id) & Character'Val (0) &
-        To_String (Value.Path);
-      Hash : Interfaces.Unsigned_64 := 16#CBF29CE484222325#;
-      Hex  : constant String := "0123456789abcdef";
-      Result : String (1 .. 24) := "fnv1a64:0000000000000000";
-   begin
-      for Byte of Text loop
-         Hash := (Hash xor Interfaces.Unsigned_64 (Character'Pos (Byte))) * 16#100000001B3#;
-      end loop;
-      for Index in reverse 9 .. Result'Last loop
-         Result (Index) := Hex (Natural (Hash and 16#F#) + 1);
-         Hash := Interfaces.Shift_Right (Hash, 4);
-      end loop;
-      return Result;
-   end Legacy_Project_Key;
+   function Legacy_Project_Key (Value : Improve.Model.Project_Reference) return String is separate;
 
-function Save
-  (Item   : in out Store;
-   Value  : Improve.Model.Plan_Revision;
-   Limits : Read_Limits := Default_Read_Limits) return Save_Result is separate;
+   procedure Require_Idempotent_Equivalent
+     (Existing, Candidate : Improve.Model.Plan_Revision) is separate;
 
-   function Priority_Value (Text : String) return Improve.Model.Priority is
-   begin
-      for Value in Improve.Model.Priority loop
-         if Improve.Model.Image (Value) = Text then return Value; end if;
-      end loop;
-      raise Data_Error with "invalid persisted priority " & Text;
-   end Priority_Value;
+   procedure Validate_Save_Value
+     (Value  : Improve.Model.Plan_Revision;
+      Limits : Persistence_Limits) is separate;
 
-   function Kind_Value (Text : String) return Improve.Model.Candidate_Kind is
-   begin
-      for Value in Improve.Model.Candidate_Kind loop
-         if Improve.Model.Image (Value) = Text then return Value; end if;
-      end loop;
-      raise Data_Error with "invalid persisted candidate kind " & Text;
-   end Kind_Value;
+   procedure Consume_Persistence_Row
+     (Limits    : Persistence_Limits;
+      Kind      : String;
+      State     : String;
+      Payload   : String;
+      Context   : String;
+      Total     : in out Natural;
+      Operation : String) is separate;
 
-   function Indicator_Value (Text : String) return Ada_Quality.Types.Indicator_Id is
-   begin
-      for Value in Ada_Quality.Types.Indicator_Id loop
-         if Ada_Quality.Types.Image (Value) = Text then return Value; end if;
-      end loop;
-      raise Data_Error with "invalid persisted indicator " & Text;
-   end Indicator_Value;
+   procedure Index_Previous_Tasks
+     (Item              : in out Store;
+      Tx                : in out Database.Transactions.Transaction;
+      Previous_Revision : Natural;
+      Limits            : Persistence_Limits;
+      Consumed_Bytes    : in out Natural;
+      Previous_Tasks    : in out String_Value_Maps.Map) is separate;
 
-   procedure Require_Payload_Limit
-     (Text    : String;
-      Limits  : Read_Limits;
-      Context : String) is
-   begin
-      if Text'Length > Limits.Maximum_Text_Bytes then
-         raise Data_Error with Context & " exceeds configured persisted-text limit";
-      end if;
-   end Require_Payload_Limit;
+   function Previous_Task_Id
+     (Spec           : Improve.Model.Task_Specification;
+      Findings       : Improve.Model.Finding_Vectors.Vector;
+      Previous_Tasks : String_Value_Maps.Map) return Unbounded_String is separate;
 
    type Stored_Provenance is record
       Project  : Improve.Model.Project_Reference;
@@ -475,7 +364,8 @@ function Save
       Tx       : in out Database.Transactions.Transaction;
       Revision : Entity;
       Payload  : String;
-      Limits   : Read_Limits) return Stored_Provenance is separate;
+      Limits   : Persistence_Limits;
+      Consumed_Bytes : in out Natural) return Stored_Provenance is separate;
 
    function Contract_Key
      (Plan_Id  : String;
@@ -483,86 +373,77 @@ function Save
       Task_Id  : String) return String is
      (Plan_Id & Character'Val (0) & Number (Revision) & Character'Val (0) & Task_Id);
 
+   function Load_Revision
+     (Item        : in out Store;
+      Revision_Id : Positive;
+      Limits      : Persistence_Limits) return Improve.Model.Plan_Revision is separate;
+
+   function Load_Exact
+     (Item          : in out Store;
+      Plan_Id       : String;
+      Revision      : Positive;
+      Limits        : Persistence_Limits;
+      Budget        : in out History_Budget) return Improve.Model.Plan_Revision;
+
+function Save
+  (Item   : in out Store;
+   Value  : Improve.Model.Plan_Revision;
+   Limits : Persistence_Limits := Default_Persistence_Limits) return Save_Result is separate;
+
    procedure Cache_Contracts
      (Item      : in out Store;
       Plan_Id   : String;
       Revision  : Positive;
-      Limits    : Read_Limits;
+      Limits    : Persistence_Limits;
+      Budget    : in out History_Budget;
       Contracts : in out String_Value_Maps.Map) is separate;
-
-   function Load_Revision
-     (Item        : in out Store;
-      Revision_Id : Positive;
-      Limits      : Read_Limits) return Improve.Model.Plan_Revision is separate;
 
    function Load
      (Item    : in out Store;
       Plan_Id : String;
-      Limits  : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
+      Limits  : Persistence_Limits := Default_Persistence_Limits) return Improve.Model.Plan_Revision is
       Tx : Database.Transactions.Transaction;
       Revision_Id : Natural := 0;
       Plan_Row : Natural := 0;
-      History_Count : Natural := 0;
+      Budget : History_Budget := New_History_Budget (Limits);
    begin
-      if Plan_Id'Length > 10 and then Plan_Id (Plan_Id'First .. Plan_Id'First + 9) = "@revision:" then
-         declare
-            Revision_Id : Positive;
-         begin
-            begin
-               Revision_Id := Positive'Value (Plan_Id (Plan_Id'First + 10 .. Plan_Id'Last));
-            exception
-               when Constraint_Error => raise Argument_Error with "invalid internal plan revision identity";
-            end;
-            return Load_Revision (Item, Revision_Id, Limits);
-         end;
-      end if;
       Plan_Row := Plan_Row_Id (Plan_Id);
-      Database.Transactions.Begin_Read (Item.DB, Tx);
+      Begin_Read_Transaction (Item.DB, Tx);
       declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
          while Entity_Tables.Has_Element (Cursor) loop
-            if History_Count >= Limits.Maximum_History then
-               raise Data_Error with "plan revision history exceeds configured item limit";
-            end if;
-            History_Count := History_Count + 1;
+            Consume_History (Budget, "plan revision history");
             if Entity_Tables.Element (Cursor).Parent_Id = Plan_Row then
                Revision_Id := Natural'Max (Revision_Id, Entity_Tables.Element (Cursor).Id);
             end if;
             Advance_Children (Item, Tx, Revisions_Table, Positive (Plan_Row), Cursor);
          end loop;
       end;
-      Database.Transactions.Rollback (Tx);
+      Rollback_Transaction (Tx, "finish latest plan revision query");
       if Revision_Id = 0 then raise Argument_Error with "unknown plan " & Plan_Id; end if;
       return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
       when Constraint_Error =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise Data_Error with "stored plan revision index is malformed";
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         raise;
    end Load;
 
-   function Load
-     (Item     : in out Store;
-      Plan_Id  : String;
-      Revision : Positive;
-      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is
+   function Load_Exact
+     (Item          : in out Store;
+      Plan_Id       : String;
+      Revision      : Positive;
+      Limits        : Persistence_Limits;
+      Budget        : in out History_Budget) return Improve.Model.Plan_Revision is
       Tx          : Database.Transactions.Transaction;
       Plan_Row    : Natural := 0;
       Revision_Id : Natural := 0;
-      History_Count : Natural := 0;
    begin
       Plan_Row := Plan_Row_Id (Plan_Id);
-      Database.Transactions.Begin_Read (Item.DB, Tx);
+      Begin_Read_Transaction (Item.DB, Tx);
       declare Cursor : Entity_Tables.Cursor :=
         Scan_Children (Item, Tx, Revisions_Table, Positive (Plan_Row));
       begin
          while Entity_Tables.Has_Element (Cursor) loop
-            if History_Count >= Limits.Maximum_History then
-               raise Data_Error with "plan revision history exceeds configured item limit";
-            end if;
-            History_Count := History_Count + 1;
+            Consume_History (Budget, "plan revision history");
             declare Row : constant Entity := Entity_Tables.Element (Cursor); begin
                Require_Payload_Limit (S (Row.Payload), Limits, "plan revision payload");
                if Row.Parent_Id = Plan_Row and then
@@ -575,120 +456,169 @@ function Save
             Advance_Children (Item, Tx, Revisions_Table, Positive (Plan_Row), Cursor);
          end loop;
       end;
-      Database.Transactions.Rollback (Tx);
+      Rollback_Transaction (Tx, "finish exact plan revision query");
       if Revision_Id = 0 then
          raise Argument_Error with "unknown plan revision " & Plan_Id & " r" & Number (Revision);
       end if;
       return Load_Revision (Item, Positive (Revision_Id), Limits);
    exception
       when Constraint_Error =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
          raise Data_Error with "stored plan revision index is malformed";
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         raise;
+   end Load_Exact;
+
+   function Load
+     (Item     : in out Store;
+      Plan_Id  : String;
+      Revision : Positive;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) return Improve.Model.Plan_Revision is
+      Budget : History_Budget := New_History_Budget (Limits);
+   begin
+      return Load_Exact (Item, Plan_Id, Revision, Limits, Budget);
    end Load;
 
    function Load_Task
      (Item     : in out Store;
       Task_Id  : String;
       Revision : Natural := 0;
-      Limits   : Read_Limits := Default_Read_Limits) return Improve.Model.Plan_Revision is separate;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) return Improve.Model.Plan_Revision is separate;
 
    function Latest_Revision_Id
      (Item     : in out Store;
       Tx       : in out Database.Transactions.Transaction;
       Plan_Row : Positive;
-      Maximum  : Positive;
-      Scanned  : in out Natural) return Natural is separate;
+      Budget   : in out History_Budget) return Natural is separate;
+
+   type Stored_Plan_Summary is record
+      Value   : Plan_Summary;
+      Project : Improve.Model.Project_Reference;
+   end record;
 
    function Summary_Of
      (Item        : in out Store;
       Tx          : in out Database.Transactions.Transaction;
       Revision_Id : Positive;
-      Limits      : Read_Limits) return Plan_Summary is separate;
+      Limits      : Persistence_Limits) return Stored_Plan_Summary is separate;
 
    function List_All
      (Item    : in out Store;
       Maximum : Positive := Default_Query_Maximum;
-      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) return Summary_Vectors.Vector is separate;
 
    function List
      (Item    : in out Store;
       Project : Improve.Model.Project_Reference;
       Maximum : Positive := Default_Query_Maximum;
-      Limits  : Read_Limits := Default_Read_Limits) return Summary_Vectors.Vector is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) return Summary_Vectors.Vector is separate;
 
    procedure Record_Publications
      (Item    : in out Store;
       Plan_Id : String;
       Values  : Publication_Vectors.Vector;
-      Limits  : Read_Limits := Default_Read_Limits) is separate;
-
-   function Publications
-     (Item       : in out Store;
-      Plan_Id    : String := "";
-      Maximum    : Positive := Default_Query_Maximum;
-      Limits     : Read_Limits := Default_Read_Limits) return Publication_Vectors.Vector is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) is separate;
 
    procedure Update_Publication_States
      (Item   : in out Store;
       Plan_Id : String;
       Values : Publication_Vectors.Vector;
-      Limits : Read_Limits := Default_Read_Limits) is separate;
+      Limits : Persistence_Limits := Default_Persistence_Limits) is separate;
 
    procedure Record_Verification
      (Item    : in out Store;
       Plan_Id : String;
       Values  : Verification_Vectors.Vector;
-      Limits  : Read_Limits := Default_Read_Limits) is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) is separate;
 
-   function Parse_Outcome (Value : String) return Improve.Model.Quality_Outcome is
-   begin
-      for Outcome in Improve.Model.Quality_Outcome loop
-         if Improve.Model.Image (Outcome) = Value then return Outcome; end if;
-      end loop;
-      raise Data_Error with "stored verification outcome is invalid: " & Value;
-   end Parse_Outcome;
+   package History_Support is
+      type Publication_Envelope is record
+         Plan_Id : Unbounded_String;
+         Value   : Publication_Record;
+      end record;
+
+      package Publication_Envelope_Lists is new Ada.Containers.Doubly_Linked_Lists
+        (Element_Type => Publication_Envelope);
+
+      type Verification_Envelope is record
+         Plan_Id : Unbounded_String;
+         Value   : Verification_Record;
+      end record;
+
+      package Verification_Envelope_Lists is new Ada.Containers.Doubly_Linked_Lists
+        (Element_Type => Verification_Envelope);
+
+      procedure Decode_Publication
+        (Item             : Store;
+         Row              : Entity;
+         Expected_Plan_Id : String;
+         Limits           : Persistence_Limits;
+         Value            : out Publication_Envelope);
+
+      procedure Decode_Verification
+        (Item             : Store;
+         Row              : Entity;
+         Expected_Plan_Id : String;
+         Limits           : Persistence_Limits;
+         Value            : out Verification_Envelope);
+
+      procedure Validate_Publications
+        (Item     : in out Store;
+         Values   : Publication_Envelope_Lists.List;
+         Limits   : Persistence_Limits;
+         Budget   : in out History_Budget);
+
+      procedure Validate_Verifications
+        (Item     : in out Store;
+         Values   : Verification_Envelope_Lists.List;
+         Limits   : Persistence_Limits;
+         Budget   : in out History_Budget);
+   end History_Support;
+
+   package body History_Support is separate;
+
+   function Publications
+     (Item       : in out Store;
+      Plan_Id    : String := "";
+      Maximum    : Positive := Default_Query_Maximum;
+      Limits     : Persistence_Limits := Default_Persistence_Limits) return Publication_Vectors.Vector is separate;
 
    function Verifications
      (Item    : in out Store;
       Plan_Id : String := "";
       Task_Id : String := "";
       Maximum : Positive := Default_Query_Maximum;
-      Limits  : Read_Limits := Default_Read_Limits) return Verification_Vectors.Vector is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) return Verification_Vectors.Vector is separate;
 
    function History
      (Item : in out Store; Plan_Id : String; Revision : Natural := 0;
       Maximum : Positive := Default_Query_Maximum;
-      Limits  : Read_Limits := Default_Read_Limits) return Inspection_History is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits;
+      Selection : History_Selection := Complete_History) return Inspection_History is separate;
 
    procedure Approve
      (Item     : in out Store;
       Plan_Id  : String;
       Revision : Positive;
-      Limits   : Read_Limits := Default_Read_Limits) is separate;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) is separate;
 
    function Is_Approved
      (Item     : in out Store;
       Plan_Id  : String;
       Revision : Positive;
-      Limits   : Read_Limits := Default_Read_Limits) return Boolean is separate;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) return Boolean is separate;
 
    function Begin_Publication
      (Item     : in out Store;
       Plan     : Improve.Model.Plan_Revision;
       Task_Kind : String;
       Task_Ids : Improve.Model.UString_Vectors.Vector;
-      Limits   : Read_Limits := Default_Read_Limits) return Positive is separate;
+      Limits   : Persistence_Limits := Default_Persistence_Limits) return Positive is separate;
 
    procedure Complete_Publication
      (Item         : in out Store;
       Operation_Id : Positive;
-      Limits       : Read_Limits := Default_Read_Limits) is separate;
+      Limits       : Persistence_Limits := Default_Persistence_Limits) is separate;
 
    function Pending_Publications
      (Item    : in out Store;
       Maximum : Positive := Default_Query_Maximum;
-      Limits  : Read_Limits := Default_Read_Limits) return Operation_Vectors.Vector is separate;
+      Limits  : Persistence_Limits := Default_Persistence_Limits) return Operation_Vectors.Vector is separate;
 end Improve.Storage;

@@ -1,5 +1,6 @@
 with Ada.Containers.Ordered_Sets;
 with Ada.Strings.Unbounded;
+with Improve.State;
 with Improve.Model;
 with Improve.Source;
 with Improve.Workflow;
@@ -14,7 +15,7 @@ package body Improve.Operations.Reconciliation is
       Quality_Path     : String;
       Project_Selector : String;
       Requested_Kind   : String;
-      Limits           : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits;
       Quality_Limits   : Ada_Quality.Reporting.Load_Limits := (others => <>);
       Evidence_Limits  : Improve.Config.Evidence_Limits := Improve.Config.Default_Evidence_Limits) is
       State : Improve.Storage.Store;
@@ -24,8 +25,8 @@ package body Improve.Operations.Reconciliation is
       procedure Reconcile_Plan
         (Project : Improve.Model.Project_Reference;
          Plan_Id : String) is
-         Publications : Improve.Storage.Publication_Vectors.Vector;
-         Updates      : Improve.Storage.Publication_Vectors.Vector;
+         Publications : Improve.State.Publication_Vectors.Vector;
+         Updates      : Improve.State.Publication_Vectors.Vector;
          Revisions    : Revision_Sets.Set;
 
          procedure Reconcile_Revision (Revision : Positive) is
@@ -68,7 +69,7 @@ package body Improve.Operations.Reconciliation is
                begin
                   for Value of Reconciled.Tasks loop
                      Updates.Append
-                       (Improve.Storage.Publication_Record'
+                       (Improve.State.Publication_Record'
                           (Improve_Task_Id => Value.Improve_Id,
                            Harness_Task_Id => Value.Harness_Id,
                            Origin          => Value.Origin,
@@ -104,7 +105,7 @@ package body Improve.Operations.Reconciliation is
          begin
             Improve.Source.Close (Quality);
             Improve.Storage.Open (State, State_Path, Writable => False, Limits => Limits);
-            declare Values : constant Improve.Storage.Summary_Vectors.Vector :=
+            declare Values : constant Improve.State.Summary_Vectors.Vector :=
               Improve.Storage.List (State, Project, Limits.Maximum_History, Limits);
             begin
                if Values.Is_Empty then

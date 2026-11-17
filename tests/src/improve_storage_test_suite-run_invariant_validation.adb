@@ -3,7 +3,7 @@ procedure Run_Invariant_Validation is
    Root  : constant String := Hostkit.Fs.Create_Temporary_Directory ("improve-storage-invariants");
    Path  : constant String := Root & "/state.db";
    Store : Improve.Storage.Store;
-   Plan  : constant Improve.Model.Plan_Revision := Fixture (Root);
+   Plan  : Improve.Model.Plan_Revision := Fixture (Root);
 
    procedure Reject (Value : Improve.Model.Plan_Revision; Context : String) is
       Rejected : Boolean := False;
@@ -18,7 +18,12 @@ procedure Run_Invariant_Validation is
       Assert (Rejected, Context);
    end Reject;
 begin
+   Plan.Fingerprint := To_Unbounded_String (Improve.Stable_Digest ("invariant baseline"));
    Improve.Storage.Open (Store, Path, Writable => True);
+   declare Invalid : Improve.Model.Plan_Revision := Plan; begin
+      Invalid.Fingerprint := Null_Unbounded_String;
+      Reject (Invalid, "storage accepted an empty plan fingerprint");
+   end;
    declare Invalid : Improve.Model.Plan_Revision := Plan; begin
       Invalid.Tasks (2).Dependencies.Append (Invalid.Tasks (1).Id);
       Invalid.Tasks (2).Dependencies.Append (Invalid.Tasks (1).Id);
@@ -50,6 +55,17 @@ begin
    declare Invalid : Improve.Model.Plan_Revision := Plan; begin
       Invalid.Tasks (1).Relevant_Files.Append (To_Unbounded_String ("src/./unit.adb"));
       Reject (Invalid, "storage accepted a non-normalized task path");
+   end;
+   declare
+      First     : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Plan);
+      Repeated  : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Plan);
+      Collision : Improve.Model.Plan_Revision := Plan;
+   begin
+      Assert
+        (not First.Existing and then Repeated.Existing,
+         "storage did not preserve exact fingerprint idempotency");
+      Collision.Tasks (1).Goal := To_Unbounded_String ("different semantic content");
+      Reject (Collision, "storage accepted conflicting content under an existing plan fingerprint");
    end;
    declare
       Legacy   : Improve.Model.Plan_Revision := Plan;
@@ -93,6 +109,10 @@ begin
         (not Saved.Existing and then Saved.Plan.Findings.Length = 2,
          "storage collapsed distinct qualified findings sharing a source fingerprint");
    end;
+   Improve.Storage.Close (Store);
+   Duplicate_Row (Path, Table => 6, Source_Id => 1, New_Id => 99);
+   Improve.Storage.Open (Store, Path, Writable => True);
+   Reject (Plan, "storage accepted duplicate persisted plan fingerprints");
    Improve.Storage.Close (Store);
    Project_Tools.Files.Delete_Tree (Root);
 exception

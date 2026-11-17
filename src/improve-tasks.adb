@@ -70,10 +70,10 @@ package body Improve.Tasks is
 
    function Build
      (Plan          : Improve.Model.Plan_Revision;
-      Publications  : Improve.Storage.Publication_Vectors.Vector;
-      Verifications : Improve.Storage.Verification_Vectors.Vector;
+      Publications  : Improve.State.Publication_Vectors.Vector;
+      Verifications : Improve.State.Verification_Vectors.Vector;
       Current_Assessment : Natural := 0;
-      Maximum_Items : Positive := Improve.Storage.Default_Query_Maximum) return View_Vectors.Vector is
+      Maximum_Items : Positive := Default_View_Maximum) return View_Vectors.Vector is
       Result : View_Vectors.Vector;
       Contracts : constant Improve.Model.Task_Contract_Binding_Vectors.Vector :=
         Improve.Model.Effective_Task_Contracts (Plan);
@@ -110,7 +110,7 @@ package body Improve.Tasks is
       end loop;
       for Index in 1 .. Natural (Verifications.Length) loop
          declare
-            Verification : Improve.Storage.Verification_Record renames Verifications (Index);
+            Verification : Improve.State.Verification_Record renames Verifications (Index);
             Identity     : constant String := To_String (Verification.Task_Id);
          begin
             if Verification.Scope = Improve.Model.Task_Evaluation and then
@@ -148,7 +148,7 @@ package body Improve.Tasks is
             View.Title := Spec.Title;
             if Published_By_Contract.Contains (Mapping_Key) then
                declare
-                  Published : Improve.Storage.Publication_Record renames
+                  Published : Improve.State.Publication_Record renames
                     Publications (Published_By_Contract.Element (Mapping_Key));
                begin
                   View.Harness_Id := Published.Harness_Task_Id;
@@ -157,7 +157,7 @@ package body Improve.Tasks is
             end if;
             if Latest_Verification.Contains (Identity) then
                declare
-                  Verification : Improve.Storage.Verification_Record renames
+                  Verification : Improve.State.Verification_Record renames
                     Verifications (Latest_Verification.Element (Identity));
                begin
                   View.Quality := Verification.Outcome;

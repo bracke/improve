@@ -88,6 +88,7 @@ package body Improve.Persistence_Records is
      (Pair ("plan_id", To_String (Value.Plan_Id)) & LF &
       Pair ("revision", Number (Value.Revision)) & LF &
       Pair ("fingerprint", To_String (Value.Fingerprint)) & LF &
+      Pair ("content_fingerprint", To_String (Value.Content_Fingerprint)) & LF &
       Pair ("task_kind", To_String (Value.Task_Kind)) & LF &
       Pair ("task_ids", Pack (Value.Task_Ids)));
 
@@ -101,6 +102,7 @@ package body Improve.Persistence_Records is
         (Plan_Id     => To_Unbounded_String (Field (Payload, "plan_id")),
          Revision    => Positive'Value (Field_Or (Payload, "revision", "1")),
          Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
+         Content_Fingerprint => To_Unbounded_String (Field_Or (Payload, "content_fingerprint", "")),
          Task_Kind   => To_Unbounded_String (Field_Or (Payload, "task_kind", "")),
          Task_Ids    => Unpack (Field (Payload, "task_ids"), Maximum_Tasks, Maximum_Bytes));
       Require_Value (To_String (Result.Plan_Id), "publication operation plan identity");
@@ -116,7 +118,8 @@ package body Improve.Persistence_Records is
    function Encode_Approval (Value : Approval_Data) return String is
      (Pair ("plan_id", To_String (Value.Plan_Id)) & LF &
       Pair ("revision", Number (Value.Revision)) & LF &
-      Pair ("fingerprint", To_String (Value.Fingerprint)));
+      Pair ("fingerprint", To_String (Value.Fingerprint)) & LF &
+      Pair ("content_fingerprint", To_String (Value.Content_Fingerprint)));
 
    function Decode_Approval (Payload : String) return Approval_Data is
       Result : Approval_Data;
@@ -124,7 +127,8 @@ package body Improve.Persistence_Records is
       Result :=
         (Plan_Id     => To_Unbounded_String (Field (Payload, "plan_id")),
          Revision    => Positive'Value (Field (Payload, "revision")),
-         Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")));
+         Fingerprint => To_Unbounded_String (Field_Or (Payload, "fingerprint", "")),
+         Content_Fingerprint => To_Unbounded_String (Field_Or (Payload, "content_fingerprint", "")));
       Require_Value (To_String (Result.Plan_Id), "approval plan identity");
       Require_Value (To_String (Result.Fingerprint), "approval fingerprint");
       return Result;

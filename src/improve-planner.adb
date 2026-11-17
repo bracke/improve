@@ -6,6 +6,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Checks;
+with Improve.Canonical_Digests;
 with Improve.Rules;
 
 package body Improve.Planner is
@@ -196,14 +197,14 @@ package body Improve.Planner is
          Result.Tasks.Append (Make_Task (Groups (Index), Index, Settings));
       end loop;
       declare
-         Material : Unbounded_String;
+         Digest : Improve.Canonical_Digests.Builder;
 
          procedure Add (Name, Value : String) is
          begin
-            Append (Material, Natural'Image (Name'Length) & ":" & Name);
-            Append (Material, Natural'Image (Value'Length) & ":" & Value);
+            Improve.Canonical_Digests.Add (Digest, Name, Value);
          end Add;
       begin
+         Improve.Canonical_Digests.Initialize (Digest);
          Add ("planner", Planner_Version);
          Add ("configuration", Config_Id);
          Add ("quality_database", To_String (Selected.Project.Database_Id));
@@ -236,7 +237,7 @@ package body Improve.Planner is
             Add ("task.id", To_String (Spec.Id));
             Add ("task.contract", Improve.Model.Task_Contract_Fingerprint (Spec));
          end loop;
-         Result.Fingerprint := To_Unbounded_String (Stable_Digest (To_String (Material)));
+         Result.Fingerprint := To_Unbounded_String (Improve.Canonical_Digests.Finish (Digest));
          Result.Plan_Id := To_Unbounded_String ("PLAN-DRAFT-" & To_String (Result.Fingerprint));
       end;
       Improve.Model.Validate (Result);

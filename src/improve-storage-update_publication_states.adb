@@ -3,11 +3,11 @@ procedure Update_Publication_States
   (Item   : in out Store;
    Plan_Id : String;
    Values : Publication_Vectors.Vector;
-   Limits : Read_Limits := Default_Read_Limits) is
+   Limits : Persistence_Limits := Default_Persistence_Limits) is
    Tx : Database.Transactions.Transaction;
    Rows : String_Id_Maps.Map;
    Plan_Row : constant Positive := Plan_Row_Id (Plan_Id);
-   History_Count : Natural := 0;
+   Budget : History_Budget := New_History_Budget (Limits);
 
    function Mapping_Key (Task_Id, Contract : String) return String is
      (Task_Id & Character'Val (0) & Contract);
@@ -17,13 +17,10 @@ begin
    elsif Values.Length > Ada.Containers.Count_Type (Limits.Maximum_Tasks) then
       raise Data_Error with "publication reconciliation exceeds configured task limit";
    end if;
-   Database.Transactions.Begin_Write (Item.DB, Tx);
+   Begin_Write_Transaction (Item.DB, Tx);
    declare Cursor : Entity_Tables.Cursor := Scan_Children (Item, Tx, Publications_Table, Plan_Row); begin
       while Entity_Tables.Has_Element (Cursor) loop
-         if History_Count >= Limits.Maximum_History then
-            raise Data_Error with "publication history exceeds configured item limit";
-         end if;
-         History_Count := History_Count + 1;
+         Consume_History (Budget, "publication history");
          declare
             Row     : constant Entity := Entity_Tables.Element (Cursor);
             Payload : constant String := S (Row.Payload);
@@ -32,8 +29,12 @@ begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
             Data := Improve.Persistence_Records.Decode_Publication (Payload);
             Improve.Persistence_Validation.Validate (Data, Plan_Id);
-            Rows.Include
-              (Mapping_Key (S (Row.Kind), To_String (Data.Contract)), Row.Id);
+            declare Key : constant String := Mapping_Key (S (Row.Kind), To_String (Data.Contract)); begin
+               if Rows.Contains (Key) then
+                  raise Data_Error with "duplicate persisted publication mapping";
+               end if;
+               Rows.Insert (Key, Row.Id);
+            end;
          end;
          Advance_Children (Item, Tx, Publications_Table, Plan_Row, Cursor);
       end loop;
@@ -70,9 +71,5 @@ begin
             "update reconciled publication state");
       end;
    end loop;
-   Database.Transactions.Commit (Tx);
-exception
-   when others =>
-      if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-      raise;
+   Commit_Transaction (Tx, "commit publication state update");
 end Update_Publication_States;

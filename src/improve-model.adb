@@ -1,8 +1,10 @@
+with Ada.Calendar.Formatting;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Hash;
 with Ada.Strings.UTF_Encoding;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
+with Improve.Canonical_Digests;
 
 package body Improve.Model is
    use Ada.Strings.Unbounded;
@@ -186,12 +188,11 @@ package body Improve.Model is
    end Finding_Key;
 
    function Task_Contract_Fingerprint (Item : Task_Specification) return String is
-      Material : Unbounded_String;
+      Digest : Improve.Canonical_Digests.Builder;
 
       procedure Add (Name, Value : String) is
       begin
-         Append (Material, Natural'Image (Name'Length) & ":" & Name);
-         Append (Material, Natural'Image (Value'Length) & ":" & Value);
+         Improve.Canonical_Digests.Add (Digest, Name, Value);
       end Add;
 
       procedure Add_Vector (Name : String; Values : UString_Vectors.Vector) is
@@ -200,6 +201,7 @@ package body Improve.Model is
          for Value of Values loop Add (Name & ".item", To_String (Value)); end loop;
       end Add_Vector;
    begin
+      Improve.Canonical_Digests.Initialize (Digest);
       Add ("title", To_String (Item.Title));
       Add ("category", To_String (Item.Category));
       Add ("priority", Image (Item.Task_Priority));
@@ -217,8 +219,57 @@ package body Improve.Model is
       Add ("confidence", Natural'Image (Item.Confidence));
       Add ("requires_review", Boolean'Image (Item.Requires_Review));
       Add ("kind", Image (Item.Kind));
-      return Stable_Digest (To_String (Material));
+      return Improve.Canonical_Digests.Finish (Digest);
    end Task_Contract_Fingerprint;
+
+   function Plan_Content_Fingerprint (Item : Plan_Revision) return String is
+      Digest : Improve.Canonical_Digests.Builder;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Improve.Canonical_Digests.Add (Digest, Name, Value);
+      end Add;
+   begin
+      Improve.Canonical_Digests.Initialize
+        (Digest, "improve-plan-content-v2" & Character'Val (0));
+      Add ("plan_id", To_String (Item.Plan_Id));
+      Add ("revision", Positive'Image (Item.Revision));
+      Add ("project.id", Positive'Image (Item.Project.Id));
+      Add ("project.name", To_String (Item.Project.Name));
+      Add ("project.path", To_String (Item.Project.Path));
+      Add ("project.database", To_String (Item.Project.Database_Id));
+      Add ("baseline.project", Positive'Image (Item.Baseline.Project_Id));
+      Add ("baseline.run", Positive'Image (Item.Baseline.Run_Id));
+      Add ("baseline.source", To_String (Item.Baseline.Source_Id));
+      Add ("baseline.policy", To_String (Item.Baseline.Policy_Id));
+      Add ("baseline.toolchain", To_String (Item.Baseline.Toolchain_Id));
+      Add ("baseline.evidence", To_String (Item.Baseline.Evidence_Id));
+      Add ("baseline.snapshot", To_String (Item.Baseline.Snapshot_Id));
+      Add ("working_source", To_String (Item.Working_Source_Id));
+      Add ("planner", To_String (Item.Planner_Id));
+      Add
+        ("created_at",
+         Ada.Calendar.Formatting.Image (Item.Created_At, Include_Time_Fraction => False, Time_Zone => 0));
+      Add ("review", To_String (Item.Review_Status));
+      Add ("finding.count", Natural'Image (Natural (Item.Findings.Length)));
+      for Finding of Item.Findings loop
+         Add ("finding.key", Finding_Key (Finding));
+         Add ("finding.run", Positive'Image (Finding.Run_Id));
+         Add ("finding.severity", Ada_Quality.Types.Severity'Image (Finding.Level));
+         Add ("finding.path", To_String (Finding.Relative_Path));
+         Add ("finding.line", Natural'Image (Finding.Line));
+         Add ("finding.message", To_String (Finding.Message));
+         Add ("finding.evidence", To_String (Finding.Evidence));
+         Add ("finding.kind", Image (Finding.Kind));
+         Add ("finding.indicator_level", Boolean'Image (Finding.Indicator_Level));
+      end loop;
+      Add ("task.count", Natural'Image (Natural (Item.Tasks.Length)));
+      for Spec of Item.Tasks loop
+         Add ("task.id", To_String (Spec.Id));
+         Add ("task.contract", Task_Contract_Fingerprint (Spec));
+      end loop;
+      return Improve.Canonical_Digests.Finish (Digest, "plan-content-sha256-v2:");
+   end Plan_Content_Fingerprint;
 
    procedure Validate (Plan : Plan_Revision) is
       Findings      : String_Sets.Set;

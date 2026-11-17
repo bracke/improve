@@ -1,267 +1,81 @@
 with Ada.Containers;
 with Ada.Directories;
+with Ada.Exceptions;
 with Ada.Strings.Fixed;
-with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
-with Ada.Strings.Wide_Wide_Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Ada_Quality.Types;
-with Database;
-with Database.Rows;
-with Database.Schema;
-with Database.Status;
-with Database.Tables;
-with Database.Transactions;
-with Database.Types;
-with Database.Values;
+with Database.Fault_Injection;
 with Improve;
 with Improve.Model;
 with Improve.Persistence_Records;
+with Improve.State;
 with Improve.Storage;
+with Improve.Storage.Identity_Testing;
+with Improve.Storage.Lifecycle_Testing;
+with Improve.Storage.Row_Testing;
+with Improve.Storage.Schema_Testing;
+with Improve.Storage_Codec;
 with Hostkit.Fs;
 with Project_Tools.Files;
 
 package body Improve_Storage_Test_Suite is
    use Ada.Strings.Unbounded;
-   use Ada.Strings.Wide_Wide_Unbounded;
    use AUnit.Assertions;
    use type Ada.Containers.Count_Type;
-   use type Database.Status_Code;
 
-   type Raw_Entity is record
-      Id        : Positive;
-      Parent_Id : Natural := 0;
-      Kind      : Unbounded_Wide_Wide_String;
-      State     : Unbounded_Wide_Wide_String;
-      Payload   : Unbounded_Wide_Wide_String;
-      Active    : Boolean := True;
-      Table_Id  : Positive := 1;
-   end record;
+   procedure Downgrade_To_Version_2 (Path : String)
+     renames Improve.Storage.Schema_Testing.Downgrade_To_Version_2;
+   procedure Downgrade_To_Version_3 (Path : String)
+     renames Improve.Storage.Schema_Testing.Downgrade_To_Version_3;
+   procedure Create_Foreign_Database (Path : String)
+     renames Improve.Storage.Schema_Testing.Create_Foreign_Database;
+   function Has_Improve_Table (Path : String) return Boolean
+     renames Improve.Storage.Schema_Testing.Has_Improve_Table;
+   procedure Corrupt_Schema_Ownership (Path : String)
+     renames Improve.Storage.Schema_Testing.Corrupt_Schema_Ownership;
+   procedure Downgrade_To_Version_6 (Path : String)
+     renames Improve.Storage.Schema_Testing.Downgrade_To_Version_6;
+   function Identity_Counter_State (Path : String) return String
+     renames Improve.Storage.Identity_Testing.Identity_Counter_State;
+   function Task_Identity_Counter_Value (Path : String) return String
+     renames Improve.Storage.Identity_Testing.Task_Identity_Counter_Value;
+   procedure Corrupt_Revision (Path : String; Revision_Id : Positive)
+     renames Improve.Storage.Row_Testing.Corrupt_Revision;
+   procedure Corrupt_Baseline_Parent (Path : String; Baseline_Id : Positive)
+     renames Improve.Storage.Row_Testing.Corrupt_Baseline_Parent;
+   procedure Replace_Row_Payload (Path : String; Table, Id : Positive; Payload : String)
+     renames Improve.Storage.Row_Testing.Replace_Row_Payload;
+   procedure Replace_Row_State (Path : String; Table, Id : Positive; State : String)
+     renames Improve.Storage.Row_Testing.Replace_Row_State;
+   procedure Deactivate_Row (Path : String; Table, Id : Positive)
+     renames Improve.Storage.Row_Testing.Deactivate_Row;
+   procedure Append_Task_Payload_Field (Path : String; Task_Row : Positive; Name, Value : String)
+     renames Improve.Storage.Row_Testing.Append_Task_Payload_Field;
+   function Summary_Row_Bytes (Path : String; Revision_Id : Positive) return Positive
+     renames Improve.Storage.Row_Testing.Summary_Row_Bytes;
+   procedure Duplicate_Row (Path : String; Table, Source_Id, New_Id : Positive)
+     renames Improve.Storage.Row_Testing.Duplicate_Row;
+   procedure Duplicate_Plan (Path : String; Task_Count : Positive)
+     renames Improve.Storage.Row_Testing.Duplicate_Plan;
 
-   function Physical_Key (Table, Id : Positive) return Positive is
-     ((Table - 1) * 100_000_000 + Id);
+   procedure Exhaust_Project_Identities (Path : String)
+     renames Improve.Storage.Identity_Testing.Exhaust_Project_Identities;
 
-   function To_Row (Value : Raw_Entity) return Database.Rows.Row is
-      Result : Database.Rows.Row;
-   begin
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Physical_Key (Value.Table_Id, Value.Id))));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Table_Id)));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Id)));
-      Database.Rows.Append (Result, Database.Values.From_Integer (Integer (Value.Parent_Id)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Kind)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.State)));
-      Database.Rows.Append (Result, Database.Values.From_Text (To_Wide_Wide_String (Value.Payload)));
-      Database.Rows.Append (Result, Database.Values.From_Boolean (Value.Active));
-      return Result;
-   end To_Row;
+   procedure Insert_Unknown_Finding_Link (Path : String; Task_Row : Positive)
+     renames Improve.Storage.Row_Testing.Insert_Unknown_Finding_Link;
 
-   function From_Row (Row : Database.Rows.Row) return Raw_Entity is
-     ((Id        => Positive (Database.Rows.Get (Row, 2).Int),
-       Parent_Id => Natural (Database.Rows.Get (Row, 3).Int),
-       Kind      => Database.Rows.Get (Row, 4).Text,
-       State     => Database.Rows.Get (Row, 5).Text,
-       Payload   => Database.Rows.Get (Row, 6).Text,
-       Active    => Database.Rows.Get (Row, 7).Bool,
-       Table_Id  => Positive (Database.Rows.Get (Row, 1).Int)));
-
-   function Key_Of (Value : Raw_Entity) return Positive is (Physical_Key (Value.Table_Id, Value.Id));
-   function Key_Value (Key : Positive) return Database.Values.Value is
-     (Database.Values.From_Integer (Integer (Key)));
-
-   package Raw_Tables is new Database.Tables.Typed
-     (Raw_Entity, Positive, To_Row, From_Row, Key_Of, Key_Value);
-
-   function Raw_Schema return Database.Schema.Table_Schema is
-      Result : Database.Schema.Table_Schema;
-   begin
-      Result.Name := To_Unbounded_Wide_Wide_String ("improve_records");
-      Database.Schema.Add_Column (Result, "physical_id", Database.Types.Integer_Value, False, True);
-      Database.Schema.Add_Column (Result, "table_id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "parent_id", Database.Types.Integer_Value, False);
-      Database.Schema.Add_Column (Result, "kind", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "state", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "payload", Database.Types.Text_Value, False);
-      Database.Schema.Add_Column (Result, "active", Database.Types.Boolean_Value, False);
-      return Result;
-   end Raw_Schema;
-
-   procedure Downgrade_To_Version_2 (Path : String) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : Raw_Entity;
-      Status : Database.Status.Result;
-
-      procedure Clear_Parent (Table, Id : Positive) is
-      begin
-         Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Id), Row);
-         Assert (Status.Code = Database.Status.Ok, "legacy row is missing");
-         Row.Parent_Id := 0;
-         Assert
-           (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-            "legacy parent could not be cleared");
-      end Clear_Parent;
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be reopened for migration fixture");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (1, 1), Row);
-      Assert (Status.Code = Database.Status.Ok, "schema metadata is missing");
-      Row.State := To_Unbounded_Wide_Wide_String ("2");
-      Assert
-        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "schema metadata could not be downgraded");
-      for Id in 1 .. 2 loop
-         Clear_Parent (10, Id);
-         Clear_Parent (11, Id);
-      end loop;
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Downgrade_To_Version_2;
-
-   procedure Corrupt_Revision (Path : String; Revision_Id : Positive) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : Raw_Entity;
-      Status : Database.Status.Result;
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be reopened for corruption fixture");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (6, Revision_Id), Row);
-      Assert (Status.Code = Database.Status.Ok, "revision fixture is missing");
-      Row.Payload := To_Unbounded_Wide_Wide_String ("revision=broken");
-      Assert
-        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "revision fixture could not be corrupted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Corrupt_Revision;
-
-   procedure Corrupt_Baseline_Parent
-     (Path : String; Baseline_Id : Positive) is separate;
-
-   procedure Replace_Row_Payload
-     (Path    : String;
-      Table   : Positive;
-      Id      : Positive;
-      Payload : String) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : Raw_Entity;
-      Status : Database.Status.Result;
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for payload corruption");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Id), Row);
-      Assert (Status.Code = Database.Status.Ok, "payload corruption fixture row is missing");
-      Row.Payload := To_Unbounded_Wide_Wide_String
-        (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Payload));
-      Assert
-        (Raw_Tables.Update (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "fixture row payload could not be corrupted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Replace_Row_Payload;
-
-   procedure Duplicate_Row
-     (Path      : String;
-      Table     : Positive;
-      Source_Id : Positive;
-      New_Id    : Positive) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : Raw_Entity;
-      Status : Database.Status.Result;
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for duplicate fixture");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Source_Id), Row);
-      Assert (Status.Code = Database.Status.Ok, "duplicate fixture source row is missing");
-      Row.Id := New_Id;
-      Assert
-        (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-         "duplicate fixture row could not be inserted");
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Duplicate_Row;
-
-   procedure Duplicate_Plan (Path : String; Task_Count : Positive) is
-      DB     : Database.Handle;
-      Tx     : Database.Transactions.Transaction;
-      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
-      Row    : Raw_Entity;
-      Status : Database.Status.Result;
-
-      procedure Clone
-        (Table, Source_Id, New_Id, Parent_Id : Positive) is
-      begin
-         Status := Raw_Tables.Find (Tx, DB, Schema, Physical_Key (Table, Source_Id), Row);
-         Assert (Status.Code = Database.Status.Ok, "ambiguous-plan source row is missing");
-         Row.Id := New_Id;
-         Row.Parent_Id := Parent_Id;
-         Assert
-           (Raw_Tables.Insert (Tx, DB, Schema, Row).Code = Database.Status.Ok,
-            "ambiguous-plan fixture row could not be inserted");
-      end Clone;
-   begin
-      Database.Open (DB, Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (Path));
-      Assert (Database.Last_Operation_Succeeded (DB), "state database could not be opened for plan duplication");
-      Database.Transactions.Begin_Write (DB, Tx);
-      Clone (5, 1, 2, 1);
-      Clone (6, 1, 2, 2);
-      for Index in 1 .. Task_Count loop
-         Clone (7, Index, 100 + Index, 2);
-      end loop;
-      Database.Transactions.Commit (Tx);
-      Database.Close (DB);
-   exception
-      when others =>
-         if Database.Transactions.Is_Active (Tx) then Database.Transactions.Rollback (Tx); end if;
-         if Database.Is_Open (DB) then Database.Close (DB); end if;
-         raise;
-   end Duplicate_Plan;
-
-   procedure Exhaust_Project_Identities (Path : String) is separate;
-
-   procedure Insert_Unknown_Finding_Link
-     (Path : String; Task_Row : Positive) is separate;
-
-   procedure Insert_Duplicate_Task_Detail
-     (Path : String; Task_Row : Positive) is separate;
+   procedure Insert_Duplicate_Task_Detail (Path : String; Task_Row : Positive)
+     renames Improve.Storage.Row_Testing.Insert_Duplicate_Task_Detail;
 
    type Test_Id is
-     (Invariant_Validation, Indexed_History, Ambiguous_Plans, Schema_Migration, Operational_Limits,
-      Identity_Exhaustion, Corrupt_Links, Corrupt_Revision_Data,
-      Corrupt_Task_Detail, Corrupt_Provenance, Corrupt_Persistence_Context);
+     (Invariant_Validation, Lifecycle_Failures, Indexed_History, Durable_Allocation,
+      Ambiguous_Plans, Schema_Migration, Operational_Limits,
+      Identity_Exhaustion, Interleaved_History_Validation, Corrupt_Links, Corrupt_Revision_Data,
+      Corrupt_Task_Detail, Persisted_Content_Integrity, Previous_Task_Validation,
+      Inactive_Persistence_Row, Corrupt_Provenance, Corrupt_Persistence_Context);
 
    type Storage_Case (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Storage_Case;
@@ -319,7 +133,7 @@ package body Improve_Storage_Test_Suite is
       Plan      : in out Improve.Model.Plan_Revision;
       Revisions : Positive;
       Stored    : out Improve.Model.Plan_Revision;
-      Limits    : Improve.Storage.Read_Limits := Improve.Storage.Default_Read_Limits) is
+      Limits    : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits) is
    begin
       for Revision in 1 .. Revisions loop
          Plan.Fingerprint := To_Unbounded_String
@@ -337,8 +151,8 @@ package body Improve_Storage_Test_Suite is
 
    procedure History_Records
      (Stored   : Improve.Model.Plan_Revision;
-      Mappings : out Improve.Storage.Publication_Vectors.Vector;
-      Evidence : out Improve.Storage.Verification_Vectors.Vector) is
+      Mappings : out Improve.State.Publication_Vectors.Vector;
+      Evidence : out Improve.State.Verification_Vectors.Vector) is
    begin
       for Index in 1 .. 2 loop
          declare Contract : constant String :=
@@ -346,7 +160,7 @@ package body Improve_Storage_Test_Suite is
              (Stored, Stored.Tasks (Index).Id);
          begin
             Mappings.Append
-              (Improve.Storage.Publication_Record'
+              (Improve.State.Publication_Record'
                  (Improve_Task_Id => Stored.Tasks (Index).Id,
                   Harness_Task_Id => To_Unbounded_String ("TASK-SCALE-" & Image (Index)),
                   Origin          => To_Unbounded_String ("improve:scale:" & Image (Index)),
@@ -354,7 +168,7 @@ package body Improve_Storage_Test_Suite is
                   State           => To_Unbounded_String ("candidate"),
                   Plan_Revision   => Stored.Revision));
             Evidence.Append
-              (Improve.Storage.Verification_Record'
+              (Improve.State.Verification_Record'
                  (Scope                => Improve.Model.Task_Evaluation,
                   Task_Id              => Stored.Tasks (Index).Id,
                   Plan_Revision        => Stored.Revision,
@@ -368,14 +182,20 @@ package body Improve_Storage_Test_Suite is
    end History_Records;
 
    procedure Run_Invariant_Validation is separate;
+   procedure Run_Lifecycle_Failures is separate;
    procedure Run_Indexed_History is separate;
+   procedure Run_Durable_Allocation is separate;
    procedure Run_Ambiguous_Plans is separate;
    procedure Run_Schema_Migration is separate;
    procedure Run_Operational_Limits is separate;
    procedure Run_Identity_Exhaustion is separate;
+   procedure Run_Interleaved_History_Validation is separate;
    procedure Run_Corrupt_Links is separate;
    procedure Run_Corrupt_Revision_Data is separate;
    procedure Run_Corrupt_Task_Detail is separate;
+   procedure Run_Persisted_Content_Integrity is separate;
+   procedure Run_Previous_Task_Validation is separate;
+   procedure Run_Inactive_Persistence_Row is separate;
    procedure Run_Corrupt_Provenance is separate;
    procedure Run_Corrupt_Persistence_Context is separate;
 
@@ -383,14 +203,20 @@ package body Improve_Storage_Test_Suite is
    begin
       case Item.Id is
          when Invariant_Validation => Run_Invariant_Validation;
+         when Lifecycle_Failures => Run_Lifecycle_Failures;
          when Indexed_History => Run_Indexed_History;
+         when Durable_Allocation => Run_Durable_Allocation;
          when Ambiguous_Plans => Run_Ambiguous_Plans;
          when Schema_Migration => Run_Schema_Migration;
          when Operational_Limits => Run_Operational_Limits;
          when Identity_Exhaustion => Run_Identity_Exhaustion;
+         when Interleaved_History_Validation => Run_Interleaved_History_Validation;
          when Corrupt_Links => Run_Corrupt_Links;
          when Corrupt_Revision_Data => Run_Corrupt_Revision_Data;
          when Corrupt_Task_Detail => Run_Corrupt_Task_Detail;
+         when Persisted_Content_Integrity => Run_Persisted_Content_Integrity;
+         when Previous_Task_Validation => Run_Previous_Task_Validation;
+         when Inactive_Persistence_Row => Run_Inactive_Persistence_Row;
          when Corrupt_Provenance => Run_Corrupt_Provenance;
          when Corrupt_Persistence_Context => Run_Corrupt_Persistence_Context;
       end case;

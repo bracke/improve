@@ -1,8 +1,10 @@
 with Ada.Directories;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Database.WAL;
 with Hostkit.Fs;
 with Improve.Source;
 with Project_Tools.Files;
@@ -92,13 +94,16 @@ package body Improve_Source_Test_Suite is
             Ada.Directories.Create_Directory (Root & "/state");
             declare
                State   : constant String := Root & "/state/custom.db";
+               WAL     : constant String := Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode
+                 (Database.WAL.WAL_Path
+                    (Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Decode (State)));
                Initial : constant String := Improve.Source.Working_Fingerprint (Root, State);
             begin
                Ada.Directories.Create_Directory (Root & "/obj");
                Project_Tools.Files.Write_Raw_File (Root & "/obj/generated.o", "generated");
                Project_Tools.Files.Write_Raw_File (Root & "/.improve.db", "state");
                Project_Tools.Files.Write_Raw_File (State, "custom state");
-               Project_Tools.Files.Write_Raw_File (State & "-wal", "custom journal");
+               Project_Tools.Files.Write_Raw_File (WAL, "custom journal");
                Assert
                  (Initial = Improve.Source.Working_Fingerprint (Root, State),
                   "configured generated state changed the source fingerprint");

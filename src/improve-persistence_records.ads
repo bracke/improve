@@ -63,6 +63,7 @@ package Improve.Persistence_Records is
       Plan_Id     : UString;
       Revision    : Positive;
       Fingerprint : UString;
+      Content_Fingerprint : UString;
       Task_Kind   : UString;
       Task_Ids    : Improve.Model.UString_Vectors.Vector;
    end record;
@@ -70,6 +71,7 @@ package Improve.Persistence_Records is
    --  @field Plan_Id Stable Improve plan identity.
    --  @field Revision Exact authorized immutable revision.
    --  @field Fingerprint Exact revision content fingerprint.
+   --  @field Content_Fingerprint Complete persisted plan-content fingerprint.
    --  @field Task_Kind Resolved native task kind authorized by preflight.
    --  @field Task_Ids Exact authorized logical task identities.
 
@@ -93,11 +95,13 @@ package Improve.Persistence_Records is
       Plan_Id     : UString;
       Revision    : Positive;
       Fingerprint : UString;
+      Content_Fingerprint : UString;
    end record;
    --  Typed payload stored for one exact-revision approval.
    --  @field Plan_Id Stable Improve plan identity.
    --  @field Revision Exact approved immutable revision.
    --  @field Fingerprint Exact approved revision content fingerprint.
+   --  @field Content_Fingerprint Complete approved persisted plan content.
 
    function Encode_Approval (Value : Approval_Data) return String;
    --  Encode one approval payload canonically.

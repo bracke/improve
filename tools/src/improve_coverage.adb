@@ -86,7 +86,7 @@ begin
       if Units.Is_Empty then Fail ("production source inventory is empty"); end if;
       for Unit of Units loop
          declare
-            Object_Name : constant String := Improve_Coverage_Units.Compilation_Stem (Unit) & ".gcno";
+            Object_Name : constant String := Improve_Coverage_Units.Compilation_Stem (Unit, Units) & ".gcno";
             Run : constant Project_Tools.Processes.Captured_Process :=
               Project_Tools.Processes.Capture
                 ("gcov " & Object_Name, Root, Alr,
@@ -125,6 +125,9 @@ begin
             if Run.Status /= 0 then Fail ("gcov failed for " & Object_Name); end if;
             Include (Unit.Body_Path);
             Include (Unit.Spec_Path);
+            for Path of Unit.Subunit_Paths loop
+               Include (Path);
+            end loop;
             --  GNAT emits no source record for an empty namespace specification.
             --  Keep this exception explicit so a new spec-only implementation
             --  cannot silently disappear from the coverage denominator.

@@ -38,10 +38,15 @@ Command-line configuration, database, state, project, format, and color values o
 Read-only commands do not create, migrate, recover, or repair an external database.
 
 Operational output is bounded by `output.maximum_output_items`, which defaults to 10,000 and may not exceed
-100,000. Persisted history examined by one operation is independently bounded by `operations.maximum_history_items`,
-which defaults to 100,000 and may not exceed 1,000,000. Publication recovery is bounded by
+100,000. Persisted history examined or appended by one operation is independently bounded by
+`operations.maximum_history_items`, which defaults to 100,000 and may not exceed 1,000,000. State-schema upgrades use
+the separate
+`operations.maximum_migration_rows` scan budget, which defaults to 1,000,000 and may be raised to the complete
+representable state capacity of 1,300,000,000 rows. Publication recovery is bounded by
 `operations.maximum_recovery_operations`, which defaults to 100 and may
-not exceed 10,000. `operations.maximum_persisted_text_bytes` bounds each state payload on both write and read,
-defaults to 1 MiB, and may not exceed 16 MiB. Output limits apply to projects, findings, plans, publication results,
-tasks, status, and verification results. Exceeding a limit fails before persistent or harness modification.
+not exceed 10,000. `operations.maximum_persisted_text_bytes` bounds each state field on both write and read,
+defaults to 1 MiB, and may not exceed 16 MiB. `operations.maximum_persisted_total_bytes` independently bounds all
+encoded row bytes read or written for one plan revision; it defaults to 64 MiB and may not exceed 2,000,000,000 bytes.
+Output limits apply to projects, findings, plans, publication results, tasks, status, and verification results.
+Exceeding a limit fails before persistent or harness modification.
 

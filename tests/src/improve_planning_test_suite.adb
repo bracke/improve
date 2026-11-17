@@ -5,7 +5,7 @@ with Improve;
 with Improve.Config;
 with Improve.Model;
 with Improve.Operations.Planning;
-with Improve.Storage;
+with Improve.State;
 with Hostkit.Fs;
 with Project_Tools.Files;
 
@@ -52,7 +52,7 @@ package body Improve_Planning_Test_Suite is
       end;
       begin
          declare
-            Value : constant Improve.Storage.Summary_Vectors.Vector :=
+            Value : constant Improve.State.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List (State, Missing, "1");
             pragma Unreferenced (Value);
          begin

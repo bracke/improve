@@ -68,6 +68,42 @@ begin
               (Improve.Model.Canonical_Key (Left) /= Improve.Model.Canonical_Key (Right),
                "canonical component encoding lost a field boundary");
          end;
+         declare
+            Builder  : Improve.Canonical_Digests.Builder;
+            Expected : constant String :=
+              Improve.Stable_Digest (Natural'Image (1) & ":x" & Natural'Image (1) & ":y");
+            Rejected : Boolean := False;
+         begin
+            Improve.Canonical_Digests.Initialize (Builder);
+            Improve.Canonical_Digests.Add (Builder, "x", "y");
+            Assert
+              (Improve.Canonical_Digests.Finish (Builder) = Expected,
+               "streaming canonical digest changed the established encoding");
+            Improve.Canonical_Digests.Initialize (Builder, Maximum_Value_Bytes => 1);
+            begin
+               Improve.Canonical_Digests.Add (Builder, "x", "too large");
+            exception
+               when Improve.Data_Error => Rejected := True;
+            end;
+            Assert (Rejected, "canonical digest ignored its value-byte limit");
+         end;
+         declare
+            Earlier : Improve.Model.Plan_Revision;
+            Later   : Improve.Model.Plan_Revision;
+         begin
+            Earlier.Project :=
+              (Id => 1, Name | Path | Database_Id => Null_Unbounded_String);
+            Earlier.Baseline :=
+              (Project_Id | Run_Id => 1,
+               Source_Id | Policy_Id | Toolchain_Id | Evidence_Id | Snapshot_Id => Null_Unbounded_String);
+            Earlier.Created_At := Ada.Calendar.Time_Of (2026, 1, 1);
+            Later := Earlier;
+            Later.Created_At := Ada.Calendar.Time_Of (2026, 1, 2);
+            Assert
+              (Improve.Model.Plan_Content_Fingerprint (Earlier) /=
+                 Improve.Model.Plan_Content_Fingerprint (Later),
+               "persisted-content fingerprint ignored creation chronology");
+         end;
       when Project_Discovery =>
          declare
             Data       : constant Fixture := Build_Fixture ("projects");
@@ -269,9 +305,12 @@ begin
                Chosen : constant Improve.Source.Selection := Improve.Source.Select_Assessment (Store, Project);
                Values : constant Improve.Model.Finding_Vectors.Vector := Improve.Findings.Normalize (Chosen);
             begin
-               Assert (Values.Length = 3, "findings were not deduplicated/classified into three candidates");
-               Assert (To_String (Values.First_Element.Fingerprint) = "fixture-manifest",
-                       "Ada Quality finding fingerprint was not preserved");
+               Assert (Values.Length = 3, "findings were not classified into three candidates");
+               Assert
+                 (To_String (Values.First_Element.Fingerprint) =
+                    Finding_Fingerprint
+                      (Ada_Quality.Types.STR_01, "manifest.invalid", "alire.toml", "manifest is invalid"),
+                  "Ada Quality finding fingerprint was not preserved");
                declare
                   Finding_Limit_Rejected : Boolean := False;
                   Byte_Limit_Rejected    : Boolean := False;
@@ -366,8 +405,13 @@ begin
                 (Args ("findings|--database|" & To_String (Data.Database) & "|--project|" &
                        Id_Image (Data.Project) & "|--format|json"));
          begin
-            Assert (Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index (To_String (Result.Output),
-                    "fixture-manifest") > 0, "findings JSON inspection failed: " & To_String (Result.Errors));
+            Assert
+              (Result.Exit_Code = 0 and then
+               Ada.Strings.Fixed.Index
+                 (To_String (Result.Output),
+                  Finding_Fingerprint
+                    (Ada_Quality.Types.STR_01, "manifest.invalid", "alire.toml", "manifest is invalid")) > 0,
+               "findings JSON inspection failed: " & To_String (Result.Errors));
             Remove (Data);
          end;
       when Complete_Strategy_Registry =>

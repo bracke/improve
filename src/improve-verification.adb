@@ -1,6 +1,7 @@
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Hash;
+with Ada.Strings.Unbounded;
 with Improve.Findings;
 with Ada_Quality.Types;
 

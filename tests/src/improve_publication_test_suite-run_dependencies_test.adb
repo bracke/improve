@@ -13,8 +13,8 @@ begin
                Draft     : Improve.Model.Plan_Revision := Draft_For (Data);
                Stored    : Improve.Storage.Save_Result;
                Result    : Improve.CLI.Outcome;
-               First_Map : Improve.Storage.Publication_Record;
-               Next_Map  : Improve.Storage.Publication_Record;
+               First_Map : Improve.State.Publication_Record;
+               Next_Map  : Improve.State.Publication_Record;
                Harness   : Stores.Store;
                Status    : Errors.Error_Info;
                Definition : Records.Item;
@@ -77,7 +77,7 @@ begin
                Third       : Improve.Storage.Save_Result;
                Published   : Improve.Workflow.Publication_Result;
                Republished : Improve.Workflow.Publication_Result;
-               Mappings    : Improve.Storage.Publication_Vectors.Vector;
+               Mappings    : Improve.State.Publication_Vectors.Vector;
                Selected    : Improve.Model.UString_Vectors.Vector;
                Harness     : Stores.Store;
                Recovery    : Stores.Recovery_Report;
@@ -106,7 +106,7 @@ begin
                Published := Improve.Workflow.Publish (To_String (Data.Target), "aunit", First.Plan, "auto");
                for Value of Published.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
                         Value.State, First.Plan.Revision));
                end loop;
@@ -163,7 +163,7 @@ begin
                Stores.Close (Harness);
                for Value of Republished.Tasks loop
                   Mappings.Append
-                    (Improve.Storage.Publication_Record'
+                    (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
                         Value.State, Second.Plan.Revision));
                end loop;
