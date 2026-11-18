@@ -21,12 +21,13 @@ package body Improve_CLI_Test_Suite is
    use type Improve.CLI.Command_Kind;
    use type Improve.CLI.Plan_Operation;
    use type Improve.Config.Color_Mode;
+   use type Improve.Config.Output_Format;
    use type Terminal_Styles.Color_Policy;
 
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
       JSON_Disables_Color, Terminal_Text_Sanitized, Styling_Concurrency, Help_Smoke, Version_Smoke,
-      Quiet_Smoke, Verbose_Smoke, Config_Smoke, Invalid_Smoke);
+      Quiet_Smoke, Verbose_Smoke, Config_Smoke, Extended_Parse, Assets_Smoke, Invalid_Smoke);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -325,12 +326,59 @@ package body Improve_CLI_Test_Suite is
                  (Result.Exit_Code = 0 and then Missing.Exit_Code = Improve.CLI.Argument_Exit,
                   "configuration validation did not honor its explicit source");
             end;
+         when Extended_Parse =>
+            declare
+               Diff : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse
+                   (Args ("plan|diff|PLAN-000001|--against-revision|1|--revision|2|--format|markdown"));
+               Findings : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse
+                   (Args ("findings|--project|demo|--indicator|SEC-01|--severity|critical|--path|src"));
+               Doctor : constant Improve.CLI.Invocation := Improve.CLI.Parse (Args ("doctor|--project|demo"));
+               Audit : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse (Args ("audit|PLAN-000001|--revision|2"));
+            begin
+               Assert
+                 (Diff.Plan_Action = Improve.CLI.Diff_Plan and then Diff.Against_Revision = 1 and then
+                  Diff.Revision = 2 and then Diff.Format = Improve.Config.Markdown_Format and then
+                  Findings.Has_Indicator and then Findings.Has_Severity and then Findings.Has_Path and then
+                  Doctor.Command = Improve.CLI.Doctor_Command and then
+                  Audit.Command = Improve.CLI.Audit_Command and then
+                  Audit.Revision = 2,
+                  "extended inspection and diagnostic options were not parsed");
+               Must_Reject ("plan|diff|PLAN-000001|--revision|2", "requires --against-revision");
+               Must_Reject ("tasks|--task|IMP-1|--severity|high", "accepted only");
+            end;
+         when Assets_Smoke =>
+            declare
+               Completion : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|bash"));
+               Zsh        : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|zsh"));
+               Fish       : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|fish"));
+               Manpage    : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("manpage"));
+               Markdown   : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("version|--format|markdown"));
+            begin
+               Assert
+                 (Completion.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Completion.Output), "complete -F") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Zsh.Output), "#compdef") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Fish.Output), "complete -c") > 0 and then
+                  Manpage.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Manpage.Output), ".TH IMPROVE") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Markdown.Output), "# Improve version") = 1,
+                  "generated CLI assets or Markdown output are invalid");
+            end;
          when Invalid_Smoke =>
             declare
                Result : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("unknown"));
+               JSON_Result : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("unknown|--format|json"));
             begin
                Assert
-                 (Result.Exit_Code = 2 and then Length (Result.Output) = 0 and then Length (Result.Errors) > 0,
+                 (Result.Exit_Code = 2 and then Length (Result.Output) = 0 and then Length (Result.Errors) > 0 and then
+                  JSON_Result.Exit_Code = 2 and then
+                  Ada.Strings.Fixed.Index (To_String (JSON_Result.Errors), """command"":""error""") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (JSON_Result.Errors), "IMP-E-ARGUMENT") > 0,
                   "invalid command did not observe the output contract");
             end;
       end case;

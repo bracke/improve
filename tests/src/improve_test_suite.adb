@@ -26,12 +26,20 @@ with Improve_Verification_Test_Suite;
 with Improve.Config;
 with Improve.Dependencies;
 with Improve.Findings;
+with Improve.Inspection_Filters;
+with Improve.JSON;
 with Improve.Model;
 with Improve.Operations;
+with Improve.Operations.Audit;
+with Improve.Operations.Diagnostics;
 with Improve.Operations.Planning;
 with Improve.Planner;
+with Improve.Plan_Diffs;
 with Improve.Presentation;
 with Improve.Refinement;
+with Improve.Refinement.Model_Adapter;
+with Improve.Refinement.Model_Runner_Client;
+with Improve.Results;
 with Improve.State;
 with Improve.Rules;
 with Improve.Source;
@@ -63,7 +71,7 @@ package body Improve_Test_Suite is
    type Test_Id is
      (Catalog, Digest,
       Project_Discovery, Latest_Completed, Explicit_Incomplete_Rejected, Assessment_Evidence_Bounded,
-      Normalize_Findings,
+      Normalize_Findings, Inspection_Filters, Plan_Diff_Explanation, Doctor_Read_Only, Property_And_Scale,
       Unknown_Project_Rejected, Safe_Path_Validation, Projects_CLI, Findings_CLI,
       Complete_Strategy_Registry, Deterministic_Planner, Planner_Grouping_And_Splitting,
       Plan_Fingerprint_Severity_Sensitive, Plan_Fingerprint_Ignores_Unrelated_Snapshot,
@@ -78,7 +86,7 @@ package body Improve_Test_Suite is
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
-      Agent_Oversized_Collection_Rejected, Agent_Error_Boundary);
+      Agent_Oversized_Collection_Rejected, Agent_Error_Boundary, Model_Adapter_Bridge);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -249,7 +257,8 @@ package body Improve_Test_Suite is
       case Item.Id is
          when Catalog | Digest | Project_Discovery | Latest_Completed | Explicit_Incomplete_Rejected |
            Assessment_Evidence_Bounded |
-           Normalize_Findings | Unknown_Project_Rejected | Safe_Path_Validation | Projects_CLI | Findings_CLI |
+           Normalize_Findings | Inspection_Filters | Plan_Diff_Explanation | Doctor_Read_Only | Property_And_Scale |
+           Unknown_Project_Rejected | Safe_Path_Validation | Projects_CLI | Findings_CLI |
            Complete_Strategy_Registry =>
             Run_Domain_Test (Item);
          when Deterministic_Planner | Planner_Grouping_And_Splitting |
@@ -266,7 +275,7 @@ package body Improve_Test_Suite is
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
            Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
            Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected |
-           Agent_Oversized_Collection_Rejected | Agent_Error_Boundary =>
+           Agent_Oversized_Collection_Rejected | Agent_Error_Boundary | Model_Adapter_Bridge =>
             Run_Agent_Test (Item);
       end case;
    end Run_Test;

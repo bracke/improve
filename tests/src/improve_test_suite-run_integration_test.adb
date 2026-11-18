@@ -76,6 +76,8 @@ begin
                           Id_Image (Data.Project) & "|--format|json"));
                Show_Result : Improve.CLI.Outcome;
                List_Result : Improve.CLI.Outcome;
+               Explain_Result : Improve.CLI.Outcome;
+               Diff_Result    : Improve.CLI.Outcome;
             begin
                Assert (Create_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                          (To_String (Create_Result.Output), """plan_id"":""PLAN-000001""") > 0,
@@ -95,6 +97,18 @@ begin
                Assert (List_Result.Exit_Code = 0 and then Ada.Strings.Fixed.Index
                          (To_String (List_Result.Output), """task_count"":3") > 0,
                        "stored plan listing failed: " & To_String (List_Result.Errors));
+               Explain_Result := Improve.CLI.Execute
+                 (Args ("plan|explain|PLAN-000001|--state|" & State & "|--revision|1|--format|json"));
+               Diff_Result := Improve.CLI.Execute
+                 (Args
+                    ("plan|diff|PLAN-000001|--state|" & State &
+                     "|--against-revision|1|--revision|1|--format|json"));
+               Assert
+                 (Explain_Result.Exit_Code = 0 and then Diff_Result.Exit_Code = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Explain_Result.Output), "initial revision") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Diff_Result.Output), """changed"":false") > 0,
+                  "stored plan comparison failed: " &
+                  To_String (Explain_Result.Errors) & To_String (Diff_Result.Errors));
                Remove (Data);
             end;
          when Repeated_Plan_Idempotent =>

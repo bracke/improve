@@ -188,6 +188,128 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Plan_Approval;
 
+   function Plan_Comparison (Value : Improve.Results.Plan_Comparison; Explain : Boolean) return String is
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, (if Explain then "plan explain" else "plan diff"));
+      Reasons : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Context.Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
+      Doc.Insert
+        (Context.Data, "from_revision", Doc.New_Integer (Long_Long_Integer (Value.From_Revision)));
+      Doc.Insert (Context.Data, "to_revision", Doc.New_Integer (Long_Long_Integer (Value.To_Revision)));
+      Doc.Insert (Context.Data, "changed", Doc.New_Boolean (Value.Changed));
+      for Reason of Value.Reasons loop Doc.Append (Reasons, Doc.New_String (To_String (Reason))); end loop;
+      Doc.Insert (Context.Data, "reasons", Reasons);
+      return Finish_Envelope (Doc, Context);
+   end Plan_Comparison;
+
+   function Diagnostics (Value : Improve.Results.Diagnostic_Report) return String is
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "doctor");
+      Checks  : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Context.Data, "healthy", Doc.New_Boolean (Value.Healthy));
+      for Check of Value.Checks loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "name", Doc.New_String (To_String (Check.Name)));
+            Doc.Insert
+              (Item, "status",
+               Doc.New_String
+                 (case Check.Status is
+                     when Improve.Results.Diagnostic_Pass => "pass",
+                     when Improve.Results.Diagnostic_Warning => "warning",
+                     when Improve.Results.Diagnostic_Fail => "fail"));
+            Doc.Insert (Item, "detail", Doc.New_String (To_String (Check.Detail)));
+            Doc.Append (Checks, Item);
+         end;
+      end loop;
+      Doc.Insert (Context.Data, "checks", Checks);
+      return Finish_Envelope (Doc, Context);
+   end Diagnostics;
+
+   function Audit (Value : Improve.Results.Audit_Bundle) return String is
+      Doc          : Document;
+      Context      : constant Envelope := Start_Envelope (Doc, "audit");
+      Publications : constant Node := Doc.New_Array;
+      Verifications : constant Node := Doc.New_Array;
+      Tasks        : constant Node := Doc.New_Array;
+      Findings     : constant Node := Doc.New_Array;
+      Plan         : Improve.Model.Plan_Revision renames Value.Plan;
+   begin
+      Doc.Insert (Context.Data, "plan_id", Doc.New_String (To_String (Plan.Plan_Id)));
+      Doc.Insert (Context.Data, "revision", Doc.New_Integer (Long_Long_Integer (Plan.Revision)));
+      Doc.Insert (Context.Data, "fingerprint", Doc.New_String (To_String (Plan.Fingerprint)));
+      Doc.Insert (Context.Data, "approved", Doc.New_Boolean (Value.Approved));
+      Doc.Insert (Context.Data, "project_id", Doc.New_Integer (Long_Long_Integer (Plan.Project.Id)));
+      Doc.Insert (Context.Data, "project", Doc.New_String (To_String (Plan.Project.Name)));
+      Doc.Insert (Context.Data, "database_id", Doc.New_String (To_String (Plan.Project.Database_Id)));
+      Doc.Insert (Context.Data, "baseline_run", Doc.New_Integer (Long_Long_Integer (Plan.Baseline.Run_Id)));
+      Doc.Insert (Context.Data, "source_id", Doc.New_String (To_String (Plan.Baseline.Source_Id)));
+      Doc.Insert (Context.Data, "policy_id", Doc.New_String (To_String (Plan.Baseline.Policy_Id)));
+      Doc.Insert (Context.Data, "toolchain_id", Doc.New_String (To_String (Plan.Baseline.Toolchain_Id)));
+      Doc.Insert (Context.Data, "evidence_id", Doc.New_String (To_String (Plan.Baseline.Evidence_Id)));
+      Doc.Insert (Context.Data, "planner_id", Doc.New_String (To_String (Plan.Planner_Id)));
+      for Finding of Plan.Findings loop
+         Doc.Append (Findings, Doc.New_String (Improve.Model.Finding_Key (Finding)));
+      end loop;
+      Doc.Insert (Context.Data, "finding_keys", Findings);
+      for Spec of Plan.Tasks loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "id", Doc.New_String (To_String (Spec.Id)));
+            Doc.Insert (Item, "title", Doc.New_String (To_String (Spec.Title)));
+            Doc.Insert
+              (Item, "contract_fingerprint",
+               Doc.New_String (Improve.Model.Task_Contract_Fingerprint (Spec)));
+            Doc.Append (Tasks, Item);
+         end;
+      end loop;
+      Doc.Insert (Context.Data, "tasks", Tasks);
+      for History_Item of Value.History.Publications loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "improve_task_id", Doc.New_String (To_String (History_Item.Improve_Task_Id)));
+            Doc.Insert (Item, "harness_task_id", Doc.New_String (To_String (History_Item.Harness_Task_Id)));
+            Doc.Insert (Item, "origin", Doc.New_String (To_String (History_Item.Origin)));
+            Doc.Insert (Item, "contract", Doc.New_String (To_String (History_Item.Contract)));
+            Doc.Insert (Item, "state", Doc.New_String (To_String (History_Item.State)));
+            Doc.Insert
+              (Item, "plan_revision", Doc.New_Integer (Long_Long_Integer (History_Item.Plan_Revision)));
+            Doc.Append (Publications, Item);
+         end;
+      end loop;
+      Doc.Insert (Context.Data, "publications", Publications);
+      for History_Item of Value.History.Verifications loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "scope", Doc.New_String (Improve.Model.Image (History_Item.Scope)));
+            Doc.Insert (Item, "task_id", Doc.New_String (To_String (History_Item.Task_Id)));
+            Doc.Insert
+              (Item, "plan_revision", Doc.New_Integer (Long_Long_Integer (History_Item.Plan_Revision)));
+            Doc.Insert
+              (Item, "contract_fingerprint", Doc.New_String (To_String (History_Item.Contract_Fingerprint)));
+            Doc.Insert
+              (Item, "assessment_id", Doc.New_Integer (Long_Long_Integer (History_Item.Assessment_Id)));
+            Doc.Insert (Item, "outcome", Doc.New_String (Improve.Model.Image (History_Item.Outcome)));
+            Doc.Insert (Item, "comparable", Doc.New_Boolean (History_Item.Comparable));
+            Doc.Insert (Item, "explanation", Doc.New_String (To_String (History_Item.Explanation)));
+            Doc.Append (Verifications, Item);
+         end;
+      end loop;
+      Doc.Insert (Context.Data, "verifications", Verifications);
+      return Finish_Envelope (Doc, Context);
+   end Audit;
+
+   function Error
+     (Code, Category, Detail : String;
+      Hint                   : String := "") return String is
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "error");
+   begin
+      Doc.Insert (Context.Data, "code", Doc.New_String (Code));
+      Doc.Insert (Context.Data, "category", Doc.New_String (Category));
+      Doc.Insert (Context.Data, "detail", Doc.New_String (Detail));
+      if Hint /= "" then Doc.Insert (Context.Data, "hint", Doc.New_String (Hint)); end if;
+      return Finish_Envelope (Doc, Context);
+   end Error;
+
    function Publication
      (Plan_Id : String; Value : Improve.Results.Publication_Result; Dry_Run : Boolean) return String is
       Doc     : Document;

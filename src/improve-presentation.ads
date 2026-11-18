@@ -66,6 +66,22 @@ package Improve.Presentation is
    --  @param Value Approved plan revision.
    --  @return Human-readable approval result.
 
+   function Plan_Comparison (Value : Improve.Results.Plan_Comparison; Explain : Boolean) return String;
+   --  Render a plan revision comparison or explanation.
+   --  @param Value Deterministic revision comparison.
+   --  @param Explain Whether the output explains one revision rather than presenting a raw diff.
+   --  @return Human-readable comparison.
+
+   function Diagnostics (Value : Improve.Results.Diagnostic_Report) return String;
+   --  Render read-only diagnostic checks.
+   --  @param Value Diagnostic report.
+   --  @return Human-readable diagnostics.
+
+   function Audit (Value : Improve.Results.Audit_Bundle) return String;
+   --  Render a concise audit-bundle summary.
+   --  @param Value Exact plan, approval, publication, and verification evidence.
+   --  @return Human-readable audit summary.
+
    function Publication
      (Plan_Id : String;
       Value   : Improve.Results.Publication_Result;

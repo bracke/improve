@@ -2,6 +2,16 @@
 
 ## 0.1.0 — 2026-11-03
 
+- Add deterministic plan revision diff and explanation commands over provenance, evidence, and task contracts.
+- Report changed task-contract fields individually and add deterministic audit-bundle export for exact plan revisions.
+- Add read-only local diagnostics, inspection-only finding filters, Markdown reports, generated completions, and a
+  maintained man page.
+- Make diagnostics validate the pin-free release manifest and pinned GNAT 15.2.1 toolchain through the typed Alire
+  manifest API, and make Bash, Zsh, and Fish completions command and value aware.
+- Publish a complete command-specific version-1 JSON output schema, add structured JSON error documents, and automate
+  release validation, GitHub release creation, and optional Alire index submission.
+- Add a concrete schema-constrained model refinement adapter and first-party typed model_runner session client.
+- Add schema-oriented, audit round-trip, error-contract, and 500-task property/scale tests.
 - Centralize normal and recovery publication authorization under identical source and policy rules.
 - Add typed persistence codecs and complete-payload validation for publication, verification, approval, and journals.
 - Enforce configured history limits across revision, task, approval, completion, and inspection scans.

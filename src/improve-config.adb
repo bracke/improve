@@ -164,7 +164,8 @@ package body Improve.Config is
    begin
       if Value = "terminal" then return Terminal_Format;
       elsif Value = "json" then return JSON_Format;
-      else raise Argument_Error with "output.format must be terminal or json";
+      elsif Value = "markdown" then return Markdown_Format;
+      else raise Argument_Error with "output.format must be terminal, json, or markdown";
       end if;
    end Format_Of;
 
@@ -473,7 +474,12 @@ package body Improve.Config is
          when Require_Same_Toolchain => return Boolean_Image (Item.Require_Same_Toolchain);
          when Require_No_New_Critical_Findings => return Boolean_Image (Item.Require_No_New_Critical);
          when Maximum_Output_Items => return Number (Item.Maximum_Output_Items);
-         when Output_Format_Setting => return (if Item.Format = Terminal_Format then "terminal" else "json");
+         when Output_Format_Setting =>
+            return
+              (case Item.Format is
+                  when Terminal_Format => "terminal",
+                  when JSON_Format => "json",
+                  when Markdown_Format => "markdown");
          when Output_Color =>
             return
               (case Item.Color is

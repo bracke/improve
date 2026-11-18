@@ -2,6 +2,7 @@ with Ada.Containers;
 with Ada.Strings.Unbounded;
 with Improve.Findings;
 with Improve.Planner;
+with Improve.Plan_Diffs;
 with Improve.Source;
 
 package body Improve.Operations.Planning is
@@ -123,4 +124,33 @@ package body Improve.Operations.Planning is
       Improve.Storage.Close (State);
       return Plan;
    end Approve;
+
+   function Compare
+     (State_Path       : String;
+      Plan_Id          : String;
+      Earlier_Revision : Positive;
+      Later_Revision   : Positive;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
+      return Improve.Results.Plan_Comparison is
+      Earlier : constant Improve.Model.Plan_Revision :=
+        Load (State_Path, Plan_Id, Earlier_Revision, Limits);
+      Later : constant Improve.Model.Plan_Revision :=
+        Load (State_Path, Plan_Id, Later_Revision, Limits);
+   begin
+      return Improve.Plan_Diffs.Compare (Earlier, Later);
+   end Compare;
+
+   function Explain
+     (State_Path : String;
+      Plan_Id    : String;
+      Revision   : Natural := 0;
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
+      return Improve.Results.Plan_Comparison is
+      Current : constant Improve.Model.Plan_Revision := Load (State_Path, Plan_Id, Revision, Limits);
+      Previous : constant Improve.Model.Plan_Revision :=
+        (if Current.Revision = 1 then Current
+         else Load (State_Path, Plan_Id, Current.Revision - 1, Limits));
+   begin
+      return Improve.Plan_Diffs.Explain (Current, Previous);
+   end Explain;
 end Improve.Operations.Planning;

@@ -4,8 +4,9 @@
 improve <command> [options]
 ```
 
-Commands are `projects`, `findings`, `plan`, `apply`, `tasks`, `status`, `refresh`, `verify`, `recover`, `config`,
-`help`, and `version`. Global options may precede or follow the command. Unknown, repeated, missing, malformed, and
+Commands are `projects`, `findings`, `plan`, `audit`, `apply`, `tasks`, `status`, `refresh`, `verify`, `recover`, `doctor`,
+`config`, `completion`, `manpage`, `help`, and `version`. Global options may precede or follow the command. Unknown,
+repeated, missing, malformed, and
 command-incompatible options are rejected deterministically with exit code 2.
 
 `--config PATH` selects an Improve configuration explicitly. Without it, only `config/improve.toml` beneath the
@@ -17,6 +18,10 @@ missing or malformed.
 `--format json` writes exactly one versioned JSON document to standard output and disables ANSI styling regardless
 of `--color`. Diagnostics are written only to standard error. Inspection commands return zero when inspection
 succeeds even when quality findings exist; verification returns one when its requested criteria remain unresolved.
+`--format markdown` emits a color-free fenced report suitable for issue trackers and release artifacts. The formal
+version-1 JSON envelope and the structured diagnostic and plan-comparison documents are described by
+`schemas/improve-output-v1.schema.json`. When JSON is requested, failures are a single versioned `error` document on
+standard error with a stable `IMP-E-*` code, category, detail, and optional corrective hint.
 
 Exit codes are 0 for success, 1 for a completed negative verification, 2 for invalid input, 3 for unavailable
 evidence or project state, and 4 for storage, integrity, publication, or internal failure.
@@ -34,6 +39,17 @@ revision; `tasks --task IMP-ID --revision N` and `verify --task IMP-ID --revisio
 the persistent cross-revision index rather than substituting the plan's latest revision. Omitting `--revision` selects
 the newest revision that actually contains that logical task.
 
+`plan diff PLAN-ID --against-revision A --revision B` compares complete baseline provenance, findings, planner policy,
+review state, task membership, and immutable task contracts. `plan explain PLAN-ID [--revision N]` presents the same
+stable reasons relative to the preceding revision; revision one is explained from its originating assessment and
+finding/task counts. Both commands are read-only and identify each changed task field rather than collapsing changes
+into one contract flag.
+
+`audit PLAN-ID [--revision N]` exports the selected immutable plan provenance and task-contract fingerprints together
+with exact-revision approval, publication mappings, and verification evidence. It opens only Improve state, read-only,
+and is intended for review archives and release evidence. JSON is the complete machine-readable bundle; terminal and
+Markdown formats provide a concise count and identity summary.
+
 `verify --project PROJECT --revision N --run RUN` evaluates an exact historical plan revision. Task, plan, and project
 evidence records retain that revision and its immutable acceptance-contract fingerprint, so valid evaluations of two
 revisions against the same assessment coexist while repeated evaluation of either exact revision remains idempotent.
@@ -44,6 +60,9 @@ available for publication preflight without approval because it cannot create ta
 publication mappings; an unpublished prerequisite is reported explicitly and is never silently omitted.
 
 ## Operational inspection
+
+`findings` accepts inspection-only `--indicator ID`, `--severity LEVEL`, and `--path TEXT` filters. Filtering occurs
+after complete bounded evidence normalization and cannot affect planning, fingerprints, approval, or verification.
 
 `improve tasks --project PROJECT` lists every stored Improve task for the exact database-qualified registered project;
 `improve tasks --task ID` qualifies verification freshness against the selected quality database when it is available.
@@ -99,4 +118,15 @@ remains pending and creates no work; already committed tasks may still be safely
 no obsolete task definition is newly published.
 The command does not create a missing state database and processes at most
 `operations.maximum_recovery_operations` pending entries per invocation.
+
+## Diagnostics and generated assets
+
+`improve doctor [--project PROJECT]` validates effective configuration, opens the selected Ada Quality and Improve
+databases read-only, optionally resolves a project, reports pending publication recovery, and checks the pin-free
+release manifest, crate identity, and required GNAT 15.2.1 pin through the typed Alire-manifest API. It never creates,
+migrates, repairs, or publishes state. An unhealthy report returns exit code 1.
+
+`improve completion bash|zsh|fish` generates context-aware shell completion source for commands, plan operations,
+enumerated option values, and path options. `improve manpage` generates the maintained roff manual page; checked-in
+copies live under `completions/` and `docs/improve.1` for packaging.
 

@@ -1,0 +1,23 @@
+.TH IMPROVE 1 "" "Improve 0.1.0" "User Commands"
+.SH NAME
+improve \- deterministic Ada quality remediation planning
+.SH SYNOPSIS
+.B improve
+command [options]
+.SH DESCRIPTION
+Improve reads completed Ada Quality assessments, stores immutable remediation plans, and publishes approved work as
+native model_runner tasks.
+.SH COMMANDS
+projects, findings, plan, audit, apply, tasks, status, refresh, verify, recover, doctor, config, completion, manpage,
+help, and version.
+.SH PLAN OPERATIONS
+plan supports list, show, approve, diff, and explain in addition to deterministic generation.
+.SH AUDIT
+audit PLAN-ID [--revision N] exports immutable provenance, approval, publication, and verification evidence.
+.SH OUTPUT
+--format accepts terminal, json, or markdown. JSON output and JSON errors are single versioned documents.
+.SH EXIT STATUS
+0 success; 1 unresolved verification or unhealthy diagnostics; 2 invalid input; 3 unavailable evidence; 4 storage or
+internal failure.
+.SH SEE ALSO
+ada_quality(1), model_runner(1)

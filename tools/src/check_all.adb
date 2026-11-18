@@ -111,7 +111,13 @@ begin
    Check_File ("LICENSE");
    Check_File ("config/improve.toml");
    Check_File ("docs/release-readiness.md");
+   Check_File ("docs/improve.1");
    Check_File ("docs/dependency-licenses.md");
+   Check_File ("schemas/improve-output-v1.schema.json");
+   Check_File ("completions/improve.bash");
+   Check_File ("completions/_improve");
+   Check_File ("completions/improve.fish");
+   Check_File (".github/workflows/release.yml");
    Check_File ("coverage/gcov-summary.txt");
    Reject_Non_Ada_Tooling ("*.sh");
    Reject_Non_Ada_Tooling ("*.py");

@@ -85,7 +85,7 @@ package body Improve.Presentation is
          end if;
          Result.Acquired := True;
          Result.Previous := Terminal_Styles.Current_Color_Policy;
-         if Format = JSON_Format then
+         if Format in JSON_Format | Markdown_Format then
             Terminal_Styles.Set_Color_Policy (Terminal_Styles.Color_Never);
          else
             Terminal_Styles.Set_Color_Policy
@@ -273,6 +273,54 @@ package body Improve.Presentation is
      (Message
         ("plan.approved",
          [Arg ("id", To_String (Value.Plan_Id)), Arg ("revision", Number (Value.Revision))]) & LF);
+
+   function Plan_Comparison (Value : Improve.Results.Plan_Comparison; Explain : Boolean) return String is
+      Result : Unbounded_String;
+   begin
+      Append
+        (Result,
+         Header ((if Explain then "Plan revision explanation" else "Plan revision diff")) & LF &
+         To_String (Value.Plan_Id) & "  r" & Number (Value.From_Revision) & " -> r" &
+         Number (Value.To_Revision) & LF);
+      if Value.Reasons.Is_Empty then
+         Append (Result, "No semantic changes." & LF);
+      else
+         for Reason of Value.Reasons loop
+            Append (Result, "- " & Safe_Text (To_String (Reason)) & LF);
+         end loop;
+      end if;
+      return To_String (Result);
+   end Plan_Comparison;
+
+   function Diagnostics (Value : Improve.Results.Diagnostic_Report) return String is
+      Result : Unbounded_String;
+   begin
+      Append (Result, Header ("Improve diagnostics") & LF);
+      for Check of Value.Checks loop
+         Append
+           (Result,
+            (case Check.Status is
+                when Improve.Results.Diagnostic_Pass => "PASS",
+                when Improve.Results.Diagnostic_Warning => "WARN",
+                when Improve.Results.Diagnostic_Fail => "FAIL") &
+            "  " & Safe_Text (To_String (Check.Name)) & "  " & Safe_Text (To_String (Check.Detail)) & LF);
+      end loop;
+      return To_String (Result);
+   end Diagnostics;
+
+   function Audit (Value : Improve.Results.Audit_Bundle) return String is
+      Result : Unbounded_String;
+   begin
+      Append
+        (Result, Header ("Plan audit bundle") & LF & To_String (Value.Plan.Plan_Id) & "  revision " &
+         Number (Value.Plan.Revision) & LF & "fingerprint  " & To_String (Value.Plan.Fingerprint) & LF &
+         "approved  " & (if Value.Approved then "yes" else "no") & LF & "findings  " &
+         Number (Natural (Value.Plan.Findings.Length)) & LF & "tasks  " &
+         Number (Natural (Value.Plan.Tasks.Length)) & LF & "publications  " &
+         Number (Natural (Value.History.Publications.Length)) & LF & "verifications  " &
+         Number (Natural (Value.History.Verifications.Length)) & LF);
+      return To_String (Result);
+   end Audit;
 
    function Publication
      (Plan_Id : String;

@@ -5,15 +5,20 @@ with Ada.IO_Exceptions;
 with Ada.Text_IO;
 with Ada.Text_IO.Text_Streams;
 with Improve.CLI.Parsing;
+with Improve.CLI_Assets;
 with Improve.JSON;
+with Improve.Inspection_Filters;
 with Improve.Model;
 with Improve.Operations.Inspection;
+with Improve.Operations.Audit;
+with Improve.Operations.Diagnostics;
 with Improve.Operations.Planning;
 with Improve.Operations.Publication;
 with Improve.Operations.Reconciliation;
 with Improve.Operations.Recovery;
 with Improve.Operations.Verification;
 with Improve.Presentation;
+with Improve.Results;
 with Improve.State;
 with Improve.Tasks;
 with Improve.Text;
@@ -41,9 +46,11 @@ package body Improve.CLI is
    function Name (Command : Command_Kind) return String is
      (case Command is
          when Projects_Command => "projects", when Findings_Command => "findings", when Plan_Command => "plan",
+         when Audit_Command => "audit",
          when Apply_Command => "apply", when Tasks_Command => "tasks", when Status_Command => "status",
          when Refresh_Command => "refresh", when Verify_Command => "verify", when Recover_Command => "recover",
-         when Config_Command => "config", when Help_Command => "help", when Version_Command => "version");
+         when Doctor_Command => "doctor", when Config_Command => "config", when Completion_Command => "completion",
+         when Manpage_Command => "manpage", when Help_Command => "help", when Version_Command => "version");
 
    function Parse (Arguments : String_Vectors.Vector) return Invocation is
      (Parsing.Parse (Arguments));
@@ -57,19 +64,25 @@ package body Improve.CLI is
    begin
       Append (Result, Message ("help.usage") & LF & LF & Message ("help.commands") & LF);
       Line ("projects", "help.cmd.projects"); Line ("findings", "help.cmd.findings");
-      Line ("plan", "help.cmd.plan"); Line ("apply", "help.cmd.apply"); Line ("tasks", "help.cmd.tasks");
+      Line ("plan", "help.cmd.plan"); Line ("audit", "help.cmd.audit");
+      Line ("apply", "help.cmd.apply"); Line ("tasks", "help.cmd.tasks");
       Line ("status", "help.cmd.status"); Line ("refresh", "help.cmd.refresh");
       Line ("verify", "help.cmd.verify"); Line ("recover", "help.cmd.recover");
-      Line ("config", "help.cmd.config"); Line ("help", "help.cmd.help"); Line ("version", "help.cmd.version");
+      Line ("doctor", "help.cmd.doctor"); Line ("config", "help.cmd.config");
+      Line ("completion", "help.cmd.completion"); Line ("manpage", "help.cmd.manpage");
+      Line ("help", "help.cmd.help"); Line ("version", "help.cmd.version");
       Append (Result, LF & Message ("help.options") & LF);
       Line ("--config PATH", "help.opt.config", 36);
       Line ("--database PATH", "help.opt.database", 36); Line ("--state PATH", "help.opt.state", 36);
       Line ("--project ID|NAME", "help.opt.project", 36);
-      Line ("--format terminal|json", "help.opt.format", 36);
+      Line ("--format terminal|json|markdown", "help.opt.format", 36);
       Line ("--color auto|always|never", "help.opt.color", 36);
       Line ("--run ID", "help.opt.run", 36); Line ("--revision NUMBER", "help.opt.revision", 36);
+      Line ("--against-revision NUMBER", "help.opt.against_revision", 36);
       Line ("--task ID", "help.opt.task", 36);
       Line ("--status STATUS", "help.opt.status", 36); Line ("--dry-run", "help.opt.dry_run", 36);
+      Line ("--indicator ID", "help.opt.indicator", 36); Line ("--severity LEVEL", "help.opt.severity", 36);
+      Line ("--path TEXT", "help.opt.path", 36);
       Line ("--all", "help.opt.all", 36);
       Line ("--verbose", "help.opt.verbose", 36); Line ("--quiet", "help.opt.quiet", 36);
       Line ("--help", "help.opt.help", 36);
@@ -92,10 +105,15 @@ package body Improve.CLI is
      (Item     : Invocation;
       Renderer : not null access function return String) return String is
       Style : Improve.Presentation.Styling_Scope :=
-        Improve.Presentation.Configure (Terminal_Format, Item.Color);
+        Improve.Presentation.Configure (Item.Format, Item.Color);
       pragma Unreferenced (Style);
    begin
-      return Renderer.all;
+      declare Rendered : constant String := Renderer.all; begin
+         if Item.Format = Markdown_Format then
+            return "# Improve " & Name (Item.Command) & LF & LF & "```text" & LF & Rendered & "```" & LF;
+         end if;
+         return Rendered;
+      end;
    end Render_Terminal;
 
    function Projects_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
@@ -113,8 +131,12 @@ package body Improve.CLI is
 
    function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
       Inspected : constant Improve.Operations.Inspection.Finding_Result :=
-        Improve.Operations.Inspection.Findings
-          (Quality_Path (Item, Settings), To_String (Item.Project), Item.Run_Id, Settings);
+        Improve.Inspection_Filters.Findings
+          (Improve.Operations.Inspection.Findings
+             (Quality_Path (Item, Settings), To_String (Item.Project), Item.Run_Id, Settings),
+           Indicator => To_String (Item.Indicator_Filter),
+           Severity  => To_String (Item.Severity_Filter),
+           Path      => To_String (Item.Path_Filter));
 
       function Render return String is
         (Improve.Presentation.Findings (Inspected));
@@ -127,7 +149,29 @@ package body Improve.CLI is
 
    function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
    begin
-      if Item.Plan_Action = Approve_Plan then
+      if Item.Plan_Action = Diff_Plan then
+         declare
+            Compared : constant Improve.Results.Plan_Comparison :=
+              Improve.Operations.Planning.Compare
+                (State_Path (Item), To_String (Item.Target), Positive (Item.Against_Revision),
+                 Positive (Item.Revision), Improve.Operations.Storage_Limits (Settings));
+            function Render return String is (Improve.Presentation.Plan_Comparison (Compared, False));
+         begin
+            if Item.Format = JSON_Format then return Improve.JSON.Plan_Comparison (Compared, False); end if;
+            return Render_Terminal (Item, Render'Access);
+         end;
+      elsif Item.Plan_Action = Explain_Plan then
+         declare
+            Compared : constant Improve.Results.Plan_Comparison :=
+              Improve.Operations.Planning.Explain
+                (State_Path (Item), To_String (Item.Target), Item.Revision,
+                 Improve.Operations.Storage_Limits (Settings));
+            function Render return String is (Improve.Presentation.Plan_Comparison (Compared, True));
+         begin
+            if Item.Format = JSON_Format then return Improve.JSON.Plan_Comparison (Compared, True); end if;
+            return Render_Terminal (Item, Render'Access);
+         end;
+      elsif Item.Plan_Action = Approve_Plan then
          declare
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Operations.Planning.Approve
@@ -213,6 +257,17 @@ package body Improve.CLI is
       end if;
       return Render_Terminal (Item, Render'Access);
    end Apply_Output;
+
+   function Audit_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+      Bundle : constant Improve.Results.Audit_Bundle :=
+        Improve.Operations.Audit.Run
+          (State_Path (Item), To_String (Item.Target), Item.Revision,
+           Settings.Maximum_Output_Items, Improve.Operations.Storage_Limits (Settings));
+      function Render return String is (Improve.Presentation.Audit (Bundle));
+   begin
+      if Item.Format = JSON_Format then return Improve.JSON.Audit (Bundle); end if;
+      return Render_Terminal (Item, Render'Access);
+   end Audit_Output;
 
    function Tasks_Output
      (Item                        : Invocation;
@@ -315,6 +370,21 @@ package body Improve.CLI is
       return Verify_Output (Item, Settings, Ignored, Command => "refresh");
    end Refresh_Output;
 
+   function Doctor_Output
+     (Item     : Invocation;
+      Settings : Improve.Config.Settings;
+      Negative : out Boolean) return String is
+      Report : constant Improve.Results.Diagnostic_Report :=
+        Improve.Operations.Diagnostics.Run
+          (Quality_Path (Item, Settings), State_Path (Item), To_String (Item.Project), Settings,
+           Improve.Operations.Storage_Limits (Settings));
+      function Render return String is (Improve.Presentation.Diagnostics (Report));
+   begin
+      Negative := not Report.Healthy;
+      if Item.Format = JSON_Format then return Improve.JSON.Diagnostics (Report); end if;
+      return Render_Terminal (Item, Render'Access);
+   end Doctor_Output;
+
    function Dispatch
      (Item     : Invocation;
       Configuration : Improve.Config.Loaded_Configuration;
@@ -346,6 +416,7 @@ package body Improve.CLI is
          when Projects_Command => return Projects_Output (Item, Settings);
          when Findings_Command => return Findings_Output (Item, Settings);
          when Plan_Command => return Plan_Output (Item, Settings);
+         when Audit_Command => return Audit_Output (Item, Settings);
          when Apply_Command => return Apply_Output (Item, Settings);
          when Tasks_Command =>
             return Tasks_Output (Item, Settings, Configuration.Quality_Database_Configured);
@@ -353,14 +424,62 @@ package body Improve.CLI is
          when Verify_Command => return Verify_Output (Item, Settings, Negative);
          when Refresh_Command => return Refresh_Output (Item, Settings);
          when Recover_Command => return Recover_Output (Item, Settings);
+         when Doctor_Command => return Doctor_Output (Item, Settings, Negative);
+         when Completion_Command =>
+            Plain := To_Unbounded_String (Improve.CLI_Assets.Completion (To_String (Item.Target)));
+         when Manpage_Command => Plain := To_Unbounded_String (Improve.CLI_Assets.Manpage);
       end case;
       if Item.Format = JSON_Format then
          return Improve.JSON.Text (Name (Item.Command), "text", To_String (Plain));
+      elsif Item.Format = Markdown_Format then
+         return "# Improve " & Name (Item.Command) & LF & LF & "```text" & LF & To_String (Plain) & "```" & LF;
       end if;
       return To_String (Plain);
    end Dispatch;
 
    type Error_Category is (Invalid_Input, Unavailable_Dependency, Invalid_State, Internal_Failure);
+
+   function Error_Code (Category : Error_Category) return String is
+     (case Category is
+         when Invalid_Input => "IMP-E-ARGUMENT",
+         when Unavailable_Dependency => "IMP-E-DEPENDENCY",
+         when Invalid_State => "IMP-E-DATA",
+         when Internal_Failure => "IMP-E-INTERNAL");
+
+   function Category_Name (Category : Error_Category) return String is
+     (case Category is
+         when Invalid_Input => "invalid_input",
+         when Unavailable_Dependency => "unavailable_dependency",
+         when Invalid_State => "invalid_state",
+         when Internal_Failure => "internal_failure");
+
+   function Requests_JSON (Arguments : String_Vectors.Vector) return Boolean is
+   begin
+      for Index in 1 .. Natural (Arguments.Length) loop
+         if Arguments (Index) = "--format=json" or else
+           (Arguments (Index) = "--format" and then Index < Natural (Arguments.Length) and then
+            Arguments (Index + 1) = "json")
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Requests_JSON;
+
+   function Diagnostic (Category : Error_Category; Detail : String) return String;
+
+   function Error_Output
+     (Category : Error_Category;
+      Detail   : String;
+      JSON     : Boolean;
+      Hint     : String := "") return String is
+   begin
+      if JSON then
+         return Improve.JSON.Error
+           (Error_Code (Category), Category_Name (Category), Improve.Presentation.Safe_Text (Detail), Hint);
+      end if;
+      return Diagnostic (Category, Detail) & (if Hint = "" then "" else Hint & LF);
+   end Error_Output;
 
    function Diagnostic (Category : Error_Category; Detail : String) return String is
       Key : constant String :=
@@ -378,10 +497,11 @@ package body Improve.CLI is
    function Execute (Arguments : String_Vectors.Vector) return Outcome is
       Item : Invocation;
       Negative : Boolean := False;
+      JSON_Errors : Boolean := Requests_JSON (Arguments);
    begin
       Item := Parse (Arguments);
       declare Configuration : constant Improve.Config.Loaded_Configuration :=
-        (if Item.Command in Help_Command | Version_Command
+        (if Item.Command in Help_Command | Version_Command | Completion_Command | Manpage_Command
          then
            (Values => Improve.Config.Defaults,
             Source_Path => Null_Unbounded_String,
@@ -390,8 +510,9 @@ package body Improve.CLI is
          Settings : Improve.Config.Settings renames Configuration.Values;
       begin
          if not Item.Has_Format then Item.Format := Settings.Format; end if;
+         JSON_Errors := Item.Format = JSON_Format;
          if not Item.Has_Color then Item.Color := Settings.Color; end if;
-         if Item.Format = JSON_Format then Item.Color := Color_Never; end if;
+         if Item.Format in JSON_Format | Markdown_Format then Item.Color := Color_Never; end if;
          declare
             Base_Output : constant String := Dispatch (Item, Configuration, Negative);
             Output      : Unbounded_String := To_Unbounded_String (Base_Output);
@@ -416,18 +537,22 @@ package body Improve.CLI is
       when Error : Argument_Error =>
          return (Argument_Exit, Null_Unbounded_String,
                  To_Unbounded_String
-                   (Diagnostic (Invalid_Input, Ada.Exceptions.Exception_Message (Error)) &
-                    Message ("error.hint") & LF));
+                   (Error_Output
+                      (Invalid_Input, Ada.Exceptions.Exception_Message (Error), JSON_Errors,
+                       Message ("error.hint"))));
       when Error : Dependency_Error =>
          return (Unavailable_Exit, Null_Unbounded_String,
                  To_Unbounded_String
-                   (Diagnostic (Unavailable_Dependency, Ada.Exceptions.Exception_Message (Error))));
+                   (Error_Output
+                      (Unavailable_Dependency, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
       when Error : Data_Error =>
          return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String (Diagnostic (Invalid_State, Ada.Exceptions.Exception_Message (Error))));
+                 To_Unbounded_String
+                   (Error_Output (Invalid_State, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
       when Error : others =>
          return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String (Diagnostic (Internal_Failure, Ada.Exceptions.Exception_Message (Error))));
+                 To_Unbounded_String
+                   (Error_Output (Internal_Failure, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
    end Execute;
 
    procedure Write (Text : String) is

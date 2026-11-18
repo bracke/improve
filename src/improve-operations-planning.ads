@@ -1,5 +1,6 @@
 with Improve.Config;
 with Improve.Model;
+with Improve.Results;
 with Improve.State;
 with Improve.Storage;
 with Ada_Quality.Reporting;
@@ -74,4 +75,32 @@ package Improve.Operations.Planning is
    --  @param Plan_Id Stable plan identity.
    --  @param Limits Hard persistence reconstruction limits.
    --  @return Exact approved immutable plan revision.
+
+   function Compare
+     (State_Path       : String;
+      Plan_Id          : String;
+      Earlier_Revision : Positive;
+      Later_Revision   : Positive;
+      Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
+      return Improve.Results.Plan_Comparison;
+   --  Compare two exact immutable revisions without modifying state.
+   --  @param State_Path Existing Improve state database path.
+   --  @param Plan_Id Stable logical plan identity.
+   --  @param Earlier_Revision Earlier immutable revision.
+   --  @param Later_Revision Later immutable revision.
+   --  @param Limits Hard persistence reconstruction limits.
+   --  @return Deterministic revision comparison.
+
+   function Explain
+     (State_Path : String;
+      Plan_Id    : String;
+      Revision   : Natural := 0;
+      Limits     : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
+      return Improve.Results.Plan_Comparison;
+   --  Explain an exact or latest revision relative to its predecessor.
+   --  @param State_Path Existing Improve state database path.
+   --  @param Plan_Id Stable logical plan identity.
+   --  @param Revision Exact revision, or zero for latest.
+   --  @param Limits Hard persistence reconstruction limits.
+   --  @return Deterministic revision explanation.
 end Improve.Operations.Planning;

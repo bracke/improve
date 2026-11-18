@@ -66,6 +66,14 @@ No framework record or transaction behavior is copied here.
 Optional planning assistance sits behind `Improve.Refinement.Adapter`. The adapter receives bounded immutable context
 and returns typed proposals; it owns no plan, quality, project, or harness state. Improve validates and fingerprints the
 result before normal persistence. model_runner's interactive `/work` path remains exclusively the execution workflow.
+`Improve.Refinement.Model_Adapter` supplies a concrete schema-aware bridge to any in-process typed model client.
+`Improve.Refinement.Model_Runner_Client` implements that client over an optional model_runner inference session while
+keeping session ownership outside Improve and preserving the same validation and fallback path.
+
+Read-only usability features remain adapters over deterministic application state. Plan comparison evaluates immutable
+revision provenance and individual contract fields without persistence; audit bundles join exact plan, approval,
+publication, and verification history; finding filters run only after evidence normalization; `doctor` opens dependencies
+read-only. Markdown, JSON, terminal, completion, and man-page output contain no domain decisions.
 
 Recovery orchestration belongs to `Improve.Operations.Recovery`, alongside the other application use cases. The older
 `Improve.Recovery` unit is retained only as a compatibility adapter and contains no recovery policy.

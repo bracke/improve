@@ -168,6 +168,81 @@ begin
             Assert (Propagated, "adapter boundary masked a programming error");
             Remove (Data);
          end;
+      when Model_Adapter_Bridge =>
+         declare
+            type Fake_Client is new Improve.Refinement.Model_Adapter.Client with record
+               Saw_Schema : Boolean := False;
+               Saw_Limit  : Boolean := False;
+            end record;
+
+            overriding function Name (Self : Fake_Client) return String is
+              (if Self.Saw_Schema then "fake-ready" else "fake-model");
+
+            overriding procedure Complete
+              (Self                   : in out Fake_Client;
+               Context                : Improve.Refinement.Planning_Context;
+               Answer_Schema          : String;
+               Timeout_Seconds        : Positive;
+               Maximum_Response_Bytes : Positive;
+               Response               : out Improve.Refinement.Agent_Response) is
+               pragma Unreferenced (Timeout_Seconds);
+            begin
+               Self.Saw_Schema := Answer_Schema = To_String (Context.Required_Schema);
+               Self.Saw_Limit := Maximum_Response_Bytes = Context.Maximum_Response_Bytes;
+               Response := (Status => Improve.Refinement.Agent_Unavailable, others => <>);
+            end Complete;
+
+            type Fake_Session is new Improve.Refinement.Model_Runner_Client.Session with record
+               Saw_Model : Boolean := False;
+            end record;
+
+            overriding function Name (Self : Fake_Session) return String is
+              (if Self.Saw_Model then "session-ready" else "session");
+
+            overriding procedure Infer
+              (Self                   : in out Fake_Session;
+               Model                  : String;
+               Context                : Improve.Refinement.Planning_Context;
+               Answer_Schema          : String;
+               Timeout_Seconds        : Positive;
+               Maximum_Response_Bytes : Positive;
+               Response               : out Improve.Refinement.Agent_Response) is
+               pragma Unreferenced (Timeout_Seconds);
+            begin
+               Self.Saw_Model :=
+                 Model = "fixture-model" and then Answer_Schema = To_String (Context.Required_Schema) and then
+                 Maximum_Response_Bytes = Context.Maximum_Response_Bytes;
+               Response := (Status => Improve.Refinement.Agent_Unavailable, others => <>);
+            end Infer;
+
+            Data     : constant Fixture := Build_Fixture ("model_adapter");
+            Draft    : constant Improve.Model.Plan_Revision := Draft_For (Data);
+            Settings : constant Improve.Config.Settings := Improve.Config.Defaults;
+            Context  : constant Improve.Refinement.Planning_Context :=
+              Improve.Refinement.Build_Context (Draft, Improve.Operations.Refinement_Limits (Settings));
+            Backend  : aliased Fake_Client;
+            Provider : Improve.Refinement.Model_Adapter.Provider (Backend'Access);
+            Session_Backend : aliased Fake_Session;
+            Session_Client  : aliased Improve.Refinement.Model_Runner_Client.Client :=
+              Improve.Refinement.Model_Runner_Client.Create (Session_Backend'Access, "fixture-model");
+            Session_Provider : Improve.Refinement.Model_Adapter.Provider (Session_Client'Access);
+            Response : Improve.Refinement.Agent_Response;
+         begin
+            Improve.Refinement.Model_Adapter.Request
+              (Provider, Context, Settings.Agent_Timeout_Seconds, Response);
+            Assert
+              (Backend.Saw_Schema and then Backend.Saw_Limit and then
+               Improve.Refinement.Model_Adapter.Name (Provider) = "model:fake-ready",
+               "typed model adapter did not preserve schema and response bounds");
+            Improve.Refinement.Model_Adapter.Request
+              (Session_Provider, Context, Settings.Agent_Timeout_Seconds, Response);
+            Assert
+              (Session_Backend.Saw_Model and then
+               Improve.Refinement.Model_Runner_Client.Name (Session_Client) =
+                 "model_runner:session-ready:fixture-model",
+               "first-party model_runner client lost model, schema, deadline, or response bounds");
+            Remove (Data);
+         end;
       when others =>
          raise Program_Error with "non-agent case routed to the agent test subunit";
    end case;

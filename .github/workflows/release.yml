@@ -1,0 +1,70 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Release version used for the Git tag and GitHub release
+        required: true
+        type: string
+        default: "0.1.0"
+      create_release:
+        description: Create the validated Git tag and GitHub release
+        required: true
+        type: boolean
+        default: false
+      submit_to_index:
+        description: Submit the validated release to the Alire community index
+        required: true
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: alire-project/setup-alire@v5
+      - name: Build release tools
+        run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
+      - name: Run Phase 9
+        run: tools/bin/check_phase_9
+      - name: Validate pin-free release candidate
+        run: tools/bin/check_release_candidate
+      - name: Capture generated CLI assets
+        run: |
+          ./bin/improve manpage > improve.1
+          ./bin/improve completion bash > improve.bash
+          ./bin/improve completion zsh > _improve
+          ./bin/improve completion fish > improve.fish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: improve-${{ github.ref_name }}-cli-assets
+          path: |
+            improve.1
+            improve.bash
+            _improve
+            improve.fish
+            schemas/improve-output-v1.schema.json
+      - name: Create Git tag and GitHub release
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "v${{ inputs.release_version }}"
+          --target "${GITHUB_SHA}" --generate-notes
+      - name: Submit to Alire community index
+        if: github.event_name == 'workflow_dispatch' && inputs.submit_to_index
+        env:
+          GH_TOKEN: ${{ secrets.ALIRE_GITHUB_TOKEN }}
+        run: >-
+          alr -n publish --manifest alire.release.toml
+          "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" "${GITHUB_SHA}"

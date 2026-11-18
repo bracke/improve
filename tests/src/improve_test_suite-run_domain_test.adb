@@ -68,6 +68,149 @@ begin
               (Improve.Model.Canonical_Key (Left) /= Improve.Model.Canonical_Key (Right),
                "canonical component encoding lost a field boundary");
          end;
+      when Plan_Diff_Explanation =>
+         declare
+            Data    : constant Fixture := Build_Fixture ("plan_diff");
+            Earlier : Improve.Model.Plan_Revision := Draft_For (Data);
+            Later   : Improve.Model.Plan_Revision;
+         begin
+            Earlier.Plan_Id := To_Unbounded_String ("PLAN-000001");
+            Earlier.Revision := 1;
+            Later := Earlier;
+            Later.Revision := 2;
+            Later.Baseline.Run_Id := Earlier.Baseline.Run_Id + 1;
+            Later.Tasks (Later.Tasks.First_Index).Title := To_Unbounded_String ("Changed contract");
+            declare
+               Compared : constant Improve.Results.Plan_Comparison :=
+                 Improve.Plan_Diffs.Compare (Earlier, Later);
+               Initial : constant Improve.Results.Plan_Comparison :=
+                 Improve.Plan_Diffs.Explain (Earlier, Earlier);
+            begin
+               Assert
+                 (Compared.Changed and then Compared.Reasons.Length >= 2 and then Initial.Changed and then
+                  not Initial.Reasons.Is_Empty,
+                  "plan revision differences were not explained");
+               Assert
+                 (Ada.Strings.Fixed.Index
+                    (Improve.JSON.Plan_Comparison (Compared, False), "field changed: title") > 0
+                  and then
+                  Ada.Strings.Fixed.Index
+                    (Improve.Presentation.Plan_Comparison (Compared, True), "Plan revision explanation") > 0,
+                  "plan comparison adapters omitted deterministic reasons");
+            end;
+            Remove (Data);
+         end;
+      when Inspection_Filters =>
+         declare
+            Data  : constant Fixture := Build_Fixture ("inspection_filters");
+            Draft : constant Improve.Model.Plan_Revision := Draft_For (Data);
+            Input : Improve.Results.Finding_List :=
+              (Project_Id    => Draft.Project.Id,
+               Project       => Draft.Project.Name,
+               Run_Id        => Draft.Baseline.Run_Id,
+               Assessment_Id => Draft.Baseline.Evidence_Id,
+               Snapshot_Id   => Draft.Baseline.Snapshot_Id,
+               Values        => Draft.Findings);
+         begin
+            declare
+               Finding : Improve.Model.Finding_Reference := Input.Values.First_Element;
+            begin
+               Finding.Indicator := Ada_Quality.Types.SEC_01;
+               Finding.Level := Ada_Quality.Types.Critical;
+               Finding.Relative_Path := To_Unbounded_String ("src/security.adb");
+               Input.Values.Append (Finding);
+            end;
+            declare
+               Filtered : constant Improve.Results.Finding_List :=
+                 Improve.Inspection_Filters.Findings
+                   (Input, Indicator => "SEC-01", Severity => "critical", Path => "security");
+            begin
+               Assert
+                 (Filtered.Values.Length = 1 and then
+                  Filtered.Values.First_Element.Indicator = Ada_Quality.Types.SEC_01,
+                  "inspection-only finding filters changed or retained the wrong evidence");
+            end;
+            Remove (Data);
+         end;
+      when Doctor_Read_Only =>
+         declare
+            Data    : constant Fixture := Build_Fixture ("doctor");
+            Missing : constant String := To_String (Data.Directory) & "/missing-improve.db";
+            Report  : constant Improve.Results.Diagnostic_Report :=
+              Improve.Operations.Diagnostics.Run
+                (To_String (Data.Database), Missing, Id_Image (Data.Project), Improve.Config.Defaults);
+         begin
+            Assert
+              (Report.Healthy and then not Report.Checks.Is_Empty and then
+               not Ada.Directories.Exists (Missing),
+               "doctor failed healthy read-only diagnostics or created state");
+            Assert
+              (Ada.Strings.Fixed.Index (Improve.JSON.Diagnostics (Report), """healthy"":true") > 0 and then
+               Ada.Strings.Fixed.Index (Improve.Presentation.Diagnostics (Report), "PASS") > 0,
+               "diagnostic adapters omitted health state");
+            Remove (Data);
+         end;
+      when Property_And_Scale =>
+         declare
+            Earlier : Improve.Model.Plan_Revision;
+            Later   : Improve.Model.Plan_Revision;
+            Schema_Path : constant String :=
+              (if Project_Tools.Files.File_Exists ("schemas/improve-output-v1.schema.json")
+               then "schemas/improve-output-v1.schema.json" else "../schemas/improve-output-v1.schema.json");
+            Schema : constant String := Project_Tools.Files.Read_Raw_File (Schema_Path);
+         begin
+            Earlier.Plan_Id := To_Unbounded_String ("PLAN-SCALE");
+            Earlier.Project := (Id => 1, Name | Path | Database_Id => Null_Unbounded_String);
+            Earlier.Baseline :=
+              (Project_Id | Run_Id => 1,
+               Source_Id | Policy_Id | Toolchain_Id | Evidence_Id | Snapshot_Id => Null_Unbounded_String);
+            for Index in 1 .. 500 loop
+               Earlier.Tasks.Append
+                 (Improve.Model.Task_Specification'
+                    (Id => To_Unbounded_String ("TASK-" & Id_Image (Index)),
+                     Title => To_Unbounded_String ("task " & Id_Image (Index)), others => <>));
+            end loop;
+            Later := Earlier;
+            Later.Revision := 2;
+            Later.Tasks (Later.Tasks.Last_Index).Title := To_Unbounded_String ("changed at scale");
+            declare
+               Same    : constant Improve.Results.Plan_Comparison := Improve.Plan_Diffs.Compare (Earlier, Earlier);
+               Changed : constant Improve.Results.Plan_Comparison := Improve.Plan_Diffs.Compare (Earlier, Later);
+            begin
+               Assert
+                 (not Same.Changed and then Same.Reasons.Is_Empty and then Changed.Changed and then
+                  Changed.Reasons.Length = 1 and then
+                  Ada.Strings.Fixed.Index (To_String (Changed.Reasons.First_Element), "field changed: title") > 0,
+                  "plan diff identity or 500-task scale property failed");
+            end;
+            Assert
+              (Ada.Strings.Fixed.Index (Schema, """command"": { ""const"": ""audit""") > 0 and then
+               Ada.Strings.Fixed.Index (Schema, """command"": { ""const"": ""error""") > 0 and then
+               Ada.Strings.Fixed.Index (Schema, """additionalProperties"": false") > 0,
+               "command-specific JSON schema branches are incomplete");
+         end;
+         declare
+            Data  : constant Fixture := Build_Fixture ("audit_bundle");
+            Draft : Improve.Model.Plan_Revision := Draft_For (Data);
+            Store : Improve.Storage.Store;
+            State_Path : constant String := To_String (Data.Directory) & "/improve.db";
+         begin
+            Improve.Storage.Open (Store, State_Path, Writable => True);
+            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Draft); begin
+               Draft := Saved.Plan;
+            end;
+            Improve.Storage.Approve (Store, To_String (Draft.Plan_Id), Draft.Revision);
+            Improve.Storage.Close (Store);
+            declare Bundle : constant Improve.Results.Audit_Bundle :=
+              Improve.Operations.Audit.Run (State_Path, To_String (Draft.Plan_Id));
+            begin
+               Assert
+                 (Bundle.Approved and then Bundle.Plan.Fingerprint = Draft.Fingerprint and then
+                  Ada.Strings.Fixed.Index (Improve.JSON.Audit (Bundle), """command"":""audit""") > 0,
+                  "read-only audit bundle omitted exact plan approval or provenance");
+            end;
+            Remove (Data);
+         end;
          declare
             Builder  : Improve.Canonical_Digests.Builder;
             Expected : constant String :=

@@ -1,6 +1,7 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Improve.Model;
+with Improve.State;
 
 --  Storage-independent application results shared by use cases and output adapters.
 package Improve.Results is
@@ -47,6 +48,57 @@ package Improve.Results is
    --  @field Assessment_Id Complete assessment evidence identity.
    --  @field Snapshot_Id Reporting snapshot identity.
    --  @field Values Normalized remediation findings.
+
+   type Plan_Comparison is record
+      Plan_Id       : UString;
+      From_Revision : Positive := 1;
+      To_Revision   : Positive := 1;
+      Changed       : Boolean := False;
+      Reasons       : Improve.Model.UString_Vectors.Vector;
+   end record;
+   --  Deterministic explanation of differences between two immutable plan revisions.
+   --  @field Plan_Id Stable logical plan identity.
+   --  @field From_Revision Earlier revision compared.
+   --  @field To_Revision Later revision compared.
+   --  @field Changed Whether any semantic or task-contract difference exists.
+   --  @field Reasons Stable ordered human-readable change explanations.
+
+   type Diagnostic_Status is (Diagnostic_Pass, Diagnostic_Warning, Diagnostic_Fail);
+   --  Outcome of one read-only diagnostic check.
+   --  @enum Diagnostic_Pass Required local precondition is satisfied.
+   --  @enum Diagnostic_Warning Optional local state is unavailable.
+   --  @enum Diagnostic_Fail Required local state is invalid or unavailable.
+
+   type Diagnostic_Check is record
+      Name   : UString;
+      Status : Diagnostic_Status := Diagnostic_Pass;
+      Detail : UString;
+   end record;
+   --  One read-only environment or state diagnostic.
+   --  @field Name Stable diagnostic check name.
+   --  @field Status Check disposition.
+   --  @field Detail Bounded diagnostic explanation.
+
+   package Diagnostic_Vectors is new Ada.Containers.Vectors (Positive, Diagnostic_Check);
+   --  Ordered diagnostic checks.
+
+   type Diagnostic_Report is record
+      Checks  : Diagnostic_Vectors.Vector;
+      Healthy : Boolean := True;
+   end record;
+   --  Complete read-only diagnostic report.
+   --  @field Checks Ordered local checks.
+   --  @field Healthy Whether every required check passed.
+
+   type Audit_Bundle is record
+      Plan     : Improve.Model.Plan_Revision;
+      Approved : Boolean := False;
+      History  : Improve.State.Inspection_History;
+   end record;
+   --  Deterministic read-only evidence bundle for one exact immutable plan revision.
+   --  @field Plan Selected plan and complete provenance.
+   --  @field Approved Whether the exact revision fingerprint is durably approved.
+   --  @field History Publication mappings and verification evidence visible for the selected revision.
 
    type Published_Task is record
       Improve_Id : UString;

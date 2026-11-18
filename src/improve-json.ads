@@ -40,6 +40,32 @@ package Improve.JSON is
    --  @param Value Approved plan revision.
    --  @return One versioned JSON document.
 
+   function Plan_Comparison (Value : Improve.Results.Plan_Comparison; Explain : Boolean) return String;
+   --  Serialize a deterministic plan revision comparison.
+   --  @param Value Revision comparison.
+   --  @param Explain Whether this is an explanation request.
+   --  @return One versioned JSON document.
+
+   function Diagnostics (Value : Improve.Results.Diagnostic_Report) return String;
+   --  Serialize read-only diagnostic checks.
+   --  @param Value Diagnostic report.
+   --  @return One versioned JSON document.
+
+   function Audit (Value : Improve.Results.Audit_Bundle) return String;
+   --  Serialize one deterministic plan audit bundle.
+   --  @param Value Exact plan, approval, publication, and verification evidence.
+   --  @return One versioned JSON document.
+
+   function Error
+     (Code, Category, Detail : String;
+      Hint                   : String := "") return String;
+   --  Serialize one stable machine-readable command failure.
+   --  @param Code Stable error identifier.
+   --  @param Category Stable error category.
+   --  @param Detail Safe diagnostic detail.
+   --  @param Hint Optional corrective hint.
+   --  @return One versioned JSON error document.
+
    function Publication
      (Plan_Id : String; Value : Improve.Results.Publication_Result; Dry_Run : Boolean) return String;
    --  Serialize native harness publication or preview results.

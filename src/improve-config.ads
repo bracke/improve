@@ -36,10 +36,11 @@ package Improve.Config is
    Default_Evidence_Limits : constant Evidence_Limits := (others => <>);
    --  Shared default evidence limits.
 
-   type Output_Format is (Terminal_Format, JSON_Format);
+   type Output_Format is (Terminal_Format, JSON_Format, Markdown_Format);
    --  User-visible output encoding.
    --  @enum Terminal_Format Human-readable terminal output.
    --  @enum JSON_Format Versioned JSON document.
+   --  @enum Markdown_Format Human-readable Markdown report.
    type Color_Mode is (Color_Auto, Color_Always, Color_Never);
    --  Terminal color policy.
    --  @enum Color_Auto Enable color only for a suitable terminal.

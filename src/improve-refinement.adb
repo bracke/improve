@@ -223,6 +223,7 @@ package body Improve.Refinement is
          end;
       end loop;
       Result.Byte_Count := Used;
+      Result.Maximum_Response_Bytes := Settings.Maximum_Response_Bytes;
       return Result;
    end Build_Context;
 

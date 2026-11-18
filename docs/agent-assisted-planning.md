@@ -28,9 +28,13 @@ Free-text execution changes are not accepted because their policy meaning cannot
 refined plan receives a new deterministic fingerprint and records the adapter identity in planner provenance before
 normal immutable persistence.
 
-The current model_runner framework does not expose a lightweight “refine this plan” call independent of model session
-and harness execution. Improve therefore does not shell out or repurpose `/work`; a future model-backed integration
-must implement the typed adapter directly and use a documented noninteractive model API. Each adapter must enforce the
-supplied deadline cooperatively and report `Agent_Timed_Out`; Improve never asynchronously aborts adapter code while it
-may own external resources. Unavailable, timed-out, malformed, exceptional, and rejected responses all preserve the
-deterministic draft.
+The lightweight model_runner task framework does not own inference sessions. Improve therefore does not shell out or
+repurpose `/work`. `Improve.Refinement.Model_Adapter` is the concrete integration boundary for an in-process model
+client: it passes the bounded typed context, required answer schema, cooperative deadline, and maximum response bytes
+to the client, then returns the normal typed `Agent_Response` through unchanged validation and deterministic fallback.
+`Improve.Refinement.Model_Runner_Client` is the first-party implementation of that client over an optional in-process
+model_runner inference session. It binds an explicit model identity and preserves schema, context, deadline, and response
+bounds without coupling Improve to model loading or task execution. The lightweight framework currently supplies no
+session implementation, so an embedding provides the session object. Improve never asynchronously aborts adapter code
+while it may own external resources.
+Unavailable, timed-out, malformed, exceptional, and rejected responses all preserve the deterministic draft.

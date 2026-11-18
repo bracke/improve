@@ -14,6 +14,11 @@ Optional planning refinement is available through a bounded typed adapter; deter
 Operational `tasks` and `status` views report stored work without mutating state, while `recover` safely reconciles an
 interrupted native task publication by its stable Improve origin.
 
+Revision-aware inspection includes field-level `plan diff` and `plan explain`; `audit` exports exact-revision approval,
+publication, and verification evidence; `doctor` performs read-only local and release diagnostics. Finding filters never
+alter planning identity. Versioned JSON, including structured errors, is accompanied by a complete command-specific
+JSON Schema, Markdown reports, context-aware shell completions, and an `improve(1)` man page.
+
 ## Build
 
 ```sh

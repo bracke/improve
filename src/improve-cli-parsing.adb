@@ -100,8 +100,10 @@ package body Improve.CLI.Parsing is
                   Result.Format := Terminal_Format;
                elsif Value = "json" then
                   Result.Format := JSON_Format;
+               elsif Value = "markdown" then
+                  Result.Format := Markdown_Format;
                else
-                  Fail ("invalid --format value " & Value & "; expected terminal or json");
+                  Fail ("invalid --format value " & Value & "; expected terminal, json, or markdown");
                end if;
             end;
          elsif Option = "--color" then
@@ -152,12 +154,36 @@ package body Improve.CLI.Parsing is
                when Constraint_Error =>
                   Fail ("--revision value is out of range");
             end;
+         elsif Option = "--against-revision" then
+            Once (Result.Has_Against_Revision, Option);
+            declare
+               Value : constant String := Value_Of (Option, Inline, Has_Inline);
+            begin
+               if Value = "" or else (for some C of Value => C not in '0' .. '9') then
+                  Fail ("--against-revision requires a positive revision");
+               end if;
+               Result.Against_Revision := Natural'Value (Value);
+               if Result.Against_Revision = 0 then
+                  Fail ("--against-revision requires a positive revision");
+               end if;
+            exception
+               when Constraint_Error => Fail ("--against-revision value is out of range");
+            end;
          elsif Option = "--task" then
             Once (Result.Has_Task, Option);
             Result.Task_Id := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
          elsif Option = "--status" then
             Once (Result.Has_Status, Option);
             Result.Status_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--indicator" then
+            Once (Result.Has_Indicator, Option);
+            Result.Indicator_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--severity" then
+            Once (Result.Has_Severity, Option);
+            Result.Severity_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--path" then
+            Once (Result.Has_Path, Option);
+            Result.Path_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
          elsif Option = "--dry-run" then
             No_Value (Option, Has_Inline);
             Once (Seen_Dry, Option);
@@ -195,19 +221,31 @@ package body Improve.CLI.Parsing is
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          elsif Result.Command = Plan_Command and then Result.Plan_Action = Create_Plan and then
-           Item in "list" | "show" | "approve"
+           Item in "list" | "show" | "approve" | "diff" | "explain"
          then
             Result.Plan_Action :=
-              (if Item = "list" then List_Plans elsif Item = "show" then Show_Plan else Approve_Plan);
+              (if Item = "list" then List_Plans
+               elsif Item = "show" then Show_Plan
+               elsif Item = "approve" then Approve_Plan
+               elsif Item = "diff" then Diff_Plan
+               else Explain_Plan);
          elsif Result.Command = Plan_Command and then
-           Result.Plan_Action in Show_Plan | Approve_Plan and then not Result.Has_Target
+           Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan and then not Result.Has_Target
          then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          elsif Result.Command = Apply_Command and then not Result.Has_Target then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
+         elsif Result.Command = Audit_Command and then not Result.Has_Target then
+            Result.Target := To_Unbounded_String (Item);
+            Result.Has_Target := True;
          elsif Result.Command = Config_Command and then not Result.Has_Target and then Item in "show" | "validate" then
+            Result.Target := To_Unbounded_String (Item);
+            Result.Has_Target := True;
+         elsif Result.Command = Completion_Command and then not Result.Has_Target and then
+           Item in "bash" | "zsh" | "fish"
+         then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          else
@@ -250,8 +288,9 @@ package body Improve.CLI.Parsing is
       if Result.Has_Run and then Result.Command not in Findings_Command | Plan_Command | Verify_Command then
          Fail ("--run is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Revision and then
-        not (Result.Command = Plan_Command and then Result.Plan_Action = Show_Plan) and then
-        not (Result.Command = Tasks_Command and then Result.Has_Task) and then Result.Command /= Verify_Command
+        not (Result.Command = Plan_Command and then Result.Plan_Action in Show_Plan | Diff_Plan | Explain_Plan) and then
+        not (Result.Command = Tasks_Command and then Result.Has_Task) and then Result.Command /= Verify_Command and then
+        Result.Command /= Audit_Command
       then
          Fail ("--revision requires plan show, tasks --task, or verify");
       elsif Result.Dry_Run and then Result.Command not in Plan_Command | Apply_Command then
@@ -260,17 +299,34 @@ package body Improve.CLI.Parsing is
          Fail ("--task is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Status and then Result.Command /= Tasks_Command then
          Fail ("--status is not accepted by command " & Name (Result.Command));
+      elsif (Result.Has_Indicator or else Result.Has_Severity or else Result.Has_Path) and then
+        Result.Command /= Findings_Command
+      then
+         Fail ("finding filters are accepted only by command findings");
+      elsif Result.Has_Against_Revision and then
+        not (Result.Command = Plan_Command and then Result.Plan_Action = Diff_Plan)
+      then
+         Fail ("--against-revision requires plan diff");
       elsif Result.All_Projects and then Result.Command /= Status_Command then
          Fail ("--all is not accepted by command " & Name (Result.Command));
       end if;
       if Result.Command = Apply_Command and then not Result.Has_Target then
          Fail ("apply requires a plan identity");
+      elsif Result.Command = Audit_Command and then not Result.Has_Target then
+         Fail ("audit requires a plan identity");
       elsif Result.Command = Plan_Command and then
-        Result.Plan_Action in Show_Plan | Approve_Plan and then not Result.Has_Target
+        Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan and then not Result.Has_Target
       then
          Fail
-           ("plan " & (if Result.Plan_Action = Show_Plan then "show" else "approve") &
+           ("plan " &
+            (case Result.Plan_Action is
+                when Show_Plan => "show", when Approve_Plan => "approve", when Diff_Plan => "diff",
+                when Explain_Plan => "explain", when others => "create") &
             " requires a plan identity");
+      elsif Result.Command = Plan_Command and then Result.Plan_Action = Diff_Plan and then
+        (not Result.Has_Revision or else not Result.Has_Against_Revision)
+      then
+         Fail ("plan diff requires --against-revision and --revision");
       elsif Result.Command in Findings_Command | Refresh_Command and then not Result.Has_Project then
          Fail (Name (Result.Command) & " requires --project");
       elsif Result.Command = Tasks_Command and then not Result.Has_Project and then not Result.Has_Task then
@@ -283,6 +339,8 @@ package body Improve.CLI.Parsing is
          Fail ("verify requires --project or --task");
       elsif Result.Command = Status_Command and then Result.Has_Project = Result.All_Projects then
          Fail ("status requires exactly one of --project or --all");
+      elsif Result.Command = Completion_Command and then not Result.Has_Target then
+         Fail ("completion requires bash, zsh, or fish");
       end if;
       return Result;
    end Parse;

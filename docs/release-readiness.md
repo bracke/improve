@@ -28,7 +28,7 @@ temporary tree is removed after success or failure.
 The gate requires all of the following:
 
 1. The application and test crate build in validation mode with warnings treated as errors.
-2. All 126 AUnit cases pass.
+2. All 133 AUnit cases pass, including schema, structured-error, audit, inference-client, property, and scale coverage.
 3. Repository structure, 120-column Ada source policy, required release files, and the Ada-only tooling rule pass.
 4. GNATdoc accepts every Improve package without warnings while excluding dependency-owned APIs.
 5. GNATprove proves every source unit that declares `SPARK_Mode` at level 2; the repository check rejects an omitted
@@ -36,6 +36,7 @@ The gate requires all of the following:
 6. Instrumented AUnit and CLI executions cover at least 90% of executable production lines and write fingerprinted
    evidence for Ada Quality.
 7. Version, license, release dependency, pin, and dependency-license records are internally consistent.
+8. The versioned JSON Schema, generated completions, roff man page, and release automation workflow are present.
 
 The coverage driver inventories production units through Ada Quality, requires gcov records for every unit, and rejects
 missing objects. The only zero-line exception is the explicitly reviewed empty `Improve.Operations` namespace; future

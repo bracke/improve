@@ -71,6 +71,7 @@ package Improve.Refinement is
       Draft_Tasks_Truncated    : Boolean := False;
       Existing_Tasks_Truncated : Boolean := False;
       Byte_Count       : Natural := 0;
+      Maximum_Response_Bytes : Positive := 131_072;
    end record;
    --  Bounded, read-only material supplied to an adapter.
    --  @field Project_Id Target project identity.
@@ -88,6 +89,7 @@ package Improve.Refinement is
    --  @field Draft_Tasks_Truncated Whether deterministic tasks were bounded.
    --  @field Existing_Tasks_Truncated Whether existing tasks were bounded.
    --  @field Byte_Count Total context size.
+   --  @field Maximum_Response_Bytes Maximum structured response accepted from the provider.
 
    type Task_Proposal is record
       Task_Id                 : UString;
