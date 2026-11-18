@@ -28,6 +28,7 @@ package body Improve.CLI.Parsing is
       Help_Flag    : Boolean := False;
       Version_Flag : Boolean := False;
       Seen_Format, Seen_Color, Seen_Verbose, Seen_Quiet, Seen_Dry, Seen_All : Boolean := False;
+      Seen_Release : Boolean := False;
       Index : Positive := 1;
 
       procedure Once (Seen : in out Boolean; Option : String) is
@@ -102,8 +103,10 @@ package body Improve.CLI.Parsing is
                   Result.Format := JSON_Format;
                elsif Value = "markdown" then
                   Result.Format := Markdown_Format;
+               elsif Value = "dot" then
+                  Result.Format := DOT_Format;
                else
-                  Fail ("invalid --format value " & Value & "; expected terminal, json, or markdown");
+                  Fail ("invalid --format value " & Value & "; expected terminal, json, markdown, or dot");
                end if;
             end;
          elsif Option = "--color" then
@@ -172,6 +175,21 @@ package body Improve.CLI.Parsing is
          elsif Option = "--task" then
             Once (Result.Has_Task, Option);
             Result.Task_Id := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option in "--limit" | "--cursor" then
+            if Option = "--limit" then Once (Result.Has_Limit, Option); else Once (Result.Has_Cursor, Option); end if;
+            declare Value : constant String := Value_Of (Option, Inline, Has_Inline); begin
+               if Value = "" or else (for some C of Value => C not in '0' .. '9') then
+                  Fail (Option & " requires a nonnegative integer");
+               end if;
+               if Option = "--limit" then
+                  Result.Limit := Natural'Value (Value);
+                  if Result.Limit = 0 then Fail ("--limit requires a positive integer"); end if;
+               else
+                  Result.Cursor := Natural'Value (Value);
+               end if;
+            exception
+               when Constraint_Error => Fail (Option & " value is out of range");
+            end;
          elsif Option = "--status" then
             Once (Result.Has_Status, Option);
             Result.Status_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
@@ -184,6 +202,9 @@ package body Improve.CLI.Parsing is
          elsif Option = "--path" then
             Once (Result.Has_Path, Option);
             Result.Path_Filter := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--signing-key" then
+            Once (Result.Has_Signing_Key, Option);
+            Result.Signing_Key := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
          elsif Option = "--dry-run" then
             No_Value (Option, Has_Inline);
             Once (Seen_Dry, Option);
@@ -192,6 +213,10 @@ package body Improve.CLI.Parsing is
             No_Value (Option, Has_Inline);
             Once (Seen_All, Option);
             Result.All_Projects := True;
+         elsif Option = "--release" then
+            No_Value (Option, Has_Inline);
+            Once (Seen_Release, Option);
+            Result.Release_Check := True;
          elsif Option = "--verbose" then
             No_Value (Option, Has_Inline);
             Once (Seen_Verbose, Option);
@@ -221,26 +246,32 @@ package body Improve.CLI.Parsing is
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          elsif Result.Command = Plan_Command and then Result.Plan_Action = Create_Plan and then
-           Item in "list" | "show" | "approve" | "diff" | "explain"
+           Item in "list" | "show" | "approve" | "diff" | "explain" | "graph"
          then
             Result.Plan_Action :=
               (if Item = "list" then List_Plans
                elsif Item = "show" then Show_Plan
                elsif Item = "approve" then Approve_Plan
                elsif Item = "diff" then Diff_Plan
-               else Explain_Plan);
+               elsif Item = "explain" then Explain_Plan
+               else Graph_Plan);
          elsif Result.Command = Plan_Command and then
-           Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan and then not Result.Has_Target
+           Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan | Graph_Plan and then
+           not Result.Has_Target
          then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          elsif Result.Command = Apply_Command and then not Result.Has_Target then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
+         elsif Result.Command = Audit_Command and then Item = "verify" and then not Result.Has_Target then
+            Result.Audit_Verify := True;
          elsif Result.Command = Audit_Command and then not Result.Has_Target then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
-         elsif Result.Command = Config_Command and then not Result.Has_Target and then Item in "show" | "validate" then
+         elsif Result.Command = Config_Command and then not Result.Has_Target and then
+           Item in "show" | "validate" | "explain"
+         then
             Result.Target := To_Unbounded_String (Item);
             Result.Has_Target := True;
          elsif Result.Command = Completion_Command and then not Result.Has_Target and then
@@ -288,7 +319,8 @@ package body Improve.CLI.Parsing is
       if Result.Has_Run and then Result.Command not in Findings_Command | Plan_Command | Verify_Command then
          Fail ("--run is not accepted by command " & Name (Result.Command));
       elsif Result.Has_Revision and then
-        not (Result.Command = Plan_Command and then Result.Plan_Action in Show_Plan | Diff_Plan | Explain_Plan) and then
+        not (Result.Command = Plan_Command and then
+             Result.Plan_Action in Show_Plan | Diff_Plan | Explain_Plan | Graph_Plan) and then
         not (Result.Command = Tasks_Command and then Result.Has_Task) and then Result.Command /= Verify_Command and then
         Result.Command /= Audit_Command
       then
@@ -309,19 +341,33 @@ package body Improve.CLI.Parsing is
          Fail ("--against-revision requires plan diff");
       elsif Result.All_Projects and then Result.Command /= Status_Command then
          Fail ("--all is not accepted by command " & Name (Result.Command));
+      elsif Result.Release_Check and then Result.Command /= Doctor_Command then
+         Fail ("--release is accepted only by command doctor");
+      elsif Result.Has_Signing_Key and then (Result.Command /= Audit_Command or else Result.Audit_Verify) then
+         Fail ("--signing-key is accepted only by audit export");
+      elsif (Result.Has_Limit or else Result.Has_Cursor) and then
+        not (Result.Command in Findings_Command | Tasks_Command | Audit_Command or else
+             (Result.Command = Plan_Command and then Result.Plan_Action = List_Plans))
+      then
+         Fail ("pagination is accepted only by findings, tasks, plan list, and audit");
+      elsif Result.Format = DOT_Format and then
+        not (Result.Command = Plan_Command and then Result.Plan_Action = Graph_Plan)
+      then
+         Fail ("--format dot requires plan graph");
       end if;
       if Result.Command = Apply_Command and then not Result.Has_Target then
          Fail ("apply requires a plan identity");
       elsif Result.Command = Audit_Command and then not Result.Has_Target then
-         Fail ("audit requires a plan identity");
+         Fail (if Result.Audit_Verify then "audit verify requires a file" else "audit requires a plan identity");
       elsif Result.Command = Plan_Command and then
-        Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan and then not Result.Has_Target
+        Result.Plan_Action in Show_Plan | Approve_Plan | Diff_Plan | Explain_Plan | Graph_Plan and then
+        not Result.Has_Target
       then
          Fail
            ("plan " &
             (case Result.Plan_Action is
                 when Show_Plan => "show", when Approve_Plan => "approve", when Diff_Plan => "diff",
-                when Explain_Plan => "explain", when others => "create") &
+                when Explain_Plan => "explain", when Graph_Plan => "graph", when others => "create") &
             " requires a plan identity");
       elsif Result.Command = Plan_Command and then Result.Plan_Action = Diff_Plan and then
         (not Result.Has_Revision or else not Result.Has_Against_Revision)

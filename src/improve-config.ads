@@ -36,11 +36,12 @@ package Improve.Config is
    Default_Evidence_Limits : constant Evidence_Limits := (others => <>);
    --  Shared default evidence limits.
 
-   type Output_Format is (Terminal_Format, JSON_Format, Markdown_Format);
+   type Output_Format is (Terminal_Format, JSON_Format, Markdown_Format, DOT_Format);
    --  User-visible output encoding.
    --  @enum Terminal_Format Human-readable terminal output.
    --  @enum JSON_Format Versioned JSON document.
    --  @enum Markdown_Format Human-readable Markdown report.
+   --  @enum DOT_Format Graphviz dependency graph.
    type Color_Mode is (Color_Auto, Color_Always, Color_Never);
    --  Terminal color policy.
    --  @enum Color_Auto Enable color only for a suitable terminal.
@@ -174,5 +175,10 @@ package Improve.Config is
    --  Return deterministic TOML-like terminal output with every effective setting.
    --  @param Item Settings to render.
    --  @return Stable configuration text.
+
+   function Explain (Item : Loaded_Configuration) return String;
+   --  Return every effective value together with its configuration provenance.
+   --  @param Item Effective settings and their source file.
+   --  @return Stable line-oriented value and source explanation.
 end Improve.Config;
 

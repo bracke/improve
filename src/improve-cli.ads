@@ -32,7 +32,8 @@ package Improve.CLI is
    --  @enum Help_Command Display usage help.
    --  @enum Version_Command Display the application version.
 
-   type Plan_Operation is (Create_Plan, List_Plans, Show_Plan, Approve_Plan, Diff_Plan, Explain_Plan);
+   type Plan_Operation is
+     (Create_Plan, List_Plans, Show_Plan, Approve_Plan, Diff_Plan, Explain_Plan, Graph_Plan);
    --  Plan subcommand selected by the parser.
    --  @enum Create_Plan Generate a plan.
    --  @enum List_Plans List persisted plans.
@@ -40,6 +41,7 @@ package Improve.CLI is
    --  @enum Approve_Plan Approve one exact immutable revision for publication.
    --  @enum Diff_Plan Compare two exact immutable revisions.
    --  @enum Explain_Plan Explain one revision relative to its predecessor.
+   --  @enum Graph_Plan Render one revision's dependency graph.
 
    function Name (Command : Command_Kind) return String;
    --  Return the stable CLI command word.
@@ -59,9 +61,12 @@ package Improve.CLI is
       Indicator_Filter : Ada.Strings.Unbounded.Unbounded_String;
       Severity_Filter  : Ada.Strings.Unbounded.Unbounded_String;
       Path_Filter      : Ada.Strings.Unbounded.Unbounded_String;
+      Signing_Key      : Ada.Strings.Unbounded.Unbounded_String;
       Run_Id        : Natural := 0;
       Revision      : Natural := 0;
       Against_Revision : Natural := 0;
+      Limit         : Natural := 0;
+      Cursor        : Natural := 0;
       Format        : Improve.Config.Output_Format := Improve.Config.Terminal_Format;
       Color         : Improve.Config.Color_Mode := Improve.Config.Color_Auto;
       Has_Database  : Boolean := False;
@@ -74,9 +79,14 @@ package Improve.CLI is
       Has_Indicator : Boolean := False;
       Has_Severity  : Boolean := False;
       Has_Path      : Boolean := False;
+      Has_Signing_Key : Boolean := False;
       Has_Run       : Boolean := False;
       Has_Revision  : Boolean := False;
       Has_Against_Revision : Boolean := False;
+      Has_Limit     : Boolean := False;
+      Has_Cursor    : Boolean := False;
+      Audit_Verify  : Boolean := False;
+      Release_Check : Boolean := False;
       Has_Format    : Boolean := False;
       Has_Color     : Boolean := False;
       Dry_Run       : Boolean := False;
@@ -97,9 +107,12 @@ package Improve.CLI is
    --  @field Indicator_Filter Finding indicator filter.
    --  @field Severity_Filter Finding severity filter.
    --  @field Path_Filter Finding path filter.
+   --  @field Signing_Key Optional Ed25519 seed file for audit export.
    --  @field Run_Id Explicit assessment identity, or zero.
    --  @field Revision Explicit immutable plan revision, or zero.
    --  @field Against_Revision Earlier revision used by plan diff, or zero.
+   --  @field Limit Requested page size, or zero for the configured maximum.
+   --  @field Cursor Stable result offset for a paged inspection.
    --  @field Format Selected output format.
    --  @field Color Selected color policy.
    --  @field Has_Database Whether Database was supplied explicitly.
@@ -112,9 +125,14 @@ package Improve.CLI is
    --  @field Has_Indicator Whether Indicator_Filter was supplied.
    --  @field Has_Severity Whether Severity_Filter was supplied.
    --  @field Has_Path Whether Path_Filter was supplied.
+   --  @field Has_Signing_Key Whether Signing_Key was supplied.
    --  @field Has_Run Whether Run_Id was supplied.
    --  @field Has_Revision Whether Revision was supplied.
    --  @field Has_Against_Revision Whether Against_Revision was supplied.
+   --  @field Has_Limit Whether Limit was supplied.
+   --  @field Has_Cursor Whether Cursor was supplied.
+   --  @field Audit_Verify Whether audit verifies an exported document.
+   --  @field Release_Check Whether doctor resolves the release manifest.
    --  @field Has_Format Whether Format was supplied explicitly.
    --  @field Has_Color Whether Color was supplied explicitly.
    --  @field Dry_Run Whether modification is disabled.

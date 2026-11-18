@@ -1,6 +1,7 @@
 with Ada.Characters.Handling;
 with Ada.Strings.Unbounded;
 with Ada_Quality.Types;
+with Improve.Audit_Artifacts;
 with Jsonlib.Documents;
 with Jsonlib.Serializers;
 
@@ -66,7 +67,7 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Projects;
 
-   function Findings (Value : Improve.Results.Finding_List) return String is
+   function Findings (Value : Improve.Results.Finding_List; Next_Cursor : String := "") return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "findings");
       Data    : Node renames Context.Data;
@@ -97,6 +98,7 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "findings", List);
+      if Next_Cursor /= "" then Doc.Insert (Data, "next_cursor", Doc.New_String (Next_Cursor)); end if;
       return Finish_Envelope (Doc, Context);
    end Findings;
 
@@ -154,7 +156,35 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Plan;
 
-   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String is
+   function Plan_Graph (Value : Improve.Model.Plan_Revision) return String is
+      Doc     : Document;
+      Context : constant Envelope := Start_Envelope (Doc, "plan graph");
+      Nodes   : constant Node := Doc.New_Array;
+      Edges   : constant Node := Doc.New_Array;
+   begin
+      Doc.Insert (Context.Data, "plan_id", Doc.New_String (To_String (Value.Plan_Id)));
+      Doc.Insert (Context.Data, "revision", Doc.New_Integer (Long_Long_Integer (Value.Revision)));
+      for Spec of Value.Tasks loop
+         declare Item : constant Node := Doc.New_Object; begin
+            Doc.Insert (Item, "id", Doc.New_String (To_String (Spec.Id)));
+            Doc.Insert (Item, "title", Doc.New_String (To_String (Spec.Title)));
+            Doc.Insert (Item, "priority", Doc.New_String (Improve.Model.Image (Spec.Task_Priority)));
+            Doc.Append (Nodes, Item);
+         end;
+         for Dependency of Spec.Dependencies loop
+            declare Edge : constant Node := Doc.New_Object; begin
+               Doc.Insert (Edge, "from", Doc.New_String (To_String (Dependency)));
+               Doc.Insert (Edge, "to", Doc.New_String (To_String (Spec.Id)));
+               Doc.Append (Edges, Edge);
+            end;
+         end loop;
+      end loop;
+      Doc.Insert (Context.Data, "nodes", Nodes);
+      Doc.Insert (Context.Data, "edges", Edges);
+      return Finish_Envelope (Doc, Context);
+   end Plan_Graph;
+
+   function Plans (Values : Improve.State.Summary_Vectors.Vector; Next_Cursor : String := "") return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "plan list");
       Data    : Node renames Context.Data;
@@ -173,6 +203,7 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Data, "plans", List);
+      if Next_Cursor /= "" then Doc.Insert (Data, "next_cursor", Doc.New_String (Next_Cursor)); end if;
       return Finish_Envelope (Doc, Context);
    end Plans;
 
@@ -227,7 +258,10 @@ package body Improve.JSON is
       return Finish_Envelope (Doc, Context);
    end Diagnostics;
 
-   function Audit (Value : Improve.Results.Audit_Bundle) return String is
+   function Audit
+     (Value        : Improve.Results.Audit_Bundle;
+      Next_Cursor  : String := "";
+      Signing_Seed : String := "") return String is
       Doc          : Document;
       Context      : constant Envelope := Start_Envelope (Doc, "audit");
       Publications : constant Node := Doc.New_Array;
@@ -294,6 +328,21 @@ package body Improve.JSON is
          end;
       end loop;
       Doc.Insert (Context.Data, "verifications", Verifications);
+      Doc.Insert
+        (Context.Data, "canonical_payload", Doc.New_String (Improve.Audit_Artifacts.Canonical (Value)));
+      Doc.Insert (Context.Data, "bundle_digest", Doc.New_String (Improve.Audit_Artifacts.Digest (Value)));
+      if Signing_Seed /= "" then
+         declare
+            Public_Key : Unbounded_String;
+            Signature  : Unbounded_String;
+         begin
+            Improve.Audit_Artifacts.Sign
+              (Improve.Audit_Artifacts.Digest (Value), Signing_Seed, Public_Key, Signature);
+            Doc.Insert (Context.Data, "public_key", Doc.New_String (To_String (Public_Key)));
+            Doc.Insert (Context.Data, "signature", Doc.New_String (To_String (Signature)));
+         end;
+      end if;
+      if Next_Cursor /= "" then Doc.Insert (Context.Data, "next_cursor", Doc.New_String (Next_Cursor)); end if;
       return Finish_Envelope (Doc, Context);
    end Audit;
 
@@ -391,7 +440,8 @@ package body Improve.JSON is
 
    function Tasks
      (Values : Improve.Tasks.View_Vectors.Vector;
-      Filter : String) return String is
+      Filter : String;
+      Next_Cursor : String := "") return String is
       Doc     : Document;
       Context : constant Envelope := Start_Envelope (Doc, "tasks");
       Data    : Node renames Context.Data;
@@ -400,6 +450,7 @@ package body Improve.JSON is
       Doc.Insert (Data, "filter", Doc.New_String (if Filter = "" then "all" else Filter));
       for Value of Values loop Append_Task (Doc, List, Value); end loop;
       Doc.Insert (Data, "tasks", List);
+      if Next_Cursor /= "" then Doc.Insert (Data, "next_cursor", Doc.New_String (Next_Cursor)); end if;
       return Finish_Envelope (Doc, Context);
    end Tasks;
 

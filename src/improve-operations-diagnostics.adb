@@ -1,11 +1,13 @@
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Calendar;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Improve.Source;
 with Improve.State;
 with Project_Tools.Alire_Manifests;
 with Project_Tools.Files;
+with Project_Tools.Processes;
 
 package body Improve.Operations.Diagnostics is
    use Ada.Strings.Unbounded;
@@ -19,6 +21,7 @@ package body Improve.Operations.Diagnostics is
       State_Path       : String;
       Project_Selector : String;
       Settings         : Improve.Config.Settings;
+      Resolve_Release  : Boolean := False;
       Limits           : Improve.Storage.Persistence_Limits := Improve.Storage.Default_Persistence_Limits)
       return Improve.Results.Diagnostic_Report is
       Result : Improve.Results.Diagnostic_Report;
@@ -43,6 +46,46 @@ package body Improve.Operations.Diagnostics is
                Detail => To_Unbounded_String (Detail)));
          if Status = Improve.Results.Diagnostic_Fail then Result.Healthy := False; end if;
       end Add;
+
+      procedure Check_Release_Resolution is
+         Stamp : String := Duration'Image (Ada.Calendar.Seconds (Ada.Calendar.Clock));
+      begin
+         for C of Stamp loop
+            if C not in '0' .. '9' then C := '_'; end if;
+         end loop;
+         declare
+            Stage : constant String := Project_Tools.Files.Temp_Dir & "/improve-release-doctor-" & Stamp;
+            Alr   : constant String := Project_Tools.Processes.Locate_Command ("alr");
+         begin
+            if Alr = "" then
+               Add ("release-resolution", Improve.Results.Diagnostic_Fail, "Alire is unavailable");
+               return;
+            end if;
+            Ada.Directories.Create_Directory (Stage);
+            Ada.Directories.Copy_File (Release_Manifest, Stage & "/alire.toml");
+            declare
+               Run : constant Project_Tools.Processes.Captured_Process :=
+                 Project_Tools.Processes.Capture
+                   ("release dependency resolution", Stage, Alr,
+                    Project_Tools.Processes.Arguments
+                      ([Project_Tools.Processes.Argument ("-n"),
+                        Project_Tools.Processes.Argument ("show"),
+                        Project_Tools.Processes.Argument ("--solve")]),
+                    Quiet => True);
+            begin
+               if Run.Status = 0 then
+                  Add ("release-resolution", Improve.Results.Diagnostic_Pass, "pin-free dependencies resolve");
+               else
+                  Add ("release-resolution", Improve.Results.Diagnostic_Fail, "Alire could not resolve dependencies");
+               end if;
+            end;
+            Ada.Directories.Delete_Tree (Stage);
+         exception
+            when Error : others =>
+               if Ada.Directories.Exists (Stage) then Ada.Directories.Delete_Tree (Stage); end if;
+               Add ("release-resolution", Improve.Results.Diagnostic_Fail, Ada.Exceptions.Exception_Message (Error));
+         end;
+      end Check_Release_Resolution;
    begin
       Add ("configuration", Improve.Results.Diagnostic_Pass, "effective configuration is valid");
       Add
@@ -123,6 +166,13 @@ package body Improve.Operations.Diagnostics is
          end;
       else
          Add ("release-manifest", Improve.Results.Diagnostic_Warning, "alire.release.toml is unavailable here");
+      end if;
+      if Resolve_Release then
+         if Release_Manifest = "" then
+            Add ("release-resolution", Improve.Results.Diagnostic_Fail, "release manifest is unavailable");
+         else
+            Check_Release_Resolution;
+         end if;
       end if;
       return Result;
    end Run;

@@ -321,9 +321,12 @@ package body Improve_CLI_Test_Suite is
                  Improve.CLI.Execute (Args ("config|validate|--config|" & Config_Path));
                Missing : constant Improve.CLI.Outcome :=
                  Improve.CLI.Execute (Args ("config|validate|--config|missing-improve-config.toml"));
+               Explained : constant Improve.CLI.Outcome :=
+                 Improve.CLI.Execute (Args ("config|explain|--config|" & Config_Path));
             begin
                Assert
-                 (Result.Exit_Code = 0 and then Missing.Exit_Code = Improve.CLI.Argument_Exit,
+                 (Result.Exit_Code = 0 and then Missing.Exit_Code = Improve.CLI.Argument_Exit and then
+                  Ada.Strings.Fixed.Index (To_String (Explained.Output), "source:") > 0,
                   "configuration validation did not honor its explicit source");
             end;
          when Extended_Parse =>
@@ -337,6 +340,13 @@ package body Improve_CLI_Test_Suite is
                Doctor : constant Improve.CLI.Invocation := Improve.CLI.Parse (Args ("doctor|--project|demo"));
                Audit : constant Improve.CLI.Invocation :=
                  Improve.CLI.Parse (Args ("audit|PLAN-000001|--revision|2"));
+               Graph : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse (Args ("plan|graph|PLAN-000001|--format|dot"));
+               Page : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse (Args ("tasks|--project|demo|--limit|25|--cursor|50"));
+               Release : constant Improve.CLI.Invocation := Improve.CLI.Parse (Args ("doctor|--release"));
+               Verify_Audit : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse (Args ("audit|verify|bundle.json"));
             begin
                Assert
                  (Diff.Plan_Action = Improve.CLI.Diff_Plan and then Diff.Against_Revision = 1 and then
@@ -344,10 +354,13 @@ package body Improve_CLI_Test_Suite is
                   Findings.Has_Indicator and then Findings.Has_Severity and then Findings.Has_Path and then
                   Doctor.Command = Improve.CLI.Doctor_Command and then
                   Audit.Command = Improve.CLI.Audit_Command and then
-                  Audit.Revision = 2,
+                  Audit.Revision = 2 and then Graph.Plan_Action = Improve.CLI.Graph_Plan and then
+                  Graph.Format = Improve.Config.DOT_Format and then Page.Limit = 25 and then Page.Cursor = 50 and then
+                  Release.Release_Check and then Verify_Audit.Audit_Verify,
                   "extended inspection and diagnostic options were not parsed");
                Must_Reject ("plan|diff|PLAN-000001|--revision|2", "requires --against-revision");
                Must_Reject ("tasks|--task|IMP-1|--severity|high", "accepted only");
+               Must_Reject ("projects|--limit|2", "pagination");
             end;
          when Assets_Smoke =>
             declare

@@ -46,6 +46,11 @@ package Improve.Presentation is
    --  @param Value Plan revision.
    --  @return Human-readable plan.
 
+   function Plan_Graph (Value : Improve.Model.Plan_Revision) return String;
+   --  Render one plan dependency graph as Graphviz DOT.
+   --  @param Value Plan revision.
+   --  @return Deterministic DOT document.
+
    function Plans (Values : Improve.State.Summary_Vectors.Vector) return String;
    --  Render plan summaries.
    --  @param Values Plan summaries.

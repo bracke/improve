@@ -4,8 +4,8 @@ improve_commands='(projects findings plan audit apply tasks status refresh verif
 improve_commands="$improve_commands config completion manpage help version)"
 _arguments \
   "1:command:$improve_commands" \
-  '2:operation:(list show approve diff explain bash zsh fish)' \
-  '--format[output format]:(terminal json markdown)' \
+  '2:operation:(list show approve diff explain graph verify bash zsh fish)' \
+  '--format[output format]:(terminal json markdown dot)' \
   '--color[color policy]:(auto always never)' \
   '--severity[finding severity]:(critical high medium low info)' \
   '--status[task status]:(all planned ready running blocked completed failed stale)' \

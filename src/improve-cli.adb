@@ -2,10 +2,12 @@ with Ada.Command_Line;
 with Ada.Containers;
 with Ada.Exceptions;
 with Ada.IO_Exceptions;
+with Ada.Strings.Fixed;
 with Ada.Text_IO;
 with Ada.Text_IO.Text_Streams;
 with Improve.CLI.Parsing;
 with Improve.CLI_Assets;
+with Improve.Audit_Artifacts;
 with Improve.JSON;
 with Improve.Inspection_Filters;
 with Improve.Model;
@@ -30,9 +32,9 @@ package body Improve.CLI is
    use Improve.Text;
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
-
    LF : constant Character := Character'Val (10);
-
+   function Number (Value : Natural) return String is
+     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
    procedure Require_Output_Items
      (Count : Ada.Containers.Count_Type;
       Limit : Positive;
@@ -54,7 +56,6 @@ package body Improve.CLI is
 
    function Parse (Arguments : String_Vectors.Vector) return Invocation is
      (Parsing.Parse (Arguments));
-
    function Help_Text return String is
       Result : Unbounded_String;
       procedure Line (Left, Key : String; Width : Positive := 28) is
@@ -75,7 +76,7 @@ package body Improve.CLI is
       Line ("--config PATH", "help.opt.config", 36);
       Line ("--database PATH", "help.opt.database", 36); Line ("--state PATH", "help.opt.state", 36);
       Line ("--project ID|NAME", "help.opt.project", 36);
-      Line ("--format terminal|json|markdown", "help.opt.format", 36);
+      Line ("--format terminal|json|markdown|dot", "help.opt.format", 36);
       Line ("--color auto|always|never", "help.opt.color", 36);
       Line ("--run ID", "help.opt.run", 36); Line ("--revision NUMBER", "help.opt.revision", 36);
       Line ("--against-revision NUMBER", "help.opt.against_revision", 36);
@@ -83,7 +84,8 @@ package body Improve.CLI is
       Line ("--status STATUS", "help.opt.status", 36); Line ("--dry-run", "help.opt.dry_run", 36);
       Line ("--indicator ID", "help.opt.indicator", 36); Line ("--severity LEVEL", "help.opt.severity", 36);
       Line ("--path TEXT", "help.opt.path", 36);
-      Line ("--all", "help.opt.all", 36);
+      Line ("--limit N / --cursor N", "help.opt.path", 36); Line ("--signing-key FILE", "help.opt.path", 36);
+      Line ("--release", "help.opt.path", 36); Line ("--all", "help.opt.all", 36);
       Line ("--verbose", "help.opt.verbose", 36); Line ("--quiet", "help.opt.quiet", 36);
       Line ("--help", "help.opt.help", 36);
       Append (Result, LF & Message ("help.exit") & LF);
@@ -100,7 +102,6 @@ package body Improve.CLI is
 
    function State_Path (Item : Invocation) return String is
      (if Item.Has_State then To_String (Item.State) else ".improve.db");
-
    function Render_Terminal
      (Item     : Invocation;
       Renderer : not null access function return String) return String is
@@ -128,9 +129,8 @@ package body Improve.CLI is
       end if;
       return Render_Terminal (Item, Render'Access);
    end Projects_Output;
-
    function Findings_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Inspected : constant Improve.Operations.Inspection.Finding_Result :=
+      Inspected : Improve.Operations.Inspection.Finding_Result :=
         Improve.Inspection_Filters.Findings
           (Improve.Operations.Inspection.Findings
              (Quality_Path (Item, Settings), To_String (Item.Project), Item.Run_Id, Settings),
@@ -138,11 +138,29 @@ package body Improve.CLI is
            Severity  => To_String (Item.Severity_Filter),
            Path      => To_String (Item.Path_Filter));
 
+      Next : Unbounded_String;
       function Render return String is
-        (Improve.Presentation.Findings (Inspected));
+        (Improve.Presentation.Findings (Inspected) &
+         (if Length (Next) = 0 then "" else "Next cursor: " & To_String (Next) & LF));
    begin
+      if Item.Has_Limit or else Item.Has_Cursor then
+         if Item.Cursor >= Natural (Inspected.Values.Length) then
+            Inspected.Values.Clear;
+         elsif Item.Cursor > 0 then
+            Inspected.Values.Delete_First (Ada.Containers.Count_Type (Item.Cursor));
+         end if;
+         declare
+            Limit : constant Natural :=
+              (if Item.Has_Limit then Item.Limit else Settings.Maximum_Output_Items);
+         begin
+            if Natural (Inspected.Values.Length) > Limit then
+               Next := To_Unbounded_String (Number (Item.Cursor + Limit));
+               Inspected.Values.Delete_Last (Inspected.Values.Length - Ada.Containers.Count_Type (Limit));
+            end if;
+         end;
+      end if;
       if Item.Format = JSON_Format then
-         return Improve.JSON.Findings (Inspected);
+         return Improve.JSON.Findings (Inspected, To_String (Next));
       end if;
       return Render_Terminal (Item, Render'Access);
    end Findings_Output;
@@ -184,7 +202,7 @@ package body Improve.CLI is
             if Item.Format = JSON_Format then return Improve.JSON.Plan_Approval (Plan); end if;
             return Render_Terminal (Item, Render'Access);
          end;
-      elsif Item.Plan_Action = Show_Plan then
+      elsif Item.Plan_Action in Show_Plan | Graph_Plan then
          declare
             Plan : constant Improve.Model.Plan_Revision :=
               Improve.Operations.Planning.Load
@@ -193,25 +211,44 @@ package body Improve.CLI is
                  Improve.Operations.Storage_Limits (Settings));
 
             function Render return String is
-              (Improve.Presentation.Plan (Plan));
+              (if Item.Plan_Action = Graph_Plan then Improve.Presentation.Plan_Graph (Plan)
+               else Improve.Presentation.Plan (Plan));
          begin
             Require_Output_Items (Plan.Tasks.Length, Settings.Maximum_Output_Items, "plan task output");
-            if Item.Format = JSON_Format then return Improve.JSON.Plan (Plan, Dry_Run => False); end if;
+            if Item.Plan_Action = Graph_Plan and then Item.Format = JSON_Format then
+               return Improve.JSON.Plan_Graph (Plan);
+            elsif Item.Format = JSON_Format then
+               return Improve.JSON.Plan (Plan, Dry_Run => False);
+            end if;
             return Render_Terminal (Item, Render'Access);
          end;
       elsif Item.Plan_Action = List_Plans then
          declare
-            Values : constant Improve.State.Summary_Vectors.Vector :=
+            Values : Improve.State.Summary_Vectors.Vector :=
               Improve.Operations.Planning.List
                 (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
                  Settings.Maximum_Output_Items, Improve.Operations.Storage_Limits (Settings),
                  Improve.Operations.Quality_Load_Limits (Settings),
                  Improve.Config.Evidence_Limits_Of (Settings));
 
+            Next : Unbounded_String;
             function Render return String is
-              (Improve.Presentation.Plans (Values));
+              (Improve.Presentation.Plans (Values) &
+               (if Length (Next) = 0 then "" else "Next cursor: " & To_String (Next) & LF));
          begin
-            if Item.Format = JSON_Format then return Improve.JSON.Plans (Values); end if;
+            if Item.Has_Limit or else Item.Has_Cursor then
+               if Item.Cursor >= Natural (Values.Length) then Values.Clear;
+               elsif Item.Cursor > 0 then Values.Delete_First (Ada.Containers.Count_Type (Item.Cursor)); end if;
+               declare Limit : constant Natural :=
+                 (if Item.Has_Limit then Item.Limit else Settings.Maximum_Output_Items);
+               begin
+                  if Natural (Values.Length) > Limit then
+                     Next := To_Unbounded_String (Number (Item.Cursor + Limit));
+                     Values.Delete_Last (Values.Length - Ada.Containers.Count_Type (Limit));
+                  end if;
+               end;
+            end if;
+            if Item.Format = JSON_Format then return Improve.JSON.Plans (Values, To_String (Next)); end if;
             return Render_Terminal (Item, Render'Access);
          end;
       end if;
@@ -259,14 +296,67 @@ package body Improve.CLI is
    end Apply_Output;
 
    function Audit_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
-      Bundle : constant Improve.Results.Audit_Bundle :=
-        Improve.Operations.Audit.Run
-          (State_Path (Item), To_String (Item.Target), Item.Revision,
-           Settings.Maximum_Output_Items, Improve.Operations.Storage_Limits (Settings));
-      function Render return String is (Improve.Presentation.Audit (Bundle));
    begin
-      if Item.Format = JSON_Format then return Improve.JSON.Audit (Bundle); end if;
+      if Item.Audit_Verify then
+         declare Text : constant String := Project_Tools.Files.Read_Raw_File (To_String (Item.Target)); begin
+            if Text = "" then raise Dependency_Error with "audit document is unavailable"; end if;
+            Improve.Audit_Artifacts.Verify (Text);
+            return
+              (if Item.Format = JSON_Format then Improve.JSON.Text ("audit verify", "integrity", "valid")
+               else "Audit bundle integrity is valid." & LF);
+         end;
+      end if;
+      declare
+         Bundle : Improve.Results.Audit_Bundle :=
+           Improve.Operations.Audit.Run
+             (State_Path (Item), To_String (Item.Target), Item.Revision,
+              Settings.Maximum_Output_Items, Improve.Operations.Storage_Limits (Settings));
+         Next : Unbounded_String;
+         function Render return String is
+           (Improve.Presentation.Audit (Bundle) &
+            (if Length (Next) = 0 then "" else "Next cursor: " & To_String (Next) & LF));
+      begin
+      if Item.Has_Limit or else Item.Has_Cursor then
+         declare Limit : constant Natural := (if Item.Has_Limit then Item.Limit else Settings.Maximum_Output_Items);
+         begin
+            if Item.Cursor >= Natural (Bundle.History.Publications.Length) then Bundle.History.Publications.Clear;
+            elsif Item.Cursor > 0 then
+               Bundle.History.Publications.Delete_First (Ada.Containers.Count_Type (Item.Cursor));
+            end if;
+            if Item.Cursor >= Natural (Bundle.History.Verifications.Length) then Bundle.History.Verifications.Clear;
+            elsif Item.Cursor > 0 then
+               Bundle.History.Verifications.Delete_First (Ada.Containers.Count_Type (Item.Cursor));
+            end if;
+            if Natural (Bundle.History.Publications.Length) > Limit or else
+              Natural (Bundle.History.Verifications.Length) > Limit
+            then
+               Next := To_Unbounded_String (Number (Item.Cursor + Limit));
+            end if;
+            if Natural (Bundle.History.Publications.Length) > Limit then
+               Bundle.History.Publications.Delete_Last
+                 (Bundle.History.Publications.Length - Ada.Containers.Count_Type (Limit));
+            end if;
+            if Natural (Bundle.History.Verifications.Length) > Limit then
+               Bundle.History.Verifications.Delete_Last
+                 (Bundle.History.Verifications.Length - Ada.Containers.Count_Type (Limit));
+            end if;
+         end;
+      end if;
+      if Item.Format = JSON_Format then
+         declare
+            Seed : constant String :=
+              (if Item.Has_Signing_Key then
+                 Project_Tools.Files.Read_Raw_File (To_String (Item.Signing_Key)) else "");
+            Clean_Seed : constant String :=
+              (if Seed'Length > 0 and then Seed (Seed'Last) = LF then Seed (Seed'First .. Seed'Last - 1) else Seed);
+         begin
+            if Item.Has_Signing_Key and then Clean_Seed = "" then
+               raise Dependency_Error with "audit signing key is unavailable or empty"; end if;
+            return Improve.JSON.Audit (Bundle, To_String (Next), Clean_Seed);
+         end;
+      end if;
       return Render_Terminal (Item, Render'Access);
+      end;
    end Audit_Output;
 
    function Tasks_Output
@@ -274,7 +364,7 @@ package body Improve.CLI is
       Settings                    : Improve.Config.Settings;
       Quality_Database_Configured : Boolean) return String is
       Filter     : constant String := (if Item.Has_Status then To_String (Item.Status_Filter) else "all");
-      Filtered   : constant Improve.Tasks.View_Vectors.Vector :=
+      Filtered   : Improve.Tasks.View_Vectors.Vector :=
         Improve.Operations.Inspection.Tasks
           (State_Path       => State_Path (Item),
            Quality_Path     => Quality_Path (Item, Settings),
@@ -289,10 +379,23 @@ package body Improve.CLI is
            Quality_Limits   => Improve.Operations.Quality_Load_Limits (Settings),
            Evidence_Limits  => Improve.Config.Evidence_Limits_Of (Settings));
 
+      Next : Unbounded_String;
       function Render return String is
-        (Improve.Presentation.Tasks (Filtered));
+        (Improve.Presentation.Tasks (Filtered) &
+         (if Length (Next) = 0 then "" else "Next cursor: " & To_String (Next) & LF));
    begin
-      if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter); end if;
+      if Item.Has_Limit or else Item.Has_Cursor then
+         if Item.Cursor >= Natural (Filtered.Length) then Filtered.Clear;
+         elsif Item.Cursor > 0 then Filtered.Delete_First (Ada.Containers.Count_Type (Item.Cursor)); end if;
+         declare Limit : constant Natural := (if Item.Has_Limit then Item.Limit else Settings.Maximum_Output_Items);
+         begin
+            if Natural (Filtered.Length) > Limit then
+               Next := To_Unbounded_String (Number (Item.Cursor + Limit));
+               Filtered.Delete_Last (Filtered.Length - Ada.Containers.Count_Type (Limit));
+            end if;
+         end;
+      end if;
+      if Item.Format = JSON_Format then return Improve.JSON.Tasks (Filtered, Filter, To_String (Next)); end if;
       return Render_Terminal (Item, Render'Access);
    end Tasks_Output;
 
@@ -377,6 +480,7 @@ package body Improve.CLI is
       Report : constant Improve.Results.Diagnostic_Report :=
         Improve.Operations.Diagnostics.Run
           (Quality_Path (Item, Settings), State_Path (Item), To_String (Item.Project), Settings,
+           Item.Release_Check,
            Improve.Operations.Storage_Limits (Settings));
       function Render return String is (Improve.Presentation.Diagnostics (Report));
    begin
@@ -406,6 +510,8 @@ package body Improve.CLI is
                   raise Argument_Error with "no configuration file was selected";
                end if;
                Plain := To_Unbounded_String (Message ("config.valid") & LF);
+            elsif Item.Has_Target and then To_String (Item.Target) = "explain" then
+               Plain := To_Unbounded_String (Improve.Config.Explain (Configuration));
             else
                if Item.Format = JSON_Format then
                   Plain := To_Unbounded_String (Message ("config.title") & LF & Improve.Config.Image (Settings));
@@ -510,6 +616,9 @@ package body Improve.CLI is
          Settings : Improve.Config.Settings renames Configuration.Values;
       begin
          if not Item.Has_Format then Item.Format := Settings.Format; end if;
+         if Item.Format = DOT_Format and then
+           not (Item.Command = Plan_Command and then Item.Plan_Action = Graph_Plan)
+         then raise Argument_Error with "output format dot requires plan graph"; end if;
          JSON_Errors := Item.Format = JSON_Format;
          if not Item.Has_Color then Item.Color := Settings.Color; end if;
          if Item.Format in JSON_Format | Markdown_Format then Item.Color := Color_Never; end if;

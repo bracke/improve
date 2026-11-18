@@ -45,7 +45,8 @@
       "type": "object", "required": ["project_id", "project", "run_id", "assessment", "snapshot", "findings"],
       "properties": { "project_id": { "$ref": "#/$defs/positive" }, "project": { "type": "string" },
         "run_id": { "$ref": "#/$defs/positive" }, "assessment": { "type": "string" },
-        "snapshot": { "type": "string" }, "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } } },
+        "snapshot": { "type": "string" }, "next_cursor": { "type": "string" },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } } },
       "additionalProperties": false
     },
     "planTask": {
@@ -77,7 +78,8 @@
       "properties": { "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" },
         "project_id": { "$ref": "#/$defs/positive" }, "project": { "type": "string" },
         "run_id": { "$ref": "#/$defs/positive" }, "task_count": { "$ref": "#/$defs/natural" },
-        "fingerprint": { "type": "string" } }, "additionalProperties": false } } }, "additionalProperties": false },
+        "fingerprint": { "type": "string" } }, "additionalProperties": false } },
+        "next_cursor": { "type": "string" } }, "additionalProperties": false },
     "approval": { "type": "object", "required": ["plan_id", "revision", "fingerprint", "approved"],
       "properties": { "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" },
         "fingerprint": { "type": "string" }, "approved": { "const": true } }, "additionalProperties": false },
@@ -117,6 +119,7 @@
       "verification_freshness": { "type": "string" }, "verification_current": { "type": "boolean" },
       "status": { "type": "string" } }, "additionalProperties": false },
     "tasks": { "type": "object", "required": ["filter", "tasks"], "properties": { "filter": { "type": "string" },
+      "next_cursor": { "type": "string" },
       "tasks": { "type": "array", "items": { "$ref": "#/$defs/taskView" } } }, "additionalProperties": false },
     "status": { "type": "object", "required": ["projects"], "properties": { "projects": { "type": "array",
       "items": { "type": "object", "required": ["project_id", "project", "baseline_run", "latest_run", "plan_count",
@@ -141,14 +144,25 @@
     "recovery": { "type": "object", "required": ["operations_recovered", "tasks_recovered"], "properties": {
       "operations_recovered": { "$ref": "#/$defs/natural" }, "tasks_recovered": { "$ref": "#/$defs/natural" } },
       "additionalProperties": false },
+    "graph": { "type": "object", "required": ["plan_id", "revision", "nodes", "edges"], "properties": {
+      "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" },
+      "nodes": { "type": "array", "items": { "type": "object", "required": ["id", "title", "priority"],
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" },
+          "priority": { "type": "string" } }, "additionalProperties": false } },
+      "edges": { "type": "array", "items": { "type": "object", "required": ["from", "to"],
+        "properties": { "from": { "type": "string" }, "to": { "type": "string" } },
+        "additionalProperties": false } } }, "additionalProperties": false },
     "audit": { "type": "object", "required": ["plan_id", "revision", "fingerprint", "approved", "project_id",
       "project", "database_id", "baseline_run", "source_id", "policy_id", "toolchain_id", "evidence_id", "planner_id",
-      "finding_keys", "tasks", "publications", "verifications"], "properties": {
+      "finding_keys", "tasks", "publications", "verifications", "canonical_payload", "bundle_digest"], "properties": {
       "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" }, "fingerprint": { "type": "string" },
       "approved": { "type": "boolean" }, "project_id": { "$ref": "#/$defs/positive" }, "project": { "type": "string" },
       "database_id": { "type": "string" }, "baseline_run": { "$ref": "#/$defs/positive" },
       "source_id": { "type": "string" }, "policy_id": { "type": "string" }, "toolchain_id": { "type": "string" },
       "evidence_id": { "type": "string" }, "planner_id": { "type": "string" },
+      "canonical_payload": { "type": "string" }, "bundle_digest": { "type": "string" },
+      "next_cursor": { "type": "string" },
+      "public_key": { "type": "string" }, "signature": { "type": "string" },
       "finding_keys": { "$ref": "#/$defs/strings" },
       "tasks": { "type": "array", "items": { "type": "object", "required": ["id", "title", "contract_fingerprint"],
         "properties": { "id": { "type": "string" }, "title": { "type": "string" },
@@ -179,6 +193,7 @@
     { "properties": { "command": { "const": "plan approve" }, "data": { "$ref": "#/$defs/approval" } } },
     { "properties": { "command": { "enum": ["plan diff", "plan explain"] },
       "data": { "$ref": "#/$defs/comparison" } } },
+    { "properties": { "command": { "const": "plan graph" }, "data": { "$ref": "#/$defs/graph" } } },
     { "properties": { "command": { "const": "audit" }, "data": { "$ref": "#/$defs/audit" } } },
     { "properties": { "command": { "const": "apply" }, "data": { "$ref": "#/$defs/publication" } } },
     { "properties": { "command": { "const": "tasks" }, "data": { "$ref": "#/$defs/tasks" } } },
@@ -187,7 +202,7 @@
     { "properties": { "command": { "const": "recover" }, "data": { "$ref": "#/$defs/recovery" } } },
     { "properties": { "command": { "const": "doctor" }, "data": { "$ref": "#/$defs/diagnostics" } } },
     { "properties": { "command": { "const": "error" }, "data": { "$ref": "#/$defs/error" } } },
-    { "properties": { "command": { "enum": ["config", "completion", "manpage", "help", "version"] },
+    { "properties": { "command": { "enum": ["config", "audit verify", "completion", "manpage", "help", "version"] },
       "data": { "$ref": "#/$defs/text" } } }
   ]
 }

@@ -19,9 +19,10 @@ package Improve.JSON is
    --  @param Value Registry projects and reporting snapshot identity.
    --  @return One versioned JSON document.
 
-   function Findings (Value : Improve.Results.Finding_List) return String;
+   function Findings (Value : Improve.Results.Finding_List; Next_Cursor : String := "") return String;
    --  Serialize normalized remediation candidates.
    --  @param Value Assessment selection, provenance, and normalized findings.
+   --  @param Next_Cursor Cursor for a following finding page, or empty.
    --  @return One versioned JSON document.
 
    function Plan (Value : Improve.Model.Plan_Revision; Dry_Run : Boolean) return String;
@@ -30,9 +31,15 @@ package Improve.JSON is
    --  @param Dry_Run Whether the plan was calculated without persistence.
    --  @return One versioned JSON document.
 
-   function Plans (Values : Improve.State.Summary_Vectors.Vector) return String;
+   function Plan_Graph (Value : Improve.Model.Plan_Revision) return String;
+   --  Serialize task nodes and dependency edges for one plan revision.
+   --  @param Value Plan revision.
+   --  @return One versioned JSON graph document.
+
+   function Plans (Values : Improve.State.Summary_Vectors.Vector; Next_Cursor : String := "") return String;
    --  Serialize persisted plan summaries.
    --  @param Values Persisted plan summaries.
+   --  @param Next_Cursor Cursor for a following plan page, or empty.
    --  @return One versioned JSON document.
 
    function Plan_Approval (Value : Improve.Model.Plan_Revision) return String;
@@ -51,9 +58,14 @@ package Improve.JSON is
    --  @param Value Diagnostic report.
    --  @return One versioned JSON document.
 
-   function Audit (Value : Improve.Results.Audit_Bundle) return String;
+   function Audit
+     (Value        : Improve.Results.Audit_Bundle;
+      Next_Cursor  : String := "";
+      Signing_Seed : String := "") return String;
    --  Serialize one deterministic plan audit bundle.
    --  @param Value Exact plan, approval, publication, and verification evidence.
+   --  @param Next_Cursor Cursor for a following history page, or empty.
+   --  @param Signing_Seed Optional Ed25519 private seed in hexadecimal.
    --  @return One versioned JSON document.
 
    function Error
@@ -84,10 +96,12 @@ package Improve.JSON is
 
    function Tasks
      (Values : Improve.Tasks.View_Vectors.Vector;
-      Filter : String) return String;
+      Filter : String;
+      Next_Cursor : String := "") return String;
    --  Serialize deterministic task inspection results.
    --  @param Values Task views.
    --  @param Filter Applied status filter.
+   --  @param Next_Cursor Cursor for a following task page, or empty.
    --  @return One versioned JSON document.
 
    function Status (Values : Improve.Tasks.Status_Vectors.Vector) return String;

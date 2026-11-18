@@ -227,6 +227,39 @@ package body Improve.Presentation is
       return To_String (Result);
    end Plan;
 
+   function Plan_Graph (Value : Improve.Model.Plan_Revision) return String is
+      Result : Unbounded_String;
+      function Quote (Text : String) return String is
+         Escaped : Unbounded_String;
+      begin
+         for C of Text loop
+            if C in '"' | '\' then Append (Escaped, '\'); end if;
+            if C = LF or else Character'Pos (C) < 32 then
+               Append (Escaped, ' ');
+            else
+               Append (Escaped, C);
+            end if;
+         end loop;
+         return '"' & To_String (Escaped) & '"';
+      end Quote;
+   begin
+      Append (Result, "digraph improve_plan {" & LF & "  rankdir=LR;" & LF);
+      for Spec of Value.Tasks loop
+         Append
+           (Result, "  " & Quote (To_String (Spec.Id)) & " [label=" &
+            Quote (To_String (Spec.Title)) & "];" & LF);
+      end loop;
+      for Spec of Value.Tasks loop
+         for Dependency of Spec.Dependencies loop
+            Append
+              (Result, "  " & Quote (To_String (Dependency)) & " -> " &
+               Quote (To_String (Spec.Id)) & ";" & LF);
+         end loop;
+      end loop;
+      Append (Result, "}" & LF);
+      return To_String (Result);
+   end Plan_Graph;
+
    function Plans (Values : Improve.State.Summary_Vectors.Vector) return String is
       Result : Unbounded_String;
    begin

@@ -132,7 +132,9 @@ begin
    Check.Require_Text ("coverage/gcov-summary.txt", "inventory=gcov-production-lines-v2");
    if Evidence_Value ("source_fingerprint") /= Ada_Quality.Checks.Source_Fingerprint (Root) then
       Ada.Text_IO.Put_Line
-        (Ada.Text_IO.Standard_Error, "coverage evidence does not match the current source fingerprint");
+        (Ada.Text_IO.Standard_Error,
+         "coverage evidence does not match current source fingerprint " &
+         Ada_Quality.Checks.Source_Fingerprint (Root));
       Failed := True;
    end if;
    Check.Require_Text ("CHANGELOG.md", "## 0.1.0 — 2026-11-03");

@@ -165,7 +165,8 @@ package body Improve.Config is
       if Value = "terminal" then return Terminal_Format;
       elsif Value = "json" then return JSON_Format;
       elsif Value = "markdown" then return Markdown_Format;
-      else raise Argument_Error with "output.format must be terminal, json, or markdown";
+      elsif Value = "dot" then return DOT_Format;
+      else raise Argument_Error with "output.format must be terminal, json, markdown, or dot";
       end if;
    end Format_Of;
 
@@ -479,7 +480,8 @@ package body Improve.Config is
               (case Item.Format is
                   when Terminal_Format => "terminal",
                   when JSON_Format => "json",
-                  when Markdown_Format => "markdown");
+                  when Markdown_Format => "markdown",
+                  when DOT_Format => "dot");
          when Output_Color =>
             return
               (case Item.Color is
@@ -513,6 +515,29 @@ package body Improve.Config is
       end loop;
       return To_String (Result);
    end Image;
+
+   function Explain (Item : Loaded_Configuration) return String is
+      Result  : UString;
+      Entries : Entry_Array;
+      Present : Presence_Array := [others => False];
+      Source  : constant String := To_String (Item.Source_Path);
+   begin
+      if Source /= "" then
+         declare Text : constant String := Project_Tools.Files.Read_Raw_File (Source); begin
+            if Text'Length > 1_048_576 then
+               raise Argument_Error with "configuration file exceeds 1048576 bytes";
+            end if;
+            TOML_Codec.Parse (Text, Entries, Present);
+         end;
+      end if;
+      for Id in Setting_Id loop
+         Append
+           (Result,
+            Qualified (Id) & " = " & Raw_Value (Item.Values, Id) & "  # source: " &
+            (if Source /= "" and then Present (Id) then Source else "default") & LF);
+      end loop;
+      return To_String (Result);
+   end Explain;
 
    function Evidence_Limits_Of (Item : Settings) return Evidence_Limits is
      ((Database_Bytes           => Item.Maximum_Quality_Database_Bytes,
