@@ -103,6 +103,7 @@ jobs:
             alr exec -- gprbuild -P improve_docs.gpr -p -j1
             alr exec -- gprbuild -P improve_spark.gpr -p -j1
             alr exec -- gprbuild -P phase0/contract_probe.gpr -p -j1
+            phase0/bin/contract_probe
             alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
             (cd tests && alr build --validation -- -j1)
             (cd tests && alr exec -- gprbuild -P coverage.gpr -p -j1)

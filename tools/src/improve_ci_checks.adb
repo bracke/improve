@@ -69,6 +69,7 @@ package body Improve_CI_Checks is
       Require ("model_runner_runtime/improve_model_runner_runtime.gpr", "with ""model_runner_inference.gpr"";");
       Require (".github/workflows/ci.yml", "dependency-preflight:");
       Require (".github/workflows/ci.yml", "clean-room-build:");
+      Require (".github/workflows/ci.yml", "phase0/bin/contract_probe");
       Require (".github/workflows/ci.yml", "macos-15-intel");
       Require (".github/workflows/ci.yml", "cache-build-artifacts: ""false""");
    end Validate_Workflow_Contracts;
