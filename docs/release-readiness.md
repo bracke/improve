@@ -16,7 +16,8 @@ fast dependency/import preflight gates expensive jobs, while a cache-free job bu
 project root. OS-scoped caches shorten other builds; job timeouts, concurrency cancellation, and uploaded diagnostics
 bound and explain failures. Release-gate jobs install pinned `gnatdoc_bin=26.0.0` and `gnatprove=15.1.0` Alire
 binaries instead of depending on runner-global tools. The repository checker validates the exact dependency lock
-against every workspace pin.
+against every workspace pin. Diagnostic logs are written outside the checkout so observation cannot change the source
+fingerprint under assessment.
 
 Build and run the gate from the repository root:
 

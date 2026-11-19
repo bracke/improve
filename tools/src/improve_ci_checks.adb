@@ -76,5 +76,7 @@ package body Improve_CI_Checks is
       Require (".github/actions/setup-workspace/action.yml", "gnatprove=15.1.0");
       Require (".github/workflows/ci.yml", "install-release-tools: ""true""");
       Require (".github/workflows/release.yml", "install-release-tools: ""true""");
+      Require (".github/workflows/ci.yml", "RUNNER_TEMP/improve-ci-artifacts");
+      Require (".github/workflows/ci.yml", "path: ${{ runner.temp }}/improve-ci-artifacts");
    end Validate_Workflow_Contracts;
 end Improve_CI_Checks;
