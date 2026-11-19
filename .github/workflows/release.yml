@@ -51,6 +51,8 @@ jobs:
       - name: Build release tools
         run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
       - name: Validate pin-free release candidate
+        id: release_candidate
+        continue-on-error: true
         run: tools/bin/check_release_candidate
       - name: Run Phase 9
         run: tools/bin/check_phase_9
@@ -90,6 +92,11 @@ jobs:
             improve/model_runner_runtime/alire.release.toml
             improve/improve.spdx.json
             improve/docs/model-supply-chain.md
+      - name: Require a complete pin-free release candidate
+        if: ${{ always() && steps.release_candidate.outcome != 'success' }}
+        run: |
+          echo "Pin-free dependency resolution failed; packaging was validated but release remains blocked."
+          exit 1
       - name: Create Git tag and GitHub release
         if: github.event_name == 'workflow_dispatch' && inputs.create_release
         env:
