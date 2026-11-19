@@ -35,7 +35,9 @@ fresh validation builds, regenerates coverage evidence, and runs a complete 33-i
 temporary tree is removed after success or failure.
 
 Release automation runs this clean-worktree gate before Phase 9, whose coverage step intentionally regenerates tracked
-evidence in the checkout.
+evidence in the checkout. A failed pin-free resolution remains a final workflow failure, but non-publishing runs still
+exercise Phase 9, CLI asset capture, SBOM generation, attestations, and artifact upload before reporting that blocker.
+Tag creation, index submission, and runtime submission remain unreachable after a failed candidate gate.
 
 ## Gate contents
 
