@@ -6,6 +6,10 @@ inputs:
     description: Restore compiler outputs; disable for clean-room builds.
     required: false
     default: "true"
+  install-release-tools:
+    description: Install the pinned GNATdoc and GNATprove binaries used by the release gate.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -47,3 +51,11 @@ runs:
           improve-${{ runner.os }}-gnat15-${{ hashFiles('improve/.github/dependency-lock.txt') }}-
     - name: Install pinned Alire toolchain
       uses: alire-project/setup-alire@8398015c233537c928d12293d46c0dcecb54434c # v5
+    - name: Install pinned release tools
+      if: inputs.install-release-tools == 'true'
+      shell: bash
+      run: |
+        release_tools_prefix="${RUNNER_TEMP}/improve-release-tools"
+        alr --non-interactive install --prefix="$release_tools_prefix" \
+          gnatdoc_bin=26.0.0 gnatprove=15.1.0
+        echo "$release_tools_prefix/bin" >> "$GITHUB_PATH"

@@ -44,6 +44,8 @@ jobs:
           fetch-depth: 0
           path: improve
       - uses: ./improve/.github/actions/setup-workspace
+        with:
+          install-release-tools: "true"
       - name: Generate Alire configuration projects
         run: alr build --validation --stop-after=generation
       - name: Build release tools

@@ -14,7 +14,9 @@ scheduled digest-pinned production-GGUF CLI round trip with wall-time, peak-memo
 Windows is explicitly unavailable while pinned dependencies require POSIX process, locking, and durability APIs. A
 fast dependency/import preflight gates expensive jobs, while a cache-free job builds every development manifest and
 project root. OS-scoped caches shorten other builds; job timeouts, concurrency cancellation, and uploaded diagnostics
-bound and explain failures. The repository checker validates the exact dependency lock against every workspace pin.
+bound and explain failures. Release-gate jobs install pinned `gnatdoc_bin=26.0.0` and `gnatprove=15.1.0` Alire
+binaries instead of depending on runner-global tools. The repository checker validates the exact dependency lock
+against every workspace pin.
 
 Build and run the gate from the repository root:
 

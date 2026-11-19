@@ -72,5 +72,9 @@ package body Improve_CI_Checks is
       Require (".github/workflows/ci.yml", "phase0/bin/contract_probe");
       Require (".github/workflows/ci.yml", "macos-15-intel");
       Require (".github/workflows/ci.yml", "cache-build-artifacts: ""false""");
+      Require (".github/actions/setup-workspace/action.yml", "gnatdoc_bin=26.0.0");
+      Require (".github/actions/setup-workspace/action.yml", "gnatprove=15.1.0");
+      Require (".github/workflows/ci.yml", "install-release-tools: ""true""");
+      Require (".github/workflows/release.yml", "install-release-tools: ""true""");
    end Validate_Workflow_Contracts;
 end Improve_CI_Checks;
