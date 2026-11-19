@@ -8,6 +8,7 @@ runs:
       shell: bash
       run: |
         while IFS='=' read -r repository revision; do
+          revision=${revision%$'\r'}
           test -n "$repository"
           test "${#revision}" -eq 40
           mkdir "$repository"
