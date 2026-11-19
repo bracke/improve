@@ -98,7 +98,7 @@ begin
       "runtime_cli_black_box.adb",
       Runtime);
    Project_Tools.Processes.Run
-     ("model runtime CLI black-box", Root,
+     ("model runtime CLI black-box", Runtime,
       Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_cli_black_box"),
       Project_Tools.Processes.No_Arguments);
    Build_Project
