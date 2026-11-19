@@ -34,6 +34,9 @@ worktree, copies only release source to a temporary directory, activates the pin
 fresh validation builds, regenerates coverage evidence, and runs a complete 33-indicator Ada Quality assessment. The
 temporary tree is removed after success or failure.
 
+Release automation runs this clean-worktree gate before Phase 9, whose coverage step intentionally regenerates tracked
+evidence in the checkout.
+
 ## Gate contents
 
 The gate requires all of the following:

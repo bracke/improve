@@ -62,5 +62,6 @@ explicitly unavailable while the pinned database and Ada Quality revisions requi
 durability APIs. Each supported platform's signal test raises a real SIGINT during generation and asserts exit 130
 with no state database. The deterministic suite also rejects corrupt, truncated, and unsupported GGUF inputs. A
 separate scheduled or manual job verifies a fixed SHA-256 before exercising a full CLI plan and checking persisted
-provider/model provenance against a production Qwen GGUF. It enforces explicit open, inference, CLI, and peak-RSS
-budgets and uploads its measurements as CI diagnostics.
+provider/model provenance against a production Qwen GGUF. An accepted refinement must retain the exact provider and
+model digest; a policy-rejected response must retain neither and use the deterministic fallback. The job enforces
+explicit open, inference, CLI, and peak-RSS budgets and uploads its measurements as CI diagnostics.
