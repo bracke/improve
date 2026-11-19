@@ -296,6 +296,8 @@ package body Improve.Storage is
       Pair ("assessment", To_String (Value.Baseline.Evidence_Id)) & LF &
       Pair ("snapshot", To_String (Value.Baseline.Snapshot_Id)) & LF &
       Pair ("planner", To_String (Value.Planner_Id)) & LF &
+      Pair ("agent_provider", To_String (Value.Agent_Provider_Id)) & LF &
+      Pair ("agent_model_sha256", To_String (Value.Agent_Model_SHA256)) & LF &
       Pair ("task_count", Number (Natural (Value.Tasks.Length))) & LF &
       Pair ("created_at", Timestamp (Value.Created_At)));
 

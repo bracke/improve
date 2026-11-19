@@ -85,6 +85,10 @@ function Load_Revision
          Result.Working_Source_Id :=
            To_Unbounded_String (Field_Or (Payload, "working_source", Field (Payload, "source")));
          Result.Planner_Id := To_Unbounded_String (Field (Payload, "planner"));
+         Result.Agent_Provider_Id :=
+           To_Unbounded_String (Field_Or (Payload, "agent_provider", ""));
+         Result.Agent_Model_SHA256 :=
+           To_Unbounded_String (Field_Or (Payload, "agent_model_sha256", ""));
          Result.Created_At := Parse_Time (Field (Payload, "created_at"));
          Result.Fingerprint := To_Unbounded_String (S (Revision.Kind));
          Result.Review_Status := To_Unbounded_String (S (Revision.State));

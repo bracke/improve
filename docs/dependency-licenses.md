@@ -18,3 +18,7 @@ workspace and their declared licenses are:
 `gnat_native =15.2.1` is the compiler toolchain dependency rather than an application library. Transitive dependency
 licenses remain the responsibility of their direct parent crates and the selected Alire solution. Publication must not
 proceed until the pin-free manifest resolves and Alire's generated solution has been reviewed.
+
+The separately published `improve_model_runner_runtime 0.1.0` crate adds two direct MIT-licensed dependencies:
+`improve ^0.1.0` and `model_runner ^0.1.0`. Its release manifest pins the same GNAT 15.2.1 toolchain and contains no
+local paths.

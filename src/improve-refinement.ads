@@ -1,5 +1,6 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Interfaces;
 with Improve.Model;
 
 --  Optional agent refinement behind a bounded, typed, noninteractive adapter.
@@ -91,6 +92,10 @@ package Improve.Refinement is
    --  @field Byte_Count Total context size.
    --  @field Maximum_Response_Bytes Maximum structured response accepted from the provider.
 
+   function Response_Schema return String;
+   --  Return the exact JSON Schema required for a refinement response.
+   --  @return Stable schema for an object containing typed task proposals.
+
    type Task_Proposal is record
       Task_Id                 : UString;
       Category                : UString;
@@ -150,6 +155,34 @@ package Improve.Refinement is
    --  Return a stable adapter identity used in plan provenance.
    --  @param Self Adapter instance.
    --  @return Stable adapter identity.
+
+   type Adapter_Provenance is record
+      Provider_Id    : UString;
+      Model_SHA256   : UString;
+      Canonical_Path : UString;
+      Model_Name     : UString;
+      Architecture   : UString;
+      Model_Bytes    : Interfaces.Unsigned_64 := 0;
+      Model_Parts    : Natural := 0;
+   end record;
+   --  Typed identity and diagnostic material for an accepted refinement.
+   --  @field Provider_Id Stable provider implementation identity.
+   --  @field Model_SHA256 Exact model digest, or empty when unavailable.
+   --  @field Canonical_Path Canonical backbone path, or empty when unavailable.
+   --  @field Model_Name Model title supplied by the GGUF metadata, or empty.
+   --  @field Architecture Stable model architecture identifier, or empty.
+   --  @field Model_Bytes Total bytes across opened model files.
+   --  @field Model_Parts Number of opened model files.
+
+   function Provenance (Self : Adapter) return Adapter_Provenance is abstract;
+   --  Return typed provider provenance.
+   --  @param Self Adapter instance.
+   --  @return Provider and model identity for accepted plans.
+
+   function Cancellation_Requested (Self : Adapter) return Boolean is abstract;
+   --  Return whether the caller cooperatively cancelled this adapter.
+   --  @param Self Adapter instance.
+   --  @return True when the enclosing operation must stop without persistence.
 
    procedure Request
      (Self            : in out Adapter;

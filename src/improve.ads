@@ -15,6 +15,9 @@ package Improve with SPARK_Mode is
    Data_Error       : exception;
    --  Storage, integrity, publication, or internal processing failure; exit code 4.
 
+   Cancelled_Error  : exception;
+   --  Cooperative user interruption; exit code 130 at the CLI boundary.
+
    function Stable_Digest (Text : String) return String;
    --  Return a collision-resistant identity in the form `sha256:` plus sixty-four lowercase hexadecimal digits.
    --  @param Text Bytes to identify.

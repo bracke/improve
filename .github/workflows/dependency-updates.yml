@@ -1,0 +1,49 @@
+name: Dependency update report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-update-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Compare locked revisions with upstream default branches
+        shell: bash
+        run: |
+          set -o pipefail
+          report=dependency-report.txt
+          echo "repository locked latest status" > "$report"
+          while IFS='=' read -r repository locked; do
+            remote="https://github.com/bracke/${repository}.git"
+            latest=$(git ls-remote --symref "$remote" HEAD | awk '$1 != "ref:" {print $1; exit}')
+            test -n "$latest"
+            if [[ "$locked" == "$latest" ]]; then
+              status=current
+            else
+              status=update_available
+            fi
+            echo "$repository $locked $latest $status" >> "$report"
+          done < .github/dependency-lock.txt
+          {
+            echo "### Workspace dependency updates"
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload dependency report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-update-report
+          path: dependency-report.txt

@@ -46,6 +46,8 @@ begin
    Improve.Model.Validate (Value);
    Require_Text (To_String (Value.Fingerprint), "plan revision identity");
    Require_Text (To_String (Value.Review_Status), "plan revision state");
+   Require_Text (To_String (Value.Agent_Provider_Id), "agent provider identity");
+   Require_Text (To_String (Value.Agent_Model_SHA256), "agent model identity");
    for Finding of Value.Findings loop
       Require_Text (To_String (Finding.Fingerprint), "finding identity");
       Require_Text (Improve.Model.Image (Finding.Kind), "finding state");

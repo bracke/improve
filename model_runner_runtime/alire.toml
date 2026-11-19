@@ -1,0 +1,86 @@
+name = "improve_model_runner_runtime"
+description = "Optional local GGUF refinement runtime for Improve"
+version = "0.1.0"
+licenses = "MIT"
+authors = ["Bent Bracke"]
+maintainers = ["Bent Bracke <bent@bracke.dk>"]
+maintainers-logins = ["bracke"]
+website = "https://github.com/bracke/improve"
+tags = ["ada", "quality", "planning", "gguf", "inference"]
+project-files = ["improve_model_runner_runtime.gpr"]
+executables = ["improve-model-runner"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+improve = "*"
+
+[[depends-on]]
+model_runner = "*"
+
+[build-profiles]
+"*" = "development"
+
+[[pins]]
+improve = { path = ".." }
+model_runner = { path = "../../model_runner" }
+ada_quality = { path = "../../ada_quality" }
+database = { path = "../../database" }
+jsonlib = { path = "../../jsonlib" }
+messages = { path = "../../messages" }
+terminal_styles = { path = "../../terminal_styles" }
+project_tools = { path = "../../project_tools" }
+hostkit = { path = "../../hostkit" }
+model_runner_framework = { path = "../../model_runner/framework" }
+cryptolib = { path = "../../cryptolib" }
+i18n = { path = "../../i18n" }
+regexp = { path = "../../regexp" }
+httpclient = { path = "../../httpclient" }
+ssllib = { path = "../../ssllib" }
+truststores = { path = "../../truststores" }
+zlib = { path = "../../zlib" }
+jpeglib = { path = "../../jpeglib" }
+versionlib = { path = "../../versionlib" }
+ssh_lib = { path = "../../sshlib" }
+awklib = { path = "../../awklib" }
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tests/runtime_schema_smoke.gpr", "runtime_schema_smoke.adb", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tests/bin/runtime_schema_smoke"]
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tests/runtime_end_to_end.gpr", "runtime_end_to_end.adb", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tests/bin/runtime_end_to_end"]
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tests/runtime_signal_interrupt.gpr", "runtime_signal_interrupt.adb", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tests/bin/runtime_signal_interrupt"]
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tests/runtime_cli_black_box.gpr", "runtime_cli_black_box.adb", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tests/bin/runtime_cli_black_box"]
+
+[[actions]]
+type = "test"
+command = ["gprbuild", "-P", "tests/runtime_external_model.gpr", "runtime_external_model.adb", "-j1"]
+
+[[actions]]
+type = "test"
+command = ["tests/bin/runtime_external_model"]

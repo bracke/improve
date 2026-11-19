@@ -1,0 +1,36 @@
+name: Set up pinned Ada workspace
+description: Check out exact sibling revisions and restore OS-specific Alire/build caches.
+
+runs:
+  using: composite
+  steps:
+    - name: Check out pinned workspace dependencies
+      shell: bash
+      run: |
+        while IFS='=' read -r repository revision; do
+          test -n "$repository"
+          test "${#revision}" -eq 40
+          mkdir "$repository"
+          git -C "$repository" init
+          git -C "$repository" remote add origin "https://github.com/bracke/$repository.git"
+          git -C "$repository" fetch --depth 1 origin "$revision"
+          test "$(git -C "$repository" rev-parse FETCH_HEAD)" = "$revision"
+          git -C "$repository" checkout --detach FETCH_HEAD
+        done < improve/.github/dependency-lock.txt
+    - name: Restore Alire and Ada build caches
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
+          ~/.cache/alire
+          ~/.local/share/alire/indexes
+          ~/.local/share/alire/releases
+          *_build
+          improve/obj
+          improve/tests/obj
+          improve/model_runner_runtime/obj
+          improve/model_runner_runtime/tests/obj-*
+        key: improve-${{ runner.os }}-gnat15-${{ hashFiles('improve/.github/dependency-lock.txt') }}-${{ github.sha }}
+        restore-keys: |
+          improve-${{ runner.os }}-gnat15-${{ hashFiles('improve/.github/dependency-lock.txt') }}-
+    - name: Install pinned Alire toolchain
+      uses: alire-project/setup-alire@8398015c233537c928d12293d46c0dcecb54434c # v5

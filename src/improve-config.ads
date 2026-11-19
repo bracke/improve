@@ -78,6 +78,10 @@ package Improve.Config is
       Maximum_Findings_Per_Task : Positive := 50;
       Allow_Investigation_Tasks : Boolean := True;
       Require_Review            : Boolean := True;
+      Agent_Enabled             : Boolean := False;
+      Agent_Model               : UString;
+      Agent_Model_Path          : UString;
+      Agent_Model_SHA256        : UString;
       Agent_Max_Context_Bytes   : Positive := 131_072;
       Agent_Max_File_Bytes      : Positive := 32_768;
       Agent_Max_Response_Bytes  : Positive := 131_072;
@@ -115,6 +119,10 @@ package Improve.Config is
    --  @field Maximum_Findings_Per_Task Maximum findings grouped into one task.
    --  @field Allow_Investigation_Tasks Whether incomplete evidence may create investigation work.
    --  @field Require_Review Whether generated work requires review.
+   --  @field Agent_Enabled Whether local model refinement is explicitly enabled.
+   --  @field Agent_Model Stable caller-selected model name.
+   --  @field Agent_Model_Path Local GGUF path used by the optional runtime executable.
+   --  @field Agent_Model_SHA256 Optional expected lower-case SHA-256 for the exact GGUF bytes.
    --  @field Agent_Max_Context_Bytes Maximum refinement context size.
    --  @field Agent_Max_File_Bytes Maximum source excerpt size.
    --  @field Agent_Max_Response_Bytes Maximum refinement response size.
@@ -138,6 +146,11 @@ package Improve.Config is
    function Defaults return Settings;
    --  Return documented schema-version-2 defaults.
    --  @return Complete default settings.
+
+   procedure Validate (Item : Settings);
+   --  Validate settings assembled by a configuration file or an invocation override.
+   --  @param Item Effective settings to validate.
+   --  @exception Argument_Error Any unsafe text, inconsistent limit, or invalid model digest.
 
    function Evidence_Limits_Of (Item : Settings) return Evidence_Limits;
    --  Return the shared evidence limits from validated settings.

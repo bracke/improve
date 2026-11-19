@@ -68,12 +68,18 @@ and returns typed proposals; it owns no plan, quality, project, or harness state
 result before normal persistence. model_runner's interactive `/work` path remains exclusively the execution workflow.
 `Improve.Refinement.Model_Adapter` supplies a concrete schema-aware bridge to any in-process typed model client.
 `Improve.Refinement.Model_Runner_Client` implements that client over an optional model_runner inference session while
-keeping session ownership outside Improve and preserving the same validation and fallback path.
+keeping session ownership outside Improve and preserving the same validation and fallback path. The separate
+`model_runner_runtime` crate supplies the local GGUF implementation and strict JSON codec without making the full
+inference engine a dependency of the core executable. Its project imports named Alire projects rather than repository
+paths and has its own pin-free publication manifest.
+The runtime exposes typed model provenance—canonical path, digest, architecture, bytes, and file count—to `doctor`.
+Its cancellation token propagates through the adapter as an interrupted operation and is checked before plan storage.
 
 Read-only usability features remain adapters over deterministic application state. Plan comparison evaluates immutable
 revision provenance and individual contract fields without persistence; audit bundles join exact plan, approval,
-publication, and verification history; finding filters run only after evidence normalization; `doctor` opens dependencies
-read-only. Markdown, JSON, terminal, completion, and man-page output contain no domain decisions.
+publication, and verification history; finding filters run only after evidence normalization. Core `doctor` opens
+owned dependencies read-only, while the optional runtime adds a read-only GGUF/schema and digest-pin preflight.
+Markdown, JSON, terminal, completion, and man-page output contain no domain decisions.
 
 Recovery orchestration belongs to `Improve.Operations.Recovery`, alongside the other application use cases. The older
 `Improve.Recovery` unit is retained only as a compatibility adapter and contains no recovery policy.

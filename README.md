@@ -11,6 +11,9 @@ It has three strict ownership boundaries:
 
 Improve never measures or edits a target project and does not execute remediation agents.
 Optional planning refinement is available through a bounded typed adapter; deterministic planning remains the fallback.
+The separately built `model_runner_runtime/bin/improve-model-runner` executable enables explicitly configured local
+GGUF refinement while keeping the core executable independent of inference. It is an independent Alire crate with a
+pin-free release manifest, optional model-digest pinning, cooperative Ctrl-C, progress, and runtime-aware diagnostics.
 Operational `tasks` and `status` views report stored work without mutating state, while `recover` safely reconciles an
 interrupted native task publication by its stable Improve origin.
 
@@ -38,6 +41,11 @@ tools/bin/check_phase_9
 The gate performs warning-clean application and test builds, runs the complete AUnit suite, checks repository policy,
 audits every Improve package with GNATdoc, proves every SPARK-enabled unit with GNATprove, and requires at least 90%
 measured production-line coverage. `alr test` invokes the same Ada gate.
+
+CI also builds and exercises the optional runtime on Linux, macOS, and Windows. Scheduled and manually dispatched runs
+download a cached production GGUF, verify its fixed SHA-256, execute a full CLI planning round trip, and enforce
+wall-time and peak-memory budgets. Every runtime platform receives a real SIGINT and must exit 130 without plan
+persistence. CI also cancels superseded runs, restores OS-specific build caches, and retains failure diagnostics.
 
 After committing a release candidate, run the stronger clean-source publication check:
 

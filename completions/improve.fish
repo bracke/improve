@@ -9,9 +9,14 @@ complete -c improve -l cursor -r
 complete -c improve -l signing-key -r -F
 complete -c improve -l release
 complete -c improve -l color -a 'auto always never'
+complete -c improve -l progress -a 'auto always never'
 complete -c improve -l severity -a 'critical high medium low info'
 complete -c improve -l status -a 'all planned ready running blocked completed failed stale'
 complete -c improve -l config -r -F
 complete -c improve -l database -r -F
 complete -c improve -l state -r -F
 complete -c improve -l path -r -F
+complete -c improve -l agent-model -r
+complete -c improve -l agent-model-path -r -F
+complete -c improve -l agent-model-sha256 -r
+complete -c improve -l no-agent

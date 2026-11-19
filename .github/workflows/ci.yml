@@ -3,12 +3,173 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: improve-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: alire-project/setup-alire@v5
-      - run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
-      - run: tools/bin/check_phase_9
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+      - name: Run Phase 9 release gate
+        working-directory: improve
+        shell: bash
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1 2>&1 | tee ci-artifacts/tools-build.log
+          tools/bin/check_phase_9 2>&1 | tee ci-artifacts/phase-9.log
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase-9-diagnostics
+          path: improve/ci-artifacts
+          if-no-files-found: ignore
+
+  runtime-matrix:
+    name: Runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+      - name: Build and run runtime integration tests
+        working-directory: improve/model_runner_runtime
+        shell: bash
+        run: |
+          mkdir -p ../ci-artifacts
+          set -o pipefail
+          alr build --validation 2>&1 | tee ../ci-artifacts/runtime-${RUNNER_OS}.log
+          alr exec -- gprbuild -P tests/runtime_schema_smoke.gpr runtime_schema_smoke.adb -j1 2>&1 |
+            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          alr exec -- gprbuild -P tests/runtime_end_to_end.gpr runtime_end_to_end.adb -j1 2>&1 |
+            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          alr exec -- gprbuild -P tests/runtime_signal_interrupt.gpr runtime_signal_interrupt.adb -j1 2>&1 |
+            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          alr exec -- gprbuild -P tests/runtime_cli_black_box.gpr runtime_cli_black_box.adb -j1 2>&1 |
+            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          suffix=
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=.exe; fi
+          tests/bin/runtime_schema_smoke$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          tests/bin/runtime_end_to_end$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          tests/bin/runtime_signal_interrupt$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+          tests/bin/runtime_cli_black_box$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-${{ matrix.os }}-diagnostics
+          path: improve/ci-artifacts
+          if-no-files-found: ignore
+
+  production-model:
+    name: Production GGUF completion
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MODEL_NAME: Qwen2.5-Coder-0.5B-Instruct-Q2_K
+      MODEL_FILE: improve/.ci-models/qwen2.5-coder-0.5b-instruct-q2_k.gguf
+      MODEL_SHA256: f9bddf294ef15c80bb64a2cdcf15d5b25caf88fb4f4a12383bc9f7a01a09c2e3
+      MODEL_URL: >-
+        https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q2_k.gguf
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.MODEL_FILE }}
+          key: production-gguf-${{ env.MODEL_SHA256 }}
+      - name: Download and verify pinned production GGUF
+        shell: bash
+        run: |
+          mkdir -p improve/.ci-models improve/ci-artifacts
+          set -o pipefail
+          {
+            if [[ ! -f "$MODEL_FILE" ]]; then
+              curl --fail --location --retry 3 --output "$MODEL_FILE" "$MODEL_URL"
+            fi
+            echo "$MODEL_SHA256  $MODEL_FILE" | sha256sum --check --strict
+          } 2>&1 | tee improve/ci-artifacts/model-download.log
+      - name: Build production-model compatibility test
+        working-directory: improve/model_runner_runtime
+        shell: bash
+        run: |
+          mkdir -p ../ci-artifacts
+          set -o pipefail
+          alr build --validation 2>&1 | tee ../ci-artifacts/production-model.log
+          alr exec -- gprbuild -P tests/runtime_external_model.gpr runtime_external_model.adb -j1 2>&1 |
+            tee -a ../ci-artifacts/production-model.log
+      - name: Run digest-pinned CLI completion and enforce budgets
+        working-directory: improve/model_runner_runtime
+        shell: bash
+        env:
+          IMPROVE_TEST_MODEL: ../.ci-models/qwen2.5-coder-0.5b-instruct-q2_k.gguf
+          IMPROVE_TEST_MODEL_NAME: ${{ env.MODEL_NAME }}
+          IMPROVE_TEST_MODEL_SHA256: ${{ env.MODEL_SHA256 }}
+        run: |
+          set -o pipefail
+          source ../.github/performance-baseline.env
+          IMPROVE_TEST_MAX_OPEN_SECONDS=$((BASELINE_OPEN_SECONDS * (100 + MAX_REGRESSION_PERCENT) / 100))
+          IMPROVE_TEST_MAX_INFER_SECONDS=$((BASELINE_INFER_SECONDS * (100 + MAX_REGRESSION_PERCENT) / 100))
+          IMPROVE_TEST_MAX_CLI_SECONDS=$((BASELINE_CLI_SECONDS * (100 + MAX_REGRESSION_PERCENT) / 100))
+          export IMPROVE_TEST_MAX_OPEN_SECONDS IMPROVE_TEST_MAX_INFER_SECONDS IMPROVE_TEST_MAX_CLI_SECONDS
+          /usr/bin/time -v -o ../ci-artifacts/production-model-resources.txt \
+            tests/bin/runtime_external_model 2>&1 | tee -a ../ci-artifacts/production-model.log
+          maximum_rss=$(awk -F: '/Maximum resident set size/ {gsub(/[[:space:]]/, "", $2); print $2}' \
+            ../ci-artifacts/production-model-resources.txt)
+          test -n "$maximum_rss"
+          echo "metric.PEAK_RSS_KB=$maximum_rss" | tee -a ../ci-artifacts/production-model.log
+          metrics=../ci-artifacts/performance.csv
+          echo "metric,baseline,current,change_percent" > "$metrics"
+          compare_metric() {
+            name=$1
+            baseline=$2
+            current=$(awk -F= -v key="metric.${name}" '$1 == key {value=$2} END {print value}' \
+              ../ci-artifacts/production-model.log)
+            test -n "$current"
+            change=$(awk -v current="$current" -v baseline="$baseline" \
+              'BEGIN {printf "%.2f", ((current - baseline) / baseline) * 100}')
+            echo "$name,$baseline,$current,$change" >> "$metrics"
+            awk -v current="$current" -v baseline="$baseline" -v allowed="$MAX_REGRESSION_PERCENT" \
+              'BEGIN {exit !(current <= baseline * (100 + allowed) / 100)}'
+          }
+          compare_metric OPEN_SECONDS "$BASELINE_OPEN_SECONDS"
+          compare_metric INFER_SECONDS "$BASELINE_INFER_SECONDS"
+          compare_metric CLI_SECONDS "$BASELINE_CLI_SECONDS"
+          compare_metric PEAK_RSS_KB "$BASELINE_PEAK_RSS_KB"
+          {
+            echo "### Production-model performance"
+            echo
+            echo '```csv'
+            cat "$metrics"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload production-model metrics or failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-model-diagnostics
+          path: improve/ci-artifacts
+          if-no-files-found: ignore

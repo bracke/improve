@@ -37,6 +37,8 @@ This is a physical layout choice; the storage API enforces namespace isolation a
 Creating a revision writes the baseline, findings, task specifications, links, and dependency edges in one write
 transaction. A stable planner fingerprint is checked first. If it already exists, the stored immutable
 revision is returned instead of inserting duplicate work.
+Revision payloads retain typed optional `agent_provider` and `agent_model_sha256` provenance. Older payloads omit both
+fields and remain valid deterministic plans.
 
 Plan identities use `PLAN-NNNNNN`; task identities use `IMP-NNNNNN`. Draft dependency identities are translated to the
 persisted task identities before rows are inserted. Historical evidence is never updated or deleted by plan creation.

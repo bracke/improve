@@ -21,7 +21,9 @@ package body Improve.Config is
       Maximum_Assessment_Findings, Maximum_Assessment_Bytes, Maximum_Normalized_Finding_Bytes,
       Maximum_Source_File_Bytes, Maximum_Source_Total_Bytes,
       Minimum_Severity, Maximum_Tasks_Per_Plan, Maximum_Findings_Per_Task,
-      Allow_Investigation_Tasks, Require_Review, Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
+      Allow_Investigation_Tasks, Require_Review, Agent_Enabled, Agent_Model, Agent_Model_Path,
+      Agent_Model_SHA256,
+      Agent_Max_Context_Bytes, Agent_Max_File_Bytes,
       Agent_Max_Response_Bytes, Agent_Timeout_Seconds,
       Maximum_Recovery_Operations, Maximum_History_Items, Maximum_Migration_Rows,
       Maximum_Persisted_Text_Bytes,
@@ -70,6 +72,10 @@ package body Improve.Config is
       Define ("planning", "maximum_findings_per_task", "50", Positive_Value, 1, 10_000),
       Define ("planning", "allow_investigation_tasks", "true", Boolean_Value),
       Define ("planning", "require_review", "true", Boolean_Value),
+      Define ("planning", "agent_enabled", "false", Boolean_Value),
+      Define ("planning", "agent_model", "", String_Value),
+      Define ("planning", "agent_model_path", "", String_Value),
+      Define ("planning", "agent_model_sha256", "", String_Value),
       Define ("planning", "agent_max_context_bytes", "131072", Positive_Value, 1_024, 10_485_760),
       Define ("planning", "agent_max_file_bytes", "32768", Positive_Value, 1, 10_485_760),
       Define ("planning", "agent_max_response_bytes", "131072", Positive_Value, 1, 1_048_576),
@@ -196,6 +202,33 @@ package body Improve.Config is
       end loop;
    end Validate_Operational_Text;
 
+   procedure Validate (Item : Settings) is
+      Digest : constant String := To_String (Item.Agent_Model_SHA256);
+   begin
+      Validate_Operational_Text
+        ("quality.database", To_String (Item.Quality_Database), Maximum_Length => 4_096);
+      if Item.Maximum_Source_File_Bytes > Item.Maximum_Source_Total_Bytes then
+         raise Argument_Error with "quality.maximum_source_file_bytes exceeds the total source limit";
+      elsif Item.Agent_Max_File_Bytes > Item.Agent_Max_Context_Bytes then
+         raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
+      end if;
+      if Item.Agent_Enabled then
+         Validate_Operational_Text
+           ("planning.agent_model", To_String (Item.Agent_Model), Maximum_Length => 128);
+         Validate_Operational_Text
+           ("planning.agent_model_path", To_String (Item.Agent_Model_Path), Maximum_Length => 4_096);
+      end if;
+      if Digest /= "" and then
+        (Digest'Length /= 64 or else (for some C of Digest => C not in '0' .. '9' | 'a' .. 'f'))
+      then
+         raise Argument_Error with "planning.agent_model_sha256 must be 64 lower-case hexadecimal characters";
+      end if;
+      Validate_Operational_Text ("workflow.task_kind", To_String (Item.Task_Kind), Maximum_Length => 128);
+      if not Item.Require_Initialized then
+         raise Argument_Error with "workflow.require_initialized_project must be true";
+      end if;
+   end Validate;
+
    function Read_Configuration (Path : String) return String is
       Full    : constant String := Ada.Directories.Full_Name (Path);
       Root    : constant String := Ada.Directories.Containing_Directory (Full);
@@ -232,6 +265,10 @@ package body Improve.Config is
        Maximum_Findings_Per_Task => Default_Positive (Maximum_Findings_Per_Task),
        Allow_Investigation_Tasks => Default_Boolean (Allow_Investigation_Tasks),
        Require_Review            => Default_Boolean (Require_Review),
+       Agent_Enabled             => Default_Boolean (Agent_Enabled),
+       Agent_Model               => To_Unbounded_String (Default_String (Agent_Model)),
+       Agent_Model_Path          => To_Unbounded_String (Default_String (Agent_Model_Path)),
+       Agent_Model_SHA256        => To_Unbounded_String (Default_String (Agent_Model_SHA256)),
        Agent_Max_Context_Bytes   => Default_Positive (Agent_Max_Context_Bytes),
        Agent_Max_File_Bytes      => Default_Positive (Agent_Max_File_Bytes),
        Agent_Max_Response_Bytes  => Default_Positive (Agent_Max_Response_Bytes),
@@ -352,6 +389,14 @@ package body Improve.Config is
                   Result.Allow_Investigation_Tasks := Boolean_Setting (Id);
                when Require_Review =>
                   Result.Require_Review := Boolean_Setting (Id);
+               when Agent_Enabled =>
+                  Result.Agent_Enabled := Boolean_Setting (Id);
+               when Agent_Model =>
+                  Result.Agent_Model := To_Unbounded_String (String_Setting (Id));
+               when Agent_Model_Path =>
+                  Result.Agent_Model_Path := To_Unbounded_String (String_Setting (Id));
+               when Agent_Model_SHA256 =>
+                  Result.Agent_Model_SHA256 := To_Unbounded_String (String_Setting (Id));
                when Agent_Max_Context_Bytes =>
                   Result.Agent_Max_Context_Bytes := Positive_Setting (Id);
                when Agent_Max_File_Bytes =>
@@ -402,7 +447,9 @@ package body Improve.Config is
          elsif Version = 1 and then
            (Present (Maximum_Normalized_Finding_Bytes) or else
             Present (Maximum_Source_File_Bytes) or else Present (Maximum_Source_Total_Bytes) or else
-            Present (Maximum_Migration_Rows) or else Present (Maximum_Persisted_Total_Bytes))
+            Present (Maximum_Migration_Rows) or else Present (Maximum_Persisted_Total_Bytes) or else
+            Present (Agent_Enabled) or else Present (Agent_Model) or else Present (Agent_Model_Path) or else
+            Present (Agent_Model_SHA256))
          then
             raise Argument_Error with "new bounded-evidence settings require configuration schema_version 2";
          elsif String_Setting (Quality_Selection) /= "latest_completed" then
@@ -414,18 +461,7 @@ package body Improve.Config is
          for Id in Setting_Id loop
             Apply (Id);
          end loop;
-         Validate_Operational_Text
-           ("quality.database", To_String (Result.Quality_Database), Maximum_Length => 4_096);
-         if Result.Maximum_Source_File_Bytes > Result.Maximum_Source_Total_Bytes then
-            raise Argument_Error with "quality.maximum_source_file_bytes exceeds the total source limit";
-         end if;
-         if Result.Agent_Max_File_Bytes > Result.Agent_Max_Context_Bytes then
-            raise Argument_Error with "planning.agent_max_file_bytes exceeds the context limit";
-         end if;
-         Validate_Operational_Text ("workflow.task_kind", To_String (Result.Task_Kind), Maximum_Length => 128);
-         if not Result.Require_Initialized then
-            raise Argument_Error with "workflow.require_initialized_project must be true";
-         end if;
+         Validate (Result);
          return
            (Values => Result, Source_Path => To_Unbounded_String (Path),
             Quality_Database_Configured => Present (Quality_Database));
@@ -458,6 +494,10 @@ package body Improve.Config is
          when Maximum_Findings_Per_Task => return Number (Item.Maximum_Findings_Per_Task);
          when Allow_Investigation_Tasks => return Boolean_Image (Item.Allow_Investigation_Tasks);
          when Require_Review => return Boolean_Image (Item.Require_Review);
+         when Agent_Enabled => return Boolean_Image (Item.Agent_Enabled);
+         when Agent_Model => return To_String (Item.Agent_Model);
+         when Agent_Model_Path => return To_String (Item.Agent_Model_Path);
+         when Agent_Model_SHA256 => return To_String (Item.Agent_Model_SHA256);
          when Agent_Max_Context_Bytes => return Number (Item.Agent_Max_Context_Bytes);
          when Agent_Max_File_Bytes => return Number (Item.Agent_Max_File_Bytes);
          when Agent_Max_Response_Bytes => return Number (Item.Agent_Max_Response_Bytes);

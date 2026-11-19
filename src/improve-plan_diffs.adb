@@ -99,6 +99,11 @@ package body Improve.Plan_Diffs is
       if Earlier.Baseline.Toolchain_Id /= Later.Baseline.Toolchain_Id then Add ("toolchain changed"); end if;
       if Earlier.Baseline.Evidence_Id /= Later.Baseline.Evidence_Id then Add ("assessment evidence changed"); end if;
       if Earlier.Planner_Id /= Later.Planner_Id then Add ("planner configuration changed"); end if;
+      if Earlier.Agent_Provider_Id /= Later.Agent_Provider_Id or else
+        Earlier.Agent_Model_SHA256 /= Later.Agent_Model_SHA256
+      then
+         Add ("agent model provenance changed");
+      end if;
       if Earlier.Review_Status /= Later.Review_Status then Add ("review status changed"); end if;
       for Finding of Earlier.Findings loop
          if not Contains_Finding (Later.Findings, Improve.Model.Finding_Key (Finding)) then

@@ -28,7 +28,7 @@ package body Improve.CLI.Parsing is
       Help_Flag    : Boolean := False;
       Version_Flag : Boolean := False;
       Seen_Format, Seen_Color, Seen_Verbose, Seen_Quiet, Seen_Dry, Seen_All : Boolean := False;
-      Seen_Release : Boolean := False;
+      Seen_Release, Seen_No_Agent : Boolean := False;
       Index : Positive := 1;
 
       procedure Once (Seen : in out Boolean; Option : String) is
@@ -125,6 +125,21 @@ package body Improve.CLI.Parsing is
                   Fail ("invalid --color value " & Value & "; expected auto, always, or never");
                end if;
             end;
+         elsif Option = "--progress" then
+            Once (Result.Has_Progress, Option);
+            declare
+               Value : constant String := Value_Of (Option, Inline, Has_Inline);
+            begin
+               if Value = "auto" then
+                  Result.Progress := Progress_Auto;
+               elsif Value = "always" then
+                  Result.Progress := Progress_Always;
+               elsif Value = "never" then
+                  Result.Progress := Progress_Never;
+               else
+                  Fail ("invalid --progress value " & Value & "; expected auto, always, or never");
+               end if;
+            end;
          elsif Option = "--run" then
             Once (Result.Has_Run, Option);
             declare
@@ -205,6 +220,19 @@ package body Improve.CLI.Parsing is
          elsif Option = "--signing-key" then
             Once (Result.Has_Signing_Key, Option);
             Result.Signing_Key := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--agent-model" then
+            Once (Result.Has_Agent_Model, Option);
+            Result.Agent_Model := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--agent-model-path" then
+            Once (Result.Has_Agent_Model_Path, Option);
+            Result.Agent_Model_Path := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--agent-model-sha256" then
+            Once (Result.Has_Agent_Model_SHA256, Option);
+            Result.Agent_Model_SHA256 := To_Unbounded_String (Value_Of (Option, Inline, Has_Inline));
+         elsif Option = "--no-agent" then
+            No_Value (Option, Has_Inline);
+            Once (Seen_No_Agent, Option);
+            Result.No_Agent := True;
          elsif Option = "--dry-run" then
             No_Value (Option, Has_Inline);
             Once (Seen_Dry, Option);
@@ -313,6 +341,9 @@ package body Improve.CLI.Parsing is
       if Result.Verbose and Result.Quiet then
          Fail ("--verbose and --quiet are mutually exclusive");
       end if;
+      if Result.Quiet and then Result.Progress = Progress_Always then
+         Fail ("--quiet and --progress=always are mutually exclusive");
+      end if;
       if Result.Format = JSON_Format then
          Result.Color := Color_Never;
       end if;
@@ -345,6 +376,10 @@ package body Improve.CLI.Parsing is
          Fail ("--release is accepted only by command doctor");
       elsif Result.Has_Signing_Key and then (Result.Command /= Audit_Command or else Result.Audit_Verify) then
          Fail ("--signing-key is accepted only by audit export");
+      elsif Result.No_Agent and then
+        (Result.Has_Agent_Model or else Result.Has_Agent_Model_Path or else Result.Has_Agent_Model_SHA256)
+      then
+         Fail ("--no-agent cannot be combined with agent model overrides");
       elsif (Result.Has_Limit or else Result.Has_Cursor) and then
         not (Result.Command in Findings_Command | Tasks_Command | Audit_Command or else
              (Result.Command = Plan_Command and then Result.Plan_Action = List_Plans))

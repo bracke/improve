@@ -55,6 +55,11 @@ begin
                   "maximum_findings_per_task = 6" & ASCII.LF &
                   "allow_investigation_tasks = false" & ASCII.LF &
                   "require_review = false" & ASCII.LF &
+                  "agent_enabled = true" & ASCII.LF &
+                  "agent_model = ""fixture-model""" & ASCII.LF &
+                  "agent_model_path = ""models/fixture.gguf""" & ASCII.LF &
+                  "agent_model_sha256 = ""aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""" &
+                  ASCII.LF &
                   "agent_max_context_bytes = 4096" & ASCII.LF &
                   "agent_max_file_bytes = 2048" & ASCII.LF &
                   "agent_max_response_bytes = 1024" & ASCII.LF &
@@ -98,6 +103,10 @@ begin
                      Value.Maximum_Source_Total_Bytes = 8_192 and then
                      Value.Maximum_Tasks_Per_Plan = 7 and then Value.Maximum_Findings_Per_Task = 6 and then
                      not Value.Allow_Investigation_Tasks and then not Value.Require_Review and then
+                     Value.Agent_Enabled and then To_String (Value.Agent_Model) = "fixture-model" and then
+                     To_String (Value.Agent_Model_Path) = "models/fixture.gguf" and then
+                     To_String (Value.Agent_Model_SHA256) =
+                       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" and then
                      Value.Agent_Max_Context_Bytes = 4_096 and then Value.Maximum_Output_Items = 8 and then
                      Value.Maximum_History_Items = 12 and then
                      Value.Maximum_Migration_Rows = 1_024 and then
@@ -290,6 +299,8 @@ begin
                  ("agent_max_context_bytes = 1024" & ASCII.LF & "agent_max_file_bytes = 2048",
                   "agent file limit", "planning");
                Reject ("agent_max_response_bytes = 1048577", "agent response limit", "planning");
+               Reject ("agent_enabled = true", "enabled agent without a model", "planning");
+               Reject ("agent_model_sha256 = ""ABC""", "invalid model digest", "planning");
                Reject ("agent_timeout_seconds = 3601", "agent timeout", "planning");
                Reject ("maximum_output_items = 100001", "output item limit", "output");
                Reject ("maximum_history_items = 1000001", "history item limit", "operations");

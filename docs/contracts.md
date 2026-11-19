@@ -46,3 +46,10 @@ remain untrusted data. The validator, not the adapter, controls evidence identit
 task limits, and persistence. The interactive model_runner `/work` workflow is not an automation API and is never
 invoked for planning.
 
+Accepted model-backed plans persist the provider identity and exact lower-case model SHA-256 in dedicated provenance
+fields. Legacy deterministic plans leave both fields empty and retain their existing content fingerprints.
+A configured expected SHA-256 is checked against the opened provider before refinement. Runtime progress is emitted
+only through semantic observer events, and terminal interruption requests cooperative cancellation rather than
+asynchronously aborting model or schema ownership. Cancellation propagates as an interrupted operation and is checked
+again before persistence; it is never converted into an ordinary deterministic fallback.
+

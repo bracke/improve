@@ -9,6 +9,11 @@ repository checker and coverage driver are Ada 2022 programs:
 - `tools/src/improve_coverage.adb` builds instrumented binaries, runs them, parses gcov evidence, and applies the
   production threshold.
 
+CI additionally runs the optional runtime on Linux, macOS, and Windows, exercises real host SIGINT delivery, and runs
+a scheduled digest-pinned production-GGUF CLI round trip with wall-time, peak-memory, and stored-provenance checks.
+OS-scoped caches shorten repeat builds; job timeouts, concurrency cancellation, and uploaded diagnostics bound and
+explain failures. The repository checker validates the exact dependency lock against every development workspace pin.
+
 Build and run the gate from the repository root:
 
 ```text
@@ -28,7 +33,7 @@ temporary tree is removed after success or failure.
 The gate requires all of the following:
 
 1. The application and test crate build in validation mode with warnings treated as errors.
-2. All 133 AUnit cases pass, including schema, structured-error, audit, inference-client, property, and scale coverage.
+2. All 134 AUnit cases pass, including schema, structured-error, audit, inference-client, property, and scale coverage.
 3. Repository structure, 120-column Ada source policy, required release files, and the Ada-only tooling rule pass.
 4. GNATdoc accepts every Improve package without warnings while excluding dependency-owned APIs.
 5. GNATprove proves every source unit that declares `SPARK_Mode` at level 2; the repository check rejects an omitted
@@ -52,6 +57,10 @@ from the configured Alire indexes; local sibling directories are intentionally u
 At the time the `0.1.0` candidate was prepared, the required internal crates were not present in the configured Alire
 index. This is an external publication prerequisite, not a bypassable check: publish compatible releases of those
 crates first, then rerun `tools/bin/check_release_candidate` and review the selected dependency solution.
+
+The optional `model_runner_runtime` directory is an independent crate with development and pin-free release
+manifests. The clean release checker stages that release manifest, resolves `improve ^0.1.0` and
+`model_runner ^0.1.0`, and Phase 9 builds its CLI and compatibility tests from the runtime crate environment.
 
 ## Real integration scenario
 

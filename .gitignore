@@ -17,6 +17,7 @@
 /proof/
 /**/bin/
 /**/obj/
+/**/obj-*/
 /**/lib/
 
 # Local application and assessment databases

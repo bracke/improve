@@ -207,6 +207,8 @@ package Improve.Model is
       Baseline      : Assessment_Baseline;
       Working_Source_Id : UString;
       Planner_Id    : UString;
+      Agent_Provider_Id : UString;
+      Agent_Model_SHA256 : UString;
       Created_At    : Ada.Calendar.Time := Ada.Calendar.Time_Of (1970, 1, 1);
       Findings      : Finding_Vectors.Vector;
       Tasks         : Task_Vectors.Vector;
@@ -220,6 +222,8 @@ package Improve.Model is
    --  @field Baseline Assessment baseline.
    --  @field Working_Source_Id Planning-time source fingerprint excluding harness-owned state.
    --  @field Planner_Id Planner configuration fingerprint.
+   --  @field Agent_Provider_Id Typed refinement-provider identity, or empty.
+   --  @field Agent_Model_SHA256 Exact refined-model SHA-256, or empty.
    --  @field Created_At Revision creation time.
    --  @field Findings Normalized baseline findings.
    --  @field Tasks Proposed remediation tasks.

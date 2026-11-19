@@ -64,12 +64,17 @@
     },
     "plan": {
       "type": "object", "required": ["plan_id", "revision", "project_id", "project", "run_id",
-        "assessment_fingerprint", "working_source_fingerprint", "fingerprint", "planner", "dry_run", "stored", "tasks"],
+        "assessment_fingerprint", "working_source_fingerprint", "fingerprint", "planner", "agent_provider",
+        "agent_model_sha256", "dry_run", "stored", "tasks"],
       "properties": { "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" },
         "project_id": { "$ref": "#/$defs/positive" }, "project": { "type": "string" },
         "run_id": { "$ref": "#/$defs/positive" }, "assessment_fingerprint": { "type": "string" },
         "working_source_fingerprint": { "type": "string" }, "fingerprint": { "type": "string" },
-        "planner": { "type": "string" }, "dry_run": { "type": "boolean" }, "stored": { "type": "boolean" },
+        "planner": { "type": "string" }, "agent_provider": { "type": "string" },
+        "agent_model_sha256": { "type": "string", "oneOf": [
+          { "const": "" }, { "pattern": "^[0-9a-f]{64}$" }
+        ] },
+        "dry_run": { "type": "boolean" }, "stored": { "type": "boolean" },
         "tasks": { "type": "array", "items": { "$ref": "#/$defs/planTask" } } }, "additionalProperties": false
     },
     "plans": { "type": "object", "required": ["plans"], "properties": { "plans": { "type": "array", "items": {
@@ -154,12 +159,17 @@
         "additionalProperties": false } } }, "additionalProperties": false },
     "audit": { "type": "object", "required": ["plan_id", "revision", "fingerprint", "approved", "project_id",
       "project", "database_id", "baseline_run", "source_id", "policy_id", "toolchain_id", "evidence_id", "planner_id",
-      "finding_keys", "tasks", "publications", "verifications", "canonical_payload", "bundle_digest"], "properties": {
+      "agent_provider", "agent_model_sha256", "finding_keys", "tasks", "publications", "verifications",
+      "canonical_payload", "bundle_digest"], "properties": {
       "plan_id": { "type": "string" }, "revision": { "$ref": "#/$defs/positive" }, "fingerprint": { "type": "string" },
       "approved": { "type": "boolean" }, "project_id": { "$ref": "#/$defs/positive" }, "project": { "type": "string" },
       "database_id": { "type": "string" }, "baseline_run": { "$ref": "#/$defs/positive" },
       "source_id": { "type": "string" }, "policy_id": { "type": "string" }, "toolchain_id": { "type": "string" },
       "evidence_id": { "type": "string" }, "planner_id": { "type": "string" },
+      "agent_provider": { "type": "string" },
+      "agent_model_sha256": { "type": "string", "oneOf": [
+        { "const": "" }, { "pattern": "^[0-9a-f]{64}$" }
+      ] },
       "canonical_payload": { "type": "string" }, "bundle_digest": { "type": "string" },
       "next_cursor": { "type": "string" },
       "public_key": { "type": "string" }, "signature": { "type": "string" },

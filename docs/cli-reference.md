@@ -23,8 +23,13 @@ version-1 JSON envelope and the structured diagnostic and plan-comparison docume
 `schemas/improve-output-v1.schema.json`. When JSON is requested, failures are a single versioned `error` document on
 standard error with a stable `IMP-E-*` code, category, detail, and optional corrective hint.
 
+`--agent-model NAME`, `--agent-model-path FILE`, and `--agent-model-sha256 HEX` provide invocation-local refinement
+overrides and enable the optional runtime. `--no-agent` forces deterministic planning and cannot be combined with
+those overrides. `--progress auto|always|never` controls runtime progress on standard error. The default `auto` emits
+progress only when standard error is a terminal; `--quiet` suppresses it.
+
 Exit codes are 0 for success, 1 for a completed negative verification, 2 for invalid input, 3 for unavailable
-evidence or project state, and 4 for storage, integrity, publication, or internal failure.
+evidence or project state, 4 for storage, integrity, publication, or internal failure, and 130 for user interruption.
 
 ## Planning and approval
 
@@ -106,6 +111,10 @@ publication results, tasks, status, and verification results. Historical evidenc
 `operations.maximum_history_items` operation-wide budget, schema upgrades use `operations.maximum_migration_rows`,
 and assessment normalization has separate finding and byte limits.
 Read-only queries never initialize, migrate, or repair Improve state.
+
+`doctor` reports the opened model's canonical path, SHA-256, architecture, metadata name, total bytes, and opened file
+count when the optional runtime supplies them. Missing optional metadata is a warning; an invalid digest or pin
+mismatch remains unhealthy.
 
 ## Recovery
 

@@ -16,6 +16,25 @@ procedure Check_Phase_9 is
    Tools : constant String := Project_Tools.Files.Join (Root, "tools/bin");
    Docs  : constant String := Project_Tools.Test_Fixtures.Fresh_Temp_Dir ("improve-gnatdoc");
    Alr   : constant String := Project_Tools.Processes.Locate_Command ("alr");
+
+   procedure Build_Project
+     (Label, Project : String;
+      Main : String := "";
+      Working_Directory : String := Root) is
+      Arguments : Project_Tools.Processes.Argument_Vectors.Vector :=
+        Project_Tools.Processes.Arguments
+          ([Project_Tools.Processes.Argument ("exec"),
+            Project_Tools.Processes.Argument ("--"),
+            Project_Tools.Processes.Argument ("gprbuild"),
+            Project_Tools.Processes.Argument ("-P"),
+            Project_Tools.Processes.Argument (Project)]);
+   begin
+      if Main /= "" then
+         Arguments.Append (Project_Tools.Processes.Argument (Main));
+      end if;
+      Arguments.Append (Project_Tools.Processes.Argument ("-j1"));
+      Project_Tools.Processes.Run (Label, Working_Directory, Alr, Arguments);
+   end Build_Project;
 begin
    if Root = "" or else Alr = "" then raise Program_Error with "project root or Alire is unavailable"; end if;
    Project_Tools.Processes.Run
@@ -34,6 +53,55 @@ begin
           Project_Tools.Processes.Argument ("-j1")]));
    Project_Tools.Processes.Run
      ("AUnit suite", Tests, Project_Tools.Files.Join (Tests, "bin/improve_tests"),
+      Project_Tools.Processes.No_Arguments);
+   Build_Project
+     ("optional model runtime CLI build",
+      "improve_model_runner_runtime.gpr",
+      Working_Directory => Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Build_Project
+     ("model runtime schema check build",
+      "tests/runtime_schema_smoke.gpr",
+      "runtime_schema_smoke.adb",
+      Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Project_Tools.Processes.Run
+     ("model runtime schema check", Root,
+      Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_schema_smoke"),
+      Project_Tools.Processes.No_Arguments);
+   Build_Project
+     ("model runtime end-to-end build",
+      "tests/runtime_end_to_end.gpr",
+      "runtime_end_to_end.adb",
+      Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Project_Tools.Processes.Run
+     ("model runtime end-to-end", Root,
+      Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_end_to_end"),
+      Project_Tools.Processes.No_Arguments);
+   Build_Project
+     ("model runtime SIGINT build",
+      "tests/runtime_signal_interrupt.gpr",
+      "runtime_signal_interrupt.adb",
+      Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Project_Tools.Processes.Run
+     ("model runtime SIGINT", Root,
+      Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_signal_interrupt"),
+      Project_Tools.Processes.No_Arguments);
+   Build_Project
+     ("model runtime CLI black-box build",
+      "tests/runtime_cli_black_box.gpr",
+      "runtime_cli_black_box.adb",
+      Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Project_Tools.Processes.Run
+     ("model runtime CLI black-box", Root,
+      Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_cli_black_box"),
+      Project_Tools.Processes.No_Arguments);
+   Build_Project
+     ("external model compatibility build",
+      "tests/runtime_external_model.gpr",
+      "runtime_external_model.adb",
+      Project_Tools.Files.Join (Root, "model_runner_runtime"));
+   Project_Tools.Processes.Run
+     ("external model compatibility", Root,
+      Project_Tools.Files.Join (Root, "model_runner_runtime/tests/bin/runtime_external_model"),
       Project_Tools.Processes.No_Arguments);
    Ada.Text_IO.Put_Line (ASCII.LF & "==> GNATdoc public API audit");
    declare

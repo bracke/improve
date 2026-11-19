@@ -7,7 +7,12 @@ _arguments \
   '2:operation:(list show approve diff explain graph verify bash zsh fish)' \
   '--format[output format]:(terminal json markdown dot)' \
   '--color[color policy]:(auto always never)' \
+  '--progress[runtime progress]:(auto always never)' \
   '--severity[finding severity]:(critical high medium low info)' \
   '--status[task status]:(all planned ready running blocked completed failed stale)' \
   '--config[configuration file]:file:_files' '--database[quality database]:file:_files' \
-  '--state[Improve state]:file:_files' '*:argument:'
+  '--state[Improve state]:file:_files' \
+  '--agent-model[local model identity]:name:' \
+  '--agent-model-path[local GGUF model]:file:_files' \
+  '--agent-model-sha256[expected model digest]:digest:' \
+  '--no-agent[disable local refinement]' '*:argument:'

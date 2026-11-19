@@ -12,6 +12,16 @@ package body Improve.Refinement.Model_Runner_Client is
    overriding function Name (Self : Client) return String is
      ("model_runner:" & Model_Runner_Client.Name (Self.Backend.all) & ":" & To_String (Self.Model));
 
+   overriding function Model_SHA256 (Self : Client) return String is
+     (Model_Runner_Client.Model_SHA256 (Self.Backend.all));
+
+   overriding function Details
+     (Self : Client) return Improve.Refinement.Adapter_Provenance is
+     (Model_Runner_Client.Details (Self.Backend.all));
+
+   overriding function Cancellation_Requested (Self : Client) return Boolean is
+     (Model_Runner_Client.Cancellation_Requested (Self.Backend.all));
+
    overriding procedure Complete
      (Self                   : in out Client;
       Context                : Planning_Context;

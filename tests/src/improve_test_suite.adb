@@ -39,6 +39,7 @@ with Improve.Planner;
 with Improve.Plan_Diffs;
 with Improve.Presentation;
 with Improve.Refinement;
+with Improve.Refinement.Codec;
 with Improve.Refinement.Model_Adapter;
 with Improve.Refinement.Model_Runner_Client;
 with Improve.Results;
@@ -54,6 +55,8 @@ with Model_Runner.Framework.Task_Eligibility;
 with Model_Runner.Framework.Tasks;
 with Project_Tools.Files;
 with Terminal_Styles;
+with Jsonlib.Documents;
+with Jsonlib.Serializers;
 
 package body Improve_Test_Suite is
    use Ada.Strings.Unbounded;
@@ -88,7 +91,8 @@ package body Improve_Test_Suite is
       Agent_Valid_Refinement, Agent_Malformed_Fallback, Agent_Missing_File_Rejected,
       Agent_Invented_Evidence_Rejected, Agent_Invalid_Category_Rejected, Agent_Cycle_Rejected,
       Agent_Timeout_Fallback, Agent_Unavailable_Fallback, Agent_Weakening_Rejected,
-      Agent_Oversized_Collection_Rejected, Agent_Error_Boundary, Model_Adapter_Bridge);
+      Agent_Oversized_Collection_Rejected, Agent_Error_Boundary, Model_Adapter_Bridge,
+      Model_Response_Codec);
 
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
@@ -135,9 +139,15 @@ package body Improve_Test_Suite is
       Expected_Limit : Positive := 131_072;
       Saw_Bounded    : Boolean := False;
       Saw_Source     : Boolean := False;
+      Cancelled      : Boolean := False;
    end record;
 
    overriding function Name (Self : Fake_Adapter) return String;
+
+   overriding function Provenance
+     (Self : Fake_Adapter) return Improve.Refinement.Adapter_Provenance;
+
+   overriding function Cancellation_Requested (Self : Fake_Adapter) return Boolean;
 
    overriding procedure Request
      (Self            : in out Fake_Adapter;
@@ -150,6 +160,20 @@ package body Improve_Test_Suite is
       pragma Unreferenced (Self);
       return "aunit-structured-adapter-v1";
    end Name;
+
+   overriding function Provenance
+     (Self : Fake_Adapter) return Improve.Refinement.Adapter_Provenance is
+   begin
+      pragma Unreferenced (Self);
+      return
+        (Provider_Id  => To_Unbounded_String ("aunit-structured-adapter-v1"),
+         Model_SHA256 =>
+           To_Unbounded_String ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+         others => <>);
+   end Provenance;
+
+   overriding function Cancellation_Requested (Self : Fake_Adapter) return Boolean is
+     (Self.Cancelled);
 
    overriding procedure Request
      (Self            : in out Fake_Adapter;
@@ -277,7 +301,8 @@ package body Improve_Test_Suite is
          when Agent_Context_Bounded | Agent_Valid_Refinement | Agent_Malformed_Fallback |
            Agent_Missing_File_Rejected | Agent_Invented_Evidence_Rejected | Agent_Invalid_Category_Rejected |
            Agent_Cycle_Rejected | Agent_Timeout_Fallback | Agent_Unavailable_Fallback | Agent_Weakening_Rejected |
-           Agent_Oversized_Collection_Rejected | Agent_Error_Boundary | Model_Adapter_Bridge =>
+           Agent_Oversized_Collection_Rejected | Agent_Error_Boundary | Model_Adapter_Bridge |
+           Model_Response_Codec =>
             Run_Agent_Test (Item);
       end case;
    end Run_Test;

@@ -20,6 +20,7 @@ package body Improve_CLI_Test_Suite is
    use AUnit.Assertions;
    use type Improve.CLI.Command_Kind;
    use type Improve.CLI.Plan_Operation;
+   use type Improve.CLI.Progress_Mode;
    use type Improve.Config.Color_Mode;
    use type Improve.Config.Output_Format;
    use type Terminal_Styles.Color_Policy;
@@ -345,6 +346,17 @@ package body Improve_CLI_Test_Suite is
                Page : constant Improve.CLI.Invocation :=
                  Improve.CLI.Parse (Args ("tasks|--project|demo|--limit|25|--cursor|50"));
                Release : constant Improve.CLI.Invocation := Improve.CLI.Parse (Args ("doctor|--release"));
+               Agent : constant Improve.CLI.Invocation :=
+                 Improve.CLI.Parse
+                   (Args
+                      ("plan|--project|demo|--agent-model|fixture|--agent-model-path|fixture.gguf|" &
+                       "--agent-model-sha256|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|" &
+                       "--progress|always"));
+               Agent_Config : constant Improve.Config.Loaded_Configuration :=
+                 Improve.CLI.Configuration_For
+                   (Args ("version|--agent-model|fixture|--agent-model-path|fixture.gguf"));
+               Disabled_Config : constant Improve.Config.Loaded_Configuration :=
+                 Improve.CLI.Configuration_For (Args ("version|--no-agent"));
                Verify_Audit : constant Improve.CLI.Invocation :=
                  Improve.CLI.Parse (Args ("audit|verify|bundle.json"));
             begin
@@ -356,11 +368,19 @@ package body Improve_CLI_Test_Suite is
                   Audit.Command = Improve.CLI.Audit_Command and then
                   Audit.Revision = 2 and then Graph.Plan_Action = Improve.CLI.Graph_Plan and then
                   Graph.Format = Improve.Config.DOT_Format and then Page.Limit = 25 and then Page.Cursor = 50 and then
-                  Release.Release_Check and then Verify_Audit.Audit_Verify,
+                  Release.Release_Check and then Verify_Audit.Audit_Verify and then
+                  Agent.Has_Agent_Model and then Agent.Has_Agent_Model_Path and then
+                  Agent.Has_Agent_Model_SHA256 and then Agent.Has_Progress and then
+                  Agent.Progress = Improve.CLI.Progress_Always and then Agent_Config.Values.Agent_Enabled and then
+                  To_String (Agent_Config.Values.Agent_Model) = "fixture" and then
+                  not Disabled_Config.Values.Agent_Enabled,
                   "extended inspection and diagnostic options were not parsed");
                Must_Reject ("plan|diff|PLAN-000001|--revision|2", "requires --against-revision");
                Must_Reject ("tasks|--task|IMP-1|--severity|high", "accepted only");
                Must_Reject ("projects|--limit|2", "pagination");
+               Must_Reject ("plan|--no-agent|--agent-model|fixture", "cannot be combined");
+               Must_Reject ("plan|--progress|sometimes", "invalid --progress");
+               Must_Reject ("plan|--quiet|--progress|always", "mutually exclusive");
             end;
          when Assets_Smoke =>
             declare

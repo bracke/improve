@@ -15,8 +15,16 @@ package body Improve.Operations.Planning is
       Project_Selector : String;
       Run_Id           : Natural;
       Settings         : Improve.Config.Settings;
-      Dry_Run          : Boolean) return Generation_Result is
+      Dry_Run          : Boolean;
+      Provider         : access Improve.Refinement.Adapter'Class := null) return Generation_Result is
       Quality : Improve.Source.Repository;
+      procedure Require_Not_Cancelled is
+      begin
+         if Provider /= null and then Improve.Refinement.Cancellation_Requested (Provider.all) then
+            Improve.Source.Close (Quality);
+            raise Cancelled_Error with "plan generation cancelled";
+         end if;
+      end Require_Not_Cancelled;
    begin
       Improve.Source.Open
         (Quality, Quality_Path, Improve.Operations.Quality_Load_Limits (Settings),
@@ -39,13 +47,26 @@ package body Improve.Operations.Planning is
               Improve.Source.Working_Fingerprint
                 (To_String (Selected.Project.Path), State_Path,
                  Settings.Maximum_Source_File_Bytes, Settings.Maximum_Source_Total_Bytes));
+         Final : Improve.Model.Plan_Revision := Draft;
       begin
+         Require_Not_Cancelled;
          if Draft.Tasks.Length > Ada.Containers.Count_Type (Settings.Maximum_Output_Items) then
             raise Data_Error with "generated plan exceeds output.maximum_output_items";
          end if;
+         if Provider /= null then
+            begin
+               Final := Improve.Refinement.Refine
+                 (Draft, Improve.Operations.Refinement_Limits (Settings), Provider).Plan;
+            exception
+               when Cancelled_Error =>
+                  Improve.Source.Close (Quality);
+                  raise;
+            end;
+         end if;
+         Require_Not_Cancelled;
          Improve.Source.Close (Quality);
          if Dry_Run then
-            return (Plan => Draft, Existing => False);
+            return (Plan => Final, Existing => False);
          end if;
          declare
             State : Improve.Storage.Store;
@@ -54,8 +75,12 @@ package body Improve.Operations.Planning is
             Improve.Storage.Open
               (State, State_Path, Writable => True,
                Limits => Improve.Operations.Storage_Limits (Settings));
+            if Provider /= null and then Improve.Refinement.Cancellation_Requested (Provider.all) then
+               Improve.Storage.Close (State);
+               raise Cancelled_Error with "plan generation cancelled before persistence";
+            end if;
             Saved := Improve.Storage.Save
-              (State, Draft, Improve.Operations.Storage_Limits (Settings));
+              (State, Final, Improve.Operations.Storage_Limits (Settings));
             Improve.Storage.Close (State);
             return (Plan => Saved.Plan, Existing => Saved.Existing);
          end;

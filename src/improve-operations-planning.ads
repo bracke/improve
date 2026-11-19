@@ -1,6 +1,7 @@
 with Improve.Config;
 with Improve.Model;
 with Improve.Results;
+with Improve.Refinement;
 with Improve.State;
 with Improve.Storage;
 with Ada_Quality.Reporting;
@@ -23,7 +24,8 @@ package Improve.Operations.Planning is
       Project_Selector : String;
       Run_Id           : Natural;
       Settings         : Improve.Config.Settings;
-      Dry_Run          : Boolean) return Generation_Result;
+      Dry_Run          : Boolean;
+      Provider         : access Improve.Refinement.Adapter'Class := null) return Generation_Result;
    --  Generate a deterministic plan and persist it unless Dry_Run is true.
    --  @param State_Path Improve state database path.
    --  @param Quality_Path Read-only Ada Quality database path.
@@ -31,6 +33,7 @@ package Improve.Operations.Planning is
    --  @param Run_Id Explicit completed run, or zero for the latest.
    --  @param Settings Effective deterministic planner settings.
    --  @param Dry_Run Whether to return a draft without persistence.
+   --  @param Provider Optional bounded refinement provider.
    --  @return Generated plan and persistence reuse state.
 
    function Load

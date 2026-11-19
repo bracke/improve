@@ -32,6 +32,7 @@ package body Improve.CLI is
    use Improve.Text;
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
+   use type Improve.Results.Diagnostic_Status;
    LF : constant Character := Character'Val (10);
    function Number (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
@@ -78,6 +79,7 @@ package body Improve.CLI is
       Line ("--project ID|NAME", "help.opt.project", 36);
       Line ("--format terminal|json|markdown|dot", "help.opt.format", 36);
       Line ("--color auto|always|never", "help.opt.color", 36);
+      Line ("--progress auto|always|never", "help.opt.progress", 36);
       Line ("--run ID", "help.opt.run", 36); Line ("--revision NUMBER", "help.opt.revision", 36);
       Line ("--against-revision NUMBER", "help.opt.against_revision", 36);
       Line ("--task ID", "help.opt.task", 36);
@@ -85,6 +87,10 @@ package body Improve.CLI is
       Line ("--indicator ID", "help.opt.indicator", 36); Line ("--severity LEVEL", "help.opt.severity", 36);
       Line ("--path TEXT", "help.opt.path", 36);
       Line ("--limit N / --cursor N", "help.opt.path", 36); Line ("--signing-key FILE", "help.opt.path", 36);
+      Line ("--agent-model NAME", "help.opt.agent_model", 36);
+      Line ("--agent-model-path FILE", "help.opt.agent_model_path", 36);
+      Line ("--agent-model-sha256 HEX", "help.opt.agent_model_sha256", 36);
+      Line ("--no-agent", "help.opt.no_agent", 36);
       Line ("--release", "help.opt.path", 36); Line ("--all", "help.opt.all", 36);
       Line ("--verbose", "help.opt.verbose", 36); Line ("--quiet", "help.opt.quiet", 36);
       Line ("--help", "help.opt.help", 36);
@@ -165,7 +171,10 @@ package body Improve.CLI is
       return Render_Terminal (Item, Render'Access);
    end Findings_Output;
 
-   function Plan_Output (Item : Invocation; Settings : Improve.Config.Settings) return String is
+   function Plan_Output
+     (Item     : Invocation;
+      Settings : Improve.Config.Settings;
+      Provider : access Improve.Refinement.Adapter'Class) return String is
    begin
       if Item.Plan_Action = Diff_Plan then
          declare
@@ -252,11 +261,34 @@ package body Improve.CLI is
             return Render_Terminal (Item, Render'Access);
          end;
       end if;
+      if Settings.Agent_Enabled and then Provider = null then
+         raise Dependency_Error with
+           "planning.agent_enabled requires the improve-model-runner executable";
+      end if;
+      if Settings.Agent_Enabled then
+         declare
+            Identity : constant Improve.Refinement.Adapter_Provenance :=
+              Improve.Refinement.Provenance (Provider.all);
+            Digest : constant String := To_String (Identity.Model_SHA256);
+            Expected : constant String := To_String (Settings.Agent_Model_SHA256);
+         begin
+            if Expected /= "" then
+               if Digest'Length /= 64 or else Digest = [1 .. 64 => '0'] or else
+                 (for some C of Digest => C not in '0' .. '9' | 'a' .. 'f')
+               then
+                  raise Dependency_Error with "configured model runtime did not open successfully";
+               elsif Digest /= Expected then
+                  raise Dependency_Error with "configured model SHA-256 does not match the opened model";
+               end if;
+            end if;
+         end;
+      end if;
       declare
          Executed : constant Improve.Operations.Planning.Generation_Result :=
            Improve.Operations.Planning.Generate
              (State_Path (Item), Quality_Path (Item, Settings), To_String (Item.Project),
-              Item.Run_Id, Settings, Item.Dry_Run);
+              Item.Run_Id, Settings, Item.Dry_Run,
+              Provider => (if Settings.Agent_Enabled then Provider else null));
          Plan   : constant Improve.Model.Plan_Revision := Executed.Plan;
 
          function Render return String is
@@ -476,22 +508,13 @@ package body Improve.CLI is
    function Doctor_Output
      (Item     : Invocation;
       Settings : Improve.Config.Settings;
-      Negative : out Boolean) return String is
-      Report : constant Improve.Results.Diagnostic_Report :=
-        Improve.Operations.Diagnostics.Run
-          (Quality_Path (Item, Settings), State_Path (Item), To_String (Item.Project), Settings,
-           Item.Release_Check,
-           Improve.Operations.Storage_Limits (Settings));
-      function Render return String is (Improve.Presentation.Diagnostics (Report));
-   begin
-      Negative := not Report.Healthy;
-      if Item.Format = JSON_Format then return Improve.JSON.Diagnostics (Report); end if;
-      return Render_Terminal (Item, Render'Access);
-   end Doctor_Output;
+      Provider : access Improve.Refinement.Adapter'Class;
+      Negative : out Boolean) return String is separate;
 
    function Dispatch
      (Item     : Invocation;
       Configuration : Improve.Config.Loaded_Configuration;
+      Provider : access Improve.Refinement.Adapter'Class;
       Negative : out Boolean) return String is
       Settings : constant Improve.Config.Settings := Configuration.Values;
       Plain : Unbounded_String;
@@ -521,7 +544,7 @@ package body Improve.CLI is
             end if;
          when Projects_Command => return Projects_Output (Item, Settings);
          when Findings_Command => return Findings_Output (Item, Settings);
-         when Plan_Command => return Plan_Output (Item, Settings);
+         when Plan_Command => return Plan_Output (Item, Settings, Provider);
          when Audit_Command => return Audit_Output (Item, Settings);
          when Apply_Command => return Apply_Output (Item, Settings);
          when Tasks_Command =>
@@ -530,7 +553,7 @@ package body Improve.CLI is
          when Verify_Command => return Verify_Output (Item, Settings, Negative);
          when Refresh_Command => return Refresh_Output (Item, Settings);
          when Recover_Command => return Recover_Output (Item, Settings);
-         when Doctor_Command => return Doctor_Output (Item, Settings, Negative);
+         when Doctor_Command => return Doctor_Output (Item, Settings, Provider, Negative);
          when Completion_Command =>
             Plain := To_Unbounded_String (Improve.CLI_Assets.Completion (To_String (Item.Target)));
          when Manpage_Command => Plain := To_Unbounded_String (Improve.CLI_Assets.Manpage);
@@ -543,13 +566,15 @@ package body Improve.CLI is
       return To_String (Plain);
    end Dispatch;
 
-   type Error_Category is (Invalid_Input, Unavailable_Dependency, Invalid_State, Internal_Failure);
+   type Error_Category is
+     (Invalid_Input, Unavailable_Dependency, Invalid_State, Interrupted_Operation, Internal_Failure);
 
    function Error_Code (Category : Error_Category) return String is
      (case Category is
          when Invalid_Input => "IMP-E-ARGUMENT",
          when Unavailable_Dependency => "IMP-E-DEPENDENCY",
          when Invalid_State => "IMP-E-DATA",
+         when Interrupted_Operation => "IMP-E-CANCELLED",
          when Internal_Failure => "IMP-E-INTERNAL");
 
    function Category_Name (Category : Error_Category) return String is
@@ -557,6 +582,7 @@ package body Improve.CLI is
          when Invalid_Input => "invalid_input",
          when Unavailable_Dependency => "unavailable_dependency",
          when Invalid_State => "invalid_state",
+         when Interrupted_Operation => "cancelled",
          when Internal_Failure => "internal_failure");
 
    function Requests_JSON (Arguments : String_Vectors.Vector) return Boolean is
@@ -593,6 +619,7 @@ package body Improve.CLI is
             when Invalid_Input => "error.argument",
             when Unavailable_Dependency => "error.dependency",
             when Invalid_State => "error.data",
+            when Interrupted_Operation => "error.cancelled",
             when Internal_Failure => "error.internal");
       Rendered : constant String :=
         Message (Key, [Arg ("detail", Improve.Presentation.Safe_Text (Detail))]);
@@ -600,69 +627,42 @@ package body Improve.CLI is
       return Message ("error.prefix", [Arg ("message", Rendered)]) & LF;
    end Diagnostic;
 
-   function Execute (Arguments : String_Vectors.Vector) return Outcome is
-      Item : Invocation;
-      Negative : Boolean := False;
-      JSON_Errors : Boolean := Requests_JSON (Arguments);
+   function Configuration_For
+     (Arguments : String_Vectors.Vector) return Improve.Config.Loaded_Configuration is
+      Item : constant Invocation := Parse (Arguments);
    begin
-      Item := Parse (Arguments);
-      declare Configuration : constant Improve.Config.Loaded_Configuration :=
-        (if Item.Command in Help_Command | Version_Command | Completion_Command | Manpage_Command
-         then
-           (Values => Improve.Config.Defaults,
-            Source_Path => Null_Unbounded_String,
-            Quality_Database_Configured => False)
-         else Improve.Config.Load_With_Provenance (Configuration_Path (Item)));
-         Settings : Improve.Config.Settings renames Configuration.Values;
+      declare
+         Result : Improve.Config.Loaded_Configuration :=
+           (if Item.Command in Help_Command | Version_Command | Completion_Command | Manpage_Command
+            then
+              (Values => Improve.Config.Defaults,
+               Source_Path => Null_Unbounded_String,
+               Quality_Database_Configured => False)
+            else Improve.Config.Load_With_Provenance (Configuration_Path (Item)));
       begin
-         if not Item.Has_Format then Item.Format := Settings.Format; end if;
-         if Item.Format = DOT_Format and then
-           not (Item.Command = Plan_Command and then Item.Plan_Action = Graph_Plan)
-         then raise Argument_Error with "output format dot requires plan graph"; end if;
-         JSON_Errors := Item.Format = JSON_Format;
-         if not Item.Has_Color then Item.Color := Settings.Color; end if;
-         if Item.Format in JSON_Format | Markdown_Format then Item.Color := Color_Never; end if;
-         declare
-            Base_Output : constant String := Dispatch (Item, Configuration, Negative);
-            Output      : Unbounded_String := To_Unbounded_String (Base_Output);
-         begin
-            if Item.Format = Terminal_Format and then Item.Quiet then
-               Output := Null_Unbounded_String;
-            elsif Item.Format = Terminal_Format and then Item.Verbose then
-               Append
-                 (Output,
-                  Message
-                    ("verbose.context",
-                     [Arg ("command", Name (Item.Command)),
-                      Arg ("database", Improve.Presentation.Safe_Text (Quality_Path (Item, Settings))),
-                      Arg ("state", Improve.Presentation.Safe_Text (State_Path (Item)))]) & LF);
+         if Item.No_Agent then
+            Result.Values.Agent_Enabled := False;
+         else
+            if Item.Has_Agent_Model then Result.Values.Agent_Model := Item.Agent_Model; end if;
+            if Item.Has_Agent_Model_Path then Result.Values.Agent_Model_Path := Item.Agent_Model_Path; end if;
+            if Item.Has_Agent_Model_SHA256 then
+               Result.Values.Agent_Model_SHA256 := Item.Agent_Model_SHA256;
             end if;
-            return
-              ((if Negative then Negative_Exit else Success_Exit),
-               Output, Null_Unbounded_String);
-         end;
+            if Item.Has_Agent_Model or else Item.Has_Agent_Model_Path or else Item.Has_Agent_Model_SHA256 then
+               Result.Values.Agent_Enabled := True;
+            end if;
+         end if;
+         Improve.Config.Validate (Result.Values);
+         return Result;
       end;
-   exception
-      when Error : Argument_Error =>
-         return (Argument_Exit, Null_Unbounded_String,
-                 To_Unbounded_String
-                   (Error_Output
-                      (Invalid_Input, Ada.Exceptions.Exception_Message (Error), JSON_Errors,
-                       Message ("error.hint"))));
-      when Error : Dependency_Error =>
-         return (Unavailable_Exit, Null_Unbounded_String,
-                 To_Unbounded_String
-                   (Error_Output
-                      (Unavailable_Dependency, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
-      when Error : Data_Error =>
-         return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String
-                   (Error_Output (Invalid_State, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
-      when Error : others =>
-         return (Failure_Exit, Null_Unbounded_String,
-                 To_Unbounded_String
-                   (Error_Output (Internal_Failure, Ada.Exceptions.Exception_Message (Error), JSON_Errors)));
-   end Execute;
+   end Configuration_For;
+
+   function Execute
+     (Arguments : String_Vectors.Vector;
+      Provider  : access Improve.Refinement.Adapter'Class) return Outcome is separate;
+
+   function Execute (Arguments : String_Vectors.Vector) return Outcome is
+     (Execute (Arguments, Provider => null));
 
    procedure Write (Text : String) is
       Stream : constant Ada.Text_IO.Text_Streams.Stream_Access :=
@@ -672,28 +672,9 @@ package body Improve.CLI is
       Ada.Text_IO.Flush (Ada.Text_IO.Standard_Output);
    end Write;
 
-   function Run return Natural is
-      Arguments : String_Vectors.Vector;
-   begin
-      for Index in 1 .. Ada.Command_Line.Argument_Count loop
-         Arguments.Append (Ada.Command_Line.Argument (Index));
-      end loop;
-      declare
-         Result : constant Outcome := Execute (Arguments);
-      begin
-         if Length (Result.Errors) > 0 then
-            Ada.Text_IO.Put (Ada.Text_IO.Standard_Error, To_String (Result.Errors));
-         end if;
-         if Length (Result.Output) > 0 then Write (To_String (Result.Output)); end if;
-         return Result.Exit_Code;
-      exception
-         when Error : Ada.IO_Exceptions.Device_Error | Ada.IO_Exceptions.Use_Error | Ada.IO_Exceptions.End_Error |
-              Ada.IO_Exceptions.Status_Error =>
-            Ada.Text_IO.Put (Ada.Text_IO.Standard_Error,
-              Diagnostic (Invalid_State,
-                Message ("error.output", [Arg ("message", Ada.Exceptions.Exception_Message (Error))])));
-            return Failure_Exit;
-      end;
-   end Run;
+   function Run
+     (Provider : access Improve.Refinement.Adapter'Class) return Natural is separate;
+
+   function Run return Natural is (Run (Provider => null));
 end Improve.CLI;
 

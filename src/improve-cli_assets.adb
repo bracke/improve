@@ -6,7 +6,7 @@ package body Improve.CLI_Assets is
    Options : constant String :=
      "--config --database --state --project --format --color --run --revision --against-revision --task " &
      "--status --indicator --severity --path --limit --cursor --signing-key --release --dry-run --all " &
-     "--verbose --quiet --help";
+     "--agent-model --agent-model-path --agent-model-sha256 --no-agent --progress --verbose --quiet --help";
 
    function Completion (Shell : String) return String is
    begin
@@ -18,10 +18,11 @@ package body Improve.CLI_Assets is
            "  case $prev in" & LF &
            "    --format) words='terminal json markdown dot' ;;" & LF &
            "    --color) words='auto always never' ;;" & LF &
+           "    --progress) words='auto always never' ;;" & LF &
            "    --severity) words='critical high medium low info' ;;" & LF &
            "    --status) words='all planned ready running blocked completed failed stale' ;;" & LF &
            "    completion) words='bash zsh fish' ;;" & LF &
-           "    --config|--database|--state|--path|--signing-key) " &
+           "    --config|--database|--state|--path|--signing-key|--agent-model-path) " &
            "COMPREPLY=($(compgen -f -- ""$cur"")); return ;;" & LF &
            "    *) if [[ $command == plan ]]; then words='list show approve diff explain graph " &
            Options & "'; fi ;;" & LF &
@@ -35,10 +36,13 @@ package body Improve.CLI_Assets is
            "'2:operation:(list show approve diff explain graph verify bash zsh fish)' " &
            "'--format[output format]:(terminal json markdown dot)' " &
            "'--color[color policy]:(auto always never)' " &
+           "'--progress[runtime progress]:(auto always never)' " &
            "'--severity[finding severity]:(critical high medium low info)' " &
            "'--status[task status]:(all planned ready running blocked completed failed stale)' " &
            "'--config[configuration file]:file:_files' '--database[quality database]:file:_files' " &
-           "'--state[Improve state]:file:_files' '*:argument:'" & LF;
+           "'--state[Improve state]:file:_files' '--agent-model[model identity]:name:' " &
+           "'--agent-model-path[GGUF model]:file:_files' '--agent-model-sha256[expected digest]:digest:' " &
+           "'--no-agent[disable local refinement]' '*:argument:'" & LF;
       elsif Shell = "fish" then
          return
            "complete -c improve -f -n '__fish_use_subcommand' -a '" & Commands & "'" & LF &
@@ -47,10 +51,13 @@ package body Improve.CLI_Assets is
            "complete -c improve -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'" & LF &
            "complete -c improve -l format -a 'terminal json markdown dot'" & LF &
            "complete -c improve -l color -a 'auto always never'" & LF &
+           "complete -c improve -l progress -a 'auto always never'" & LF &
            "complete -c improve -l severity -a 'critical high medium low info'" & LF &
            "complete -c improve -l status -a 'all planned ready running blocked completed failed stale'" & LF &
            "complete -c improve -l config -r -F; complete -c improve -l database -r -F" & LF &
-           "complete -c improve -l state -r -F; complete -c improve -l path -r -F" & LF;
+           "complete -c improve -l state -r -F; complete -c improve -l path -r -F" & LF &
+           "complete -c improve -l agent-model -r; complete -c improve -l agent-model-path -r -F" & LF &
+           "complete -c improve -l agent-model-sha256 -r; complete -c improve -l no-agent" & LF;
       end if;
       raise Argument_Error with "unsupported completion shell " & Shell;
    end Completion;
@@ -76,9 +83,13 @@ package body Improve.CLI_Assets is
         ".SH OUTPUT" & LF &
         "--format accepts terminal, json, markdown, or dot for plan graph. JSON output and errors are single " &
         "versioned documents." & LF &
+        ".SH LOCAL REFINEMENT" & LF &
+        "--agent-model, --agent-model-path, and --agent-model-sha256 override the optional local runtime; " &
+        "--no-agent disables refinement for one invocation. --progress accepts auto, always, or never; auto " &
+        "writes progress only when standard error is a terminal." & LF &
         ".SH EXIT STATUS" & LF &
         "0 success; 1 unresolved verification or unhealthy diagnostics; 2 invalid input; " &
-        "3 unavailable evidence; 4 storage or internal failure." & LF &
+        "3 unavailable evidence; 4 storage or internal failure; 130 interrupted." & LF &
         ".SH SEE ALSO" & LF & "ada_quality(1), model_runner(1)" & LF;
    end Manpage;
 end Improve.CLI_Assets;

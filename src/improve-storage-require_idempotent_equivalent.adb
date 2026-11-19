@@ -43,6 +43,10 @@ begin
       raise Data_Error with "plan revision fingerprint conflicts with durable working source";
    elsif Existing.Planner_Id /= Candidate.Planner_Id then
       raise Data_Error with "plan revision fingerprint conflicts with durable planner identity";
+   elsif Existing.Agent_Provider_Id /= Candidate.Agent_Provider_Id or else
+     Existing.Agent_Model_SHA256 /= Candidate.Agent_Model_SHA256
+   then
+      raise Data_Error with "plan revision fingerprint conflicts with durable agent provenance";
    elsif Existing.Review_Status /= Candidate.Review_Status then
       raise Data_Error with "plan revision fingerprint conflicts with durable review state";
    elsif Existing.Findings.Length /= Candidate.Findings.Length then

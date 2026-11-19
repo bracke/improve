@@ -1,6 +1,7 @@
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Strings.Unbounded;
 with Improve.Config;
+with Improve.Refinement;
 
 --  Strict command-line parsing and output-stream orchestration.
 package Improve.CLI is
@@ -43,6 +44,12 @@ package Improve.CLI is
    --  @enum Explain_Plan Explain one revision relative to its predecessor.
    --  @enum Graph_Plan Render one revision's dependency graph.
 
+   type Progress_Mode is (Progress_Auto, Progress_Always, Progress_Never);
+   --  Runtime progress display policy.
+   --  @enum Progress_Auto Show progress only when standard error is a terminal.
+   --  @enum Progress_Always Show progress even when standard error is redirected.
+   --  @enum Progress_Never Suppress runtime progress.
+
    function Name (Command : Command_Kind) return String;
    --  Return the stable CLI command word.
    --  @param Command Command kind to render.
@@ -62,6 +69,9 @@ package Improve.CLI is
       Severity_Filter  : Ada.Strings.Unbounded.Unbounded_String;
       Path_Filter      : Ada.Strings.Unbounded.Unbounded_String;
       Signing_Key      : Ada.Strings.Unbounded.Unbounded_String;
+      Agent_Model      : Ada.Strings.Unbounded.Unbounded_String;
+      Agent_Model_Path : Ada.Strings.Unbounded.Unbounded_String;
+      Agent_Model_SHA256 : Ada.Strings.Unbounded.Unbounded_String;
       Run_Id        : Natural := 0;
       Revision      : Natural := 0;
       Against_Revision : Natural := 0;
@@ -69,6 +79,7 @@ package Improve.CLI is
       Cursor        : Natural := 0;
       Format        : Improve.Config.Output_Format := Improve.Config.Terminal_Format;
       Color         : Improve.Config.Color_Mode := Improve.Config.Color_Auto;
+      Progress      : Progress_Mode := Progress_Auto;
       Has_Database  : Boolean := False;
       Has_Config    : Boolean := False;
       Has_State     : Boolean := False;
@@ -80,6 +91,9 @@ package Improve.CLI is
       Has_Severity  : Boolean := False;
       Has_Path      : Boolean := False;
       Has_Signing_Key : Boolean := False;
+      Has_Agent_Model : Boolean := False;
+      Has_Agent_Model_Path : Boolean := False;
+      Has_Agent_Model_SHA256 : Boolean := False;
       Has_Run       : Boolean := False;
       Has_Revision  : Boolean := False;
       Has_Against_Revision : Boolean := False;
@@ -89,10 +103,12 @@ package Improve.CLI is
       Release_Check : Boolean := False;
       Has_Format    : Boolean := False;
       Has_Color     : Boolean := False;
+      Has_Progress  : Boolean := False;
       Dry_Run       : Boolean := False;
       All_Projects  : Boolean := False;
       Verbose       : Boolean := False;
       Quiet         : Boolean := False;
+      No_Agent      : Boolean := False;
    end record;
    --  Fully parsed and command-validated invocation.
    --  @field Command Selected top-level command.
@@ -108,6 +124,9 @@ package Improve.CLI is
    --  @field Severity_Filter Finding severity filter.
    --  @field Path_Filter Finding path filter.
    --  @field Signing_Key Optional Ed25519 seed file for audit export.
+   --  @field Agent_Model Invocation-local model identity override.
+   --  @field Agent_Model_Path Invocation-local model path override.
+   --  @field Agent_Model_SHA256 Invocation-local expected model digest override.
    --  @field Run_Id Explicit assessment identity, or zero.
    --  @field Revision Explicit immutable plan revision, or zero.
    --  @field Against_Revision Earlier revision used by plan diff, or zero.
@@ -115,6 +134,7 @@ package Improve.CLI is
    --  @field Cursor Stable result offset for a paged inspection.
    --  @field Format Selected output format.
    --  @field Color Selected color policy.
+   --  @field Progress Runtime progress display policy.
    --  @field Has_Database Whether Database was supplied explicitly.
    --  @field Has_Config Whether Config was supplied explicitly.
    --  @field Has_State Whether State was supplied explicitly.
@@ -126,6 +146,9 @@ package Improve.CLI is
    --  @field Has_Severity Whether Severity_Filter was supplied.
    --  @field Has_Path Whether Path_Filter was supplied.
    --  @field Has_Signing_Key Whether Signing_Key was supplied.
+   --  @field Has_Agent_Model Whether Agent_Model was supplied.
+   --  @field Has_Agent_Model_Path Whether Agent_Model_Path was supplied.
+   --  @field Has_Agent_Model_SHA256 Whether Agent_Model_SHA256 was supplied.
    --  @field Has_Run Whether Run_Id was supplied.
    --  @field Has_Revision Whether Revision was supplied.
    --  @field Has_Against_Revision Whether Against_Revision was supplied.
@@ -135,10 +158,12 @@ package Improve.CLI is
    --  @field Release_Check Whether doctor resolves the release manifest.
    --  @field Has_Format Whether Format was supplied explicitly.
    --  @field Has_Color Whether Color was supplied explicitly.
+   --  @field Has_Progress Whether Progress was supplied explicitly.
    --  @field Dry_Run Whether modification is disabled.
    --  @field All_Projects Whether every project is selected.
    --  @field Verbose Whether verbose diagnostics are requested.
    --  @field Quiet Whether nonessential output is suppressed.
+   --  @field No_Agent Whether refinement is disabled for this invocation.
 
    function Parse (Arguments : String_Vectors.Vector) return Invocation;
    --  Parse a complete command line without writing output.
@@ -156,6 +181,8 @@ package Improve.CLI is
    --  Required evidence or project state is unavailable.
    Failure_Exit      : constant := 4;
    --  Storage, integrity, publication, or internal failure.
+   Interrupted_Exit  : constant := 130;
+   --  Operation interrupted by cooperative user cancellation.
 
    type Outcome is record
       Exit_Code : Natural := Success_Exit;
@@ -172,8 +199,28 @@ package Improve.CLI is
    --  @param Arguments Ordered command-line arguments excluding the executable name.
    --  @return Atomic command outcome.
 
+   function Configuration_For
+     (Arguments : String_Vectors.Vector) return Improve.Config.Loaded_Configuration;
+   --  Resolve the same configuration that Execute will use.
+   --  @param Arguments Ordered command-line arguments excluding the executable name.
+   --  @return Parsed configuration and its provenance.
+
+   function Execute
+     (Arguments : String_Vectors.Vector;
+      Provider  : access Improve.Refinement.Adapter'Class) return Outcome;
+   --  Execute with an optional refinement provider for plan creation.
+   --  @param Arguments Ordered command-line arguments excluding the executable name.
+   --  @param Provider Runtime provider, or null when unavailable.
+   --  @return Atomic command outcome.
+
    function Run return Natural;
    --  Execute the current process command line and write each completed output atomically.
+   --  @return Stable process exit code.
+
+   function Run
+     (Provider : access Improve.Refinement.Adapter'Class) return Natural;
+   --  Execute the current process command line with an optional refinement provider.
+   --  @param Provider Runtime provider, or null when unavailable.
    --  @return Stable process exit code.
 end Improve.CLI;
 

@@ -247,6 +247,12 @@ package body Improve.Model is
       Add ("baseline.snapshot", To_String (Item.Baseline.Snapshot_Id));
       Add ("working_source", To_String (Item.Working_Source_Id));
       Add ("planner", To_String (Item.Planner_Id));
+      if Length (Item.Agent_Provider_Id) > 0 then
+         Add ("agent.provider", To_String (Item.Agent_Provider_Id));
+      end if;
+      if Length (Item.Agent_Model_SHA256) > 0 then
+         Add ("agent.model_sha256", To_String (Item.Agent_Model_SHA256));
+      end if;
       Add
         ("created_at",
          Ada.Calendar.Formatting.Image (Item.Created_At, Include_Time_Fraction => False, Time_Zone => 0));
@@ -276,6 +282,18 @@ package body Improve.Model is
       Raw_Findings  : String_Sets.Set;
       Ambiguous_Raw : String_Sets.Set;
    begin
+      if Length (Plan.Agent_Model_SHA256) > 0 then
+         declare Value : constant String := To_String (Plan.Agent_Model_SHA256); begin
+            if Value'Length /= 64 then
+               raise Data_Error with "agent model SHA-256 has an invalid length";
+            end if;
+            for Item of Value loop
+               if Item not in '0' .. '9' | 'a' .. 'f' then
+                  raise Data_Error with "agent model SHA-256 is not lower-case hexadecimal";
+               end if;
+            end loop;
+         end;
+      end if;
       if Plan.Baseline.Project_Id /= Plan.Project.Id then
          raise Data_Error with "assessment baseline belongs to a different project";
       end if;

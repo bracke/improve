@@ -93,9 +93,16 @@ begin
      (Root & "/alire.release.toml", Stage & "/alire.toml");
    Project_Tools.Alire_Manifests.Copy_Release_Manifest
      (Root & "/tests/alire.release.toml", Stage & "/tests/alire.toml");
+   Project_Tools.Alire_Manifests.Copy_Release_Manifest
+     (Root & "/model_runner_runtime/alire.release.toml",
+      Stage & "/model_runner_runtime/alire.toml");
    Project_Tools.Alire_Manifests.Require_Pin_Free_Crate_Manifest
      (Stage & "/alire.toml", "improve");
+   Project_Tools.Alire_Manifests.Require_Pin_Free_Crate_Manifest
+     (Stage & "/model_runner_runtime/alire.toml", "improve_model_runner_runtime");
    Resolve_Dependencies ("pin-free dependency resolution", Stage);
+   Resolve_Dependencies
+     ("runtime release dependency resolution", Stage & "/model_runner_runtime");
    Run_Alr
      ("pin-free release build", Stage,
       [Project_Tools.Processes.Argument ("build"), Project_Tools.Processes.Argument ("--validation"),

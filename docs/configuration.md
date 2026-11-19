@@ -31,6 +31,18 @@ Optional refinement is bounded by `planning.agent_max_context_bytes`, `agent_max
 Context is at least 1024 bytes and at most 10 MiB, a file cannot exceed its context, responses cannot exceed 1 MiB,
 and timeout cannot exceed one hour.
 
+Local refinement is off by default. Set `planning.agent_enabled = true`, a nonempty `agent_model`, and a nonempty
+`agent_model_path` to opt in, then run `model_runner_runtime/bin/improve-model-runner`. The ordinary `improve`
+executable rejects an enabled configuration because it deliberately does not link the inference engine. Model-open,
+generation, timeout, or validation failures retain the deterministic draft. User cancellation instead aborts before
+persistence and returns exit 130.
+`agent_model_sha256` optionally pins the exact joined GGUF bytes and rejects a different opened model.
+
+`--agent-model`, `--agent-model-path`, and `--agent-model-sha256` replace those values for one invocation and enable
+refinement. `--no-agent` disables it without editing the configuration file.
+`--progress auto|always|never` controls runtime progress independently of configuration; `auto` requires a terminal
+on standard error, and `--quiet` suppresses progress.
+
 `quality.database` is limited to 4096 bytes and `workflow.task_kind` to 128 bytes. Both must be nonempty and must not
 contain control characters. Configuration tables and settings may each be declared only once.
 

@@ -117,6 +117,8 @@ package body Improve.JSON is
       Doc.Insert (Data, "working_source_fingerprint", Doc.New_String (To_String (Value.Working_Source_Id)));
       Doc.Insert (Data, "fingerprint", Doc.New_String (To_String (Value.Fingerprint)));
       Doc.Insert (Data, "planner", Doc.New_String (To_String (Value.Planner_Id)));
+      Doc.Insert (Data, "agent_provider", Doc.New_String (To_String (Value.Agent_Provider_Id)));
+      Doc.Insert (Data, "agent_model_sha256", Doc.New_String (To_String (Value.Agent_Model_SHA256)));
       Doc.Insert (Data, "dry_run", Doc.New_Boolean (Dry_Run));
       Doc.Insert (Data, "stored", Doc.New_Boolean (not Dry_Run));
       for Spec of Value.Tasks loop
@@ -283,6 +285,10 @@ package body Improve.JSON is
       Doc.Insert (Context.Data, "toolchain_id", Doc.New_String (To_String (Plan.Baseline.Toolchain_Id)));
       Doc.Insert (Context.Data, "evidence_id", Doc.New_String (To_String (Plan.Baseline.Evidence_Id)));
       Doc.Insert (Context.Data, "planner_id", Doc.New_String (To_String (Plan.Planner_Id)));
+      Doc.Insert
+        (Context.Data, "agent_provider", Doc.New_String (To_String (Plan.Agent_Provider_Id)));
+      Doc.Insert
+        (Context.Data, "agent_model_sha256", Doc.New_String (To_String (Plan.Agent_Model_SHA256)));
       for Finding of Plan.Findings loop
          Doc.Append (Findings, Doc.New_String (Improve.Model.Finding_Key (Finding)));
       end loop;
