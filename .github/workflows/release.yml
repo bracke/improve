@@ -50,10 +50,10 @@ jobs:
         run: alr build --validation --stop-after=generation
       - name: Build release tools
         run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
-      - name: Run Phase 9
-        run: tools/bin/check_phase_9
       - name: Validate pin-free release candidate
         run: tools/bin/check_release_candidate
+      - name: Run Phase 9
+        run: tools/bin/check_phase_9
       - name: Capture generated CLI assets
         run: |
           ./bin/improve manpage > improve.1

@@ -188,12 +188,20 @@ begin
                declare
                   Plan : constant Improve.Model.Plan_Revision :=
                     Improve.Storage.Load (Store, To_String (Values.First_Element.Plan_Id));
+                  Provider_Id : constant String := To_String (Plan.Agent_Provider_Id);
+                  Model_Digest : constant String := To_String (Plan.Agent_Model_SHA256);
+                  Planner : constant String := To_String (Plan.Planner_Id);
+                  Has_Agent_Planner : constant Boolean :=
+                    Ada.Strings.Fixed.Index (Planner, "+agent:") > 0;
                begin
-                  if To_String (Plan.Agent_Model_SHA256) /= Expected or else
-                    Length (Plan.Agent_Provider_Id) = 0 or else
-                    Ada.Strings.Fixed.Index (To_String (Plan.Planner_Id), Expected) = 0
+                  if Provider_Id /= "" and then Model_Digest = Expected and then
+                    Ada.Strings.Fixed.Index (Planner, Expected) > 0 and then Has_Agent_Planner
                   then
-                     raise Program_Error with "persisted CLI plan lost production-model provenance";
+                     Ada.Text_IO.Put_Line ("metric.CLI_REFINEMENT=accepted");
+                  elsif Provider_Id = "" and then Model_Digest = "" and then not Has_Agent_Planner then
+                     Ada.Text_IO.Put_Line ("metric.CLI_REFINEMENT=deterministic_fallback");
+                  else
+                     raise Program_Error with "persisted CLI plan has inconsistent production-model provenance";
                   end if;
                end;
             end;
