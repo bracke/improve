@@ -1,6 +1,12 @@
 name: Set up pinned Ada workspace
 description: Check out exact sibling revisions and restore OS-specific Alire/build caches.
 
+inputs:
+  cache-build-artifacts:
+    description: Restore compiler outputs; disable for clean-room builds.
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -18,13 +24,19 @@ runs:
           test "$(git -C "$repository" rev-parse FETCH_HEAD)" = "$revision"
           git -C "$repository" checkout --detach FETCH_HEAD
         done < improve/.github/dependency-lock.txt
-    - name: Restore Alire and Ada build caches
+    - name: Restore Alire cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: |
           ~/.cache/alire
           ~/.local/share/alire/indexes
           ~/.local/share/alire/releases
+        key: improve-${{ runner.os }}-gnat15-alire-${{ hashFiles('improve/.github/dependency-lock.txt') }}
+    - name: Restore Ada build cache
+      if: inputs.cache-build-artifacts == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
           *_build
           improve/obj
           improve/tests/obj

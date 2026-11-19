@@ -3,6 +3,10 @@ description = "AUnit acceptance tests for Improve"
 version = "0.1.0"
 executables = ["improve_tests"]
 
+[available.'case(os)']
+'linux|macos' = true
+'...' = false
+
 [[depends-on]]
 gnat_native = "=15.2.1"
 

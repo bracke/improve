@@ -224,6 +224,7 @@ begin
    Check.Require_Text ("coverage/gcov-summary.txt", "inventory=gcov-production-lines-v2");
    Validate_Dependency_Lock;
    Improve_CI_Checks.Validate_Action_Pins;
+   Improve_CI_Checks.Validate_Workflow_Contracts;
    if Evidence_Value ("source_fingerprint") /= Ada_Quality.Checks.Source_Fingerprint (Root) then
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,

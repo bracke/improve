@@ -10,6 +10,11 @@ tags = ["ada", "quality", "planning", "cli"]
 project-files = ["improve.gpr"]
 executables = ["improve"]
 
+# Current database and Ada Quality revisions use POSIX process and file-locking APIs.
+[available.'case(os)']
+'linux|macos' = true
+'...' = false
+
 # Pin-free publication manifest. The development manifest uses sibling checkout pins; release resolution requires the
 # compatible dependency releases listed here to be available from the selected Alire index.
 

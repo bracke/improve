@@ -34,6 +34,7 @@ alr build
 All repository tooling is implemented in Ada. Build the tool executables and run the complete Phase 9 gate with:
 
 ```sh
+alr build --validation --stop-after=generation
 alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
 tools/bin/check_phase_9
 ```
@@ -42,10 +43,12 @@ The gate performs warning-clean application and test builds, runs the complete A
 audits every Improve package with GNATdoc, proves every SPARK-enabled unit with GNATprove, and requires at least 90%
 measured production-line coverage. `alr test` invokes the same Ada gate.
 
-CI also builds and exercises the optional runtime on Linux, macOS, and Windows. Scheduled and manually dispatched runs
-download a cached production GGUF, verify its fixed SHA-256, execute a full CLI planning round trip, and enforce
-wall-time and peak-memory budgets. Every runtime platform receives a real SIGINT and must exit 130 without plan
-persistence. CI also cancels superseded runs, restores OS-specific build caches, and retains failure diagnostics.
+CI builds and exercises the optional runtime on Linux and Intel macOS. Windows is explicitly unavailable while the
+pinned database and Ada Quality dependencies require POSIX process, locking, and durability APIs. Scheduled and
+manually dispatched runs download a cached production GGUF only after a dependency/import preflight, verify its fixed
+SHA-256, execute a full CLI planning round trip, and enforce wall-time and peak-memory budgets. Every supported runtime
+platform receives a real SIGINT and must exit 130 without plan persistence. A cache-free job builds every development
+manifest and project root; other jobs restore OS-specific caches and retain failure diagnostics.
 
 After committing a release candidate, run the stronger clean-source publication check:
 
