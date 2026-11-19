@@ -57,8 +57,10 @@ and generation progress on stderr according to `--progress auto|always|never`. C
 before plan persistence instead of selecting deterministic fallback. `doctor` reports GGUF/schema readiness, the
 actual digest, canonical path, architecture, byte size, file count, and digest-pin agreement.
 
-The runtime CI matrix builds and executes deterministic inference checks on Linux, macOS, and Windows. Each platform's
-signal test raises a real SIGINT during generation and asserts exit 130 with no state database. The deterministic suite
-also rejects corrupt, truncated, and unsupported GGUF inputs. A separate scheduled or manual job verifies a fixed
-SHA-256 before exercising a full CLI plan and checking persisted provider/model provenance against a production Qwen
-GGUF. It enforces explicit open, inference, CLI, and peak-RSS budgets and uploads its measurements as CI diagnostics.
+The runtime CI matrix builds and executes deterministic inference checks on Linux and Intel macOS. Windows is
+explicitly unavailable while the pinned database and Ada Quality revisions require POSIX process, locking, and
+durability APIs. Each supported platform's signal test raises a real SIGINT during generation and asserts exit 130
+with no state database. The deterministic suite also rejects corrupt, truncated, and unsupported GGUF inputs. A
+separate scheduled or manual job verifies a fixed SHA-256 before exercising a full CLI plan and checking persisted
+provider/model provenance against a production Qwen GGUF. It enforces explicit open, inference, CLI, and peak-RSS
+budgets and uploads its measurements as CI diagnostics.

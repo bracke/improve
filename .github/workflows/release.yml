@@ -35,11 +35,19 @@ permissions:
 jobs:
   validate-release:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: improve
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: alire-project/setup-alire@8398015c233537c928d12293d46c0dcecb54434c # v5
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+        with:
+          install-release-tools: "true"
+      - name: Generate Alire configuration projects
+        run: alr build --validation --stop-after=generation
       - name: Build release tools
         run: alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
       - name: Run Phase 9
@@ -55,33 +63,33 @@ jobs:
       - name: Generate SPDX software bill of materials
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
-          path: .
+          path: improve
           format: spdx-json
-          output-file: improve.spdx.json
+          output-file: improve/improve.spdx.json
       - name: Attest executable build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
-            bin/improve
-            model_runner_runtime/bin/improve-model-runner
+            improve/bin/improve
+            improve/model_runner_runtime/bin/improve-model-runner
       - name: Attest the generated SBOM
         uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
         with:
-          subject-path: bin/improve
-          sbom-path: improve.spdx.json
+          subject-path: improve/bin/improve
+          sbom-path: improve/improve.spdx.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: improve-${{ github.ref_name }}-cli-assets
           path: |
-            improve.1
-            improve.bash
-            _improve
-            improve.fish
-            schemas/improve-output-v1.schema.json
-            model_runner_runtime/bin/improve-model-runner
-            model_runner_runtime/alire.release.toml
-            improve.spdx.json
-            docs/model-supply-chain.md
+            improve/improve.1
+            improve/improve.bash
+            improve/_improve
+            improve/improve.fish
+            improve/schemas/improve-output-v1.schema.json
+            improve/model_runner_runtime/bin/improve-model-runner
+            improve/model_runner_runtime/alire.release.toml
+            improve/improve.spdx.json
+            improve/docs/model-supply-chain.md
       - name: Create Git tag and GitHub release
         if: github.event_name == 'workflow_dispatch' && inputs.create_release
         env:

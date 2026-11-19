@@ -10,6 +10,11 @@ tags = ["ada", "quality", "planning", "cli"]
 project-files = ["improve.gpr"]
 executables = ["improve"]
 
+# Current database and Ada Quality revisions use POSIX process and file-locking APIs.
+[available.'case(os)']
+'linux|macos' = true
+'...' = false
+
 [[depends-on]]
 gnat_native = "=15.2.1"
 

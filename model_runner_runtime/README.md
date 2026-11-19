@@ -91,7 +91,9 @@ IMPROVE_TEST_MODEL_SHA256=0123456789abcdef0123456789abcdef0123456789abcdef012345
 Optional `IMPROVE_TEST_MAX_OPEN_SECONDS`, `IMPROVE_TEST_MAX_INFER_SECONDS`, and
 `IMPROVE_TEST_MAX_CLI_SECONDS` values enforce wall-time budgets. CI additionally uses GNU `time` to cap peak RSS.
 
-CI runs the deterministic runtime suite on Linux, macOS, and Windows. A scheduled or manually dispatched Ubuntu job
-downloads a cached Qwen2.5 Coder 0.5B Q2_K GGUF, verifies its fixed SHA-256, and runs the production completion check.
-Jobs have concurrency cancellation and hard timeouts, cache OS-specific Alire/build artifacts, and upload diagnostics
-on failure. The repository gate validates every dependency-lock entry against the development workspace pins.
+CI runs the deterministic runtime suite on Linux and Intel macOS. Windows remains explicitly unavailable while the
+pinned database and Ada Quality revisions require POSIX process, locking, and durability APIs. A scheduled or manually
+dispatched Ubuntu job downloads a cached Qwen2.5 Coder 0.5B Q2_K GGUF only after dependency/import preflight, verifies
+its fixed SHA-256, and runs the production completion check. Jobs have concurrency cancellation and hard timeouts,
+cache OS-specific Alire/build artifacts, and upload diagnostics on failure. A cache-free job builds every development
+manifest and project root, and the repository gate validates every dependency-lock entry against the workspace pins.

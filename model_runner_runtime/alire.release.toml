@@ -10,6 +10,10 @@ tags = ["ada", "quality", "planning", "gguf", "inference"]
 project-files = ["improve_model_runner_runtime.gpr"]
 executables = ["improve-model-runner"]
 
+[available.'case(os)']
+'linux|macos' = true
+'...' = false
+
 [[depends-on]]
 gnat_native = "=15.2.1"
 

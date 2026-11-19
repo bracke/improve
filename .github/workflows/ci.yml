@@ -15,7 +15,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dependency-preflight:
+    name: Dependency and project preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+      - name: Resolve manifests and parse imported projects
+        working-directory: improve
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
+          set -o pipefail
+          {
+            while IFS='=' read -r repository revision; do
+              revision=${revision%$'\r'}
+              test -d "../$repository/.git"
+              test "$(git -C "../$repository" rev-parse HEAD)" = "$revision"
+            done < .github/dependency-lock.txt
+            test -f ../model_runner/inference/model_runner_inference.gpr
+            alr build --validation --stop-after=generation
+            (cd tests && alr build --validation --stop-after=generation)
+            (cd model_runner_runtime && alr build --validation --stop-after=generation)
+            alr exec -- gprls -P improve.gpr -U -s >/dev/null
+            (cd tests && alr exec -- gprls -P improve_tests.gpr -U -s >/dev/null)
+            (cd model_runner_runtime &&
+              alr exec -- gprls -P improve_model_runner_runtime.gpr -U -s >/dev/null)
+          } 2>&1 | tee "$RUNNER_TEMP/improve-ci-artifacts/preflight.log"
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preflight-diagnostics
+          path: ${{ runner.temp }}/improve-ci-artifacts
+          if-no-files-found: ignore
+
   build-and-test:
+    needs: dependency-preflight
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -23,30 +62,78 @@ jobs:
         with:
           path: improve
       - uses: ./improve/.github/actions/setup-workspace
+        with:
+          install-release-tools: "true"
       - name: Run Phase 9 release gate
         working-directory: improve
         shell: bash
         run: |
-          mkdir -p ci-artifacts
+          mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
           set -o pipefail
-          alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1 2>&1 | tee ci-artifacts/tools-build.log
-          tools/bin/check_phase_9 2>&1 | tee ci-artifacts/phase-9.log
+          alr build --validation --stop-after=generation 2>&1 |
+            tee "$RUNNER_TEMP/improve-ci-artifacts/config-generation.log"
+          alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1 2>&1 |
+            tee "$RUNNER_TEMP/improve-ci-artifacts/tools-build.log"
+          tools/bin/check_phase_9 2>&1 | tee "$RUNNER_TEMP/improve-ci-artifacts/phase-9.log"
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: phase-9-diagnostics
-          path: improve/ci-artifacts
+          path: ${{ runner.temp }}/improve-ci-artifacts
+          if-no-files-found: ignore
+
+  clean-room-build:
+    name: Clean-room manifests and projects
+    needs: dependency-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: improve
+      - uses: ./improve/.github/actions/setup-workspace
+        with:
+          cache-build-artifacts: "false"
+      - name: Build every development manifest and project root
+        working-directory: improve
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
+          set -o pipefail
+          {
+            test ! -e config/improve_config.gpr
+            alr build --validation -- -j1
+            alr exec -- gprbuild -P improve_docs.gpr -p -j1
+            alr exec -- gprbuild -P improve_spark.gpr -p -j1
+            alr exec -- gprbuild -P phase0/contract_probe.gpr -p -j1
+            phase0/bin/contract_probe
+            alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
+            (cd tests && alr build --validation -- -j1)
+            (cd tests && alr exec -- gprbuild -P coverage.gpr -p -j1)
+            (cd model_runner_runtime && alr build --validation -- -j1)
+            for project in model_runner_runtime/tests/*.gpr; do
+              main=$(basename "$project" .gpr).adb
+              (cd model_runner_runtime && alr exec -- gprbuild -P "tests/$(basename "$project")" "$main" -p -j1)
+            done
+          } 2>&1 | tee "$RUNNER_TEMP/improve-ci-artifacts/clean-room.log"
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clean-room-diagnostics
+          path: ${{ runner.temp }}/improve-ci-artifacts
           if-no-files-found: ignore
 
   runtime-matrix:
     name: Runtime (${{ matrix.os }})
+    needs: dependency-preflight
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -56,33 +143,33 @@ jobs:
         working-directory: improve/model_runner_runtime
         shell: bash
         run: |
-          mkdir -p ../ci-artifacts
+          mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
           set -o pipefail
-          alr build --validation 2>&1 | tee ../ci-artifacts/runtime-${RUNNER_OS}.log
+          runtime_log="$RUNNER_TEMP/improve-ci-artifacts/runtime-${RUNNER_OS}.log"
+          alr build --validation 2>&1 | tee "$runtime_log"
           alr exec -- gprbuild -P tests/runtime_schema_smoke.gpr runtime_schema_smoke.adb -j1 2>&1 |
-            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+            tee -a "$runtime_log"
           alr exec -- gprbuild -P tests/runtime_end_to_end.gpr runtime_end_to_end.adb -j1 2>&1 |
-            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+            tee -a "$runtime_log"
           alr exec -- gprbuild -P tests/runtime_signal_interrupt.gpr runtime_signal_interrupt.adb -j1 2>&1 |
-            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+            tee -a "$runtime_log"
           alr exec -- gprbuild -P tests/runtime_cli_black_box.gpr runtime_cli_black_box.adb -j1 2>&1 |
-            tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
-          suffix=
-          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=.exe; fi
-          tests/bin/runtime_schema_smoke$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
-          tests/bin/runtime_end_to_end$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
-          tests/bin/runtime_signal_interrupt$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
-          tests/bin/runtime_cli_black_box$suffix 2>&1 | tee -a ../ci-artifacts/runtime-${RUNNER_OS}.log
+            tee -a "$runtime_log"
+          tests/bin/runtime_schema_smoke 2>&1 | tee -a "$runtime_log"
+          tests/bin/runtime_end_to_end 2>&1 | tee -a "$runtime_log"
+          tests/bin/runtime_signal_interrupt 2>&1 | tee -a "$runtime_log"
+          tests/bin/runtime_cli_black_box 2>&1 | tee -a "$runtime_log"
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: runtime-${{ matrix.os }}-diagnostics
-          path: improve/ci-artifacts
+          path: ${{ runner.temp }}/improve-ci-artifacts
           if-no-files-found: ignore
 
   production-model:
     name: Production GGUF completion
+    needs: dependency-preflight
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -104,23 +191,24 @@ jobs:
       - name: Download and verify pinned production GGUF
         shell: bash
         run: |
-          mkdir -p improve/.ci-models improve/ci-artifacts
+          mkdir -p improve/.ci-models "$RUNNER_TEMP/improve-ci-artifacts"
           set -o pipefail
           {
             if [[ ! -f "$MODEL_FILE" ]]; then
               curl --fail --location --retry 3 --output "$MODEL_FILE" "$MODEL_URL"
             fi
             echo "$MODEL_SHA256  $MODEL_FILE" | sha256sum --check --strict
-          } 2>&1 | tee improve/ci-artifacts/model-download.log
+          } 2>&1 | tee "$RUNNER_TEMP/improve-ci-artifacts/model-download.log"
       - name: Build production-model compatibility test
         working-directory: improve/model_runner_runtime
         shell: bash
         run: |
-          mkdir -p ../ci-artifacts
+          mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
           set -o pipefail
-          alr build --validation 2>&1 | tee ../ci-artifacts/production-model.log
+          production_log="$RUNNER_TEMP/improve-ci-artifacts/production-model.log"
+          alr build --validation 2>&1 | tee "$production_log"
           alr exec -- gprbuild -P tests/runtime_external_model.gpr runtime_external_model.adb -j1 2>&1 |
-            tee -a ../ci-artifacts/production-model.log
+            tee -a "$production_log"
       - name: Run digest-pinned CLI completion and enforce budgets
         working-directory: improve/model_runner_runtime
         shell: bash
@@ -135,19 +223,20 @@ jobs:
           IMPROVE_TEST_MAX_INFER_SECONDS=$((BASELINE_INFER_SECONDS * (100 + MAX_REGRESSION_PERCENT) / 100))
           IMPROVE_TEST_MAX_CLI_SECONDS=$((BASELINE_CLI_SECONDS * (100 + MAX_REGRESSION_PERCENT) / 100))
           export IMPROVE_TEST_MAX_OPEN_SECONDS IMPROVE_TEST_MAX_INFER_SECONDS IMPROVE_TEST_MAX_CLI_SECONDS
-          /usr/bin/time -v -o ../ci-artifacts/production-model-resources.txt \
-            tests/bin/runtime_external_model 2>&1 | tee -a ../ci-artifacts/production-model.log
+          production_log="$RUNNER_TEMP/improve-ci-artifacts/production-model.log"
+          resources="$RUNNER_TEMP/improve-ci-artifacts/production-model-resources.txt"
+          /usr/bin/time -v -o "$resources" tests/bin/runtime_external_model 2>&1 | tee -a "$production_log"
           maximum_rss=$(awk -F: '/Maximum resident set size/ {gsub(/[[:space:]]/, "", $2); print $2}' \
-            ../ci-artifacts/production-model-resources.txt)
+            "$resources")
           test -n "$maximum_rss"
-          echo "metric.PEAK_RSS_KB=$maximum_rss" | tee -a ../ci-artifacts/production-model.log
-          metrics=../ci-artifacts/performance.csv
+          echo "metric.PEAK_RSS_KB=$maximum_rss" | tee -a "$production_log"
+          metrics="$RUNNER_TEMP/improve-ci-artifacts/performance.csv"
           echo "metric,baseline,current,change_percent" > "$metrics"
           compare_metric() {
             name=$1
             baseline=$2
             current=$(awk -F= -v key="metric.${name}" '$1 == key {value=$2} END {print value}' \
-              ../ci-artifacts/production-model.log)
+              "$production_log")
             test -n "$current"
             change=$(awk -v current="$current" -v baseline="$baseline" \
               'BEGIN {printf "%.2f", ((current - baseline) / baseline) * 100}')
@@ -171,5 +260,5 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-model-diagnostics
-          path: improve/ci-artifacts
+          path: ${{ runner.temp }}/improve-ci-artifacts
           if-no-files-found: ignore

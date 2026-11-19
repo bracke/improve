@@ -9,14 +9,20 @@ repository checker and coverage driver are Ada 2022 programs:
 - `tools/src/improve_coverage.adb` builds instrumented binaries, runs them, parses gcov evidence, and applies the
   production threshold.
 
-CI additionally runs the optional runtime on Linux, macOS, and Windows, exercises real host SIGINT delivery, and runs
-a scheduled digest-pinned production-GGUF CLI round trip with wall-time, peak-memory, and stored-provenance checks.
-OS-scoped caches shorten repeat builds; job timeouts, concurrency cancellation, and uploaded diagnostics bound and
-explain failures. The repository checker validates the exact dependency lock against every development workspace pin.
+CI additionally runs the optional runtime on Linux and Intel macOS, exercises real host SIGINT delivery, and runs a
+scheduled digest-pinned production-GGUF CLI round trip with wall-time, peak-memory, and stored-provenance checks.
+Windows is explicitly unavailable while pinned dependencies require POSIX process, locking, and durability APIs. A
+fast dependency/import preflight gates expensive jobs, while a cache-free job builds every development manifest and
+project root. OS-scoped caches shorten other builds; job timeouts, concurrency cancellation, and uploaded diagnostics
+bound and explain failures. Release-gate jobs install pinned `gnatdoc_bin=26.0.0` and `gnatprove=15.1.0` Alire
+binaries instead of depending on runner-global tools. The repository checker validates the exact dependency lock
+against every workspace pin. Diagnostic logs are written outside the checkout so observation cannot change the source
+fingerprint under assessment.
 
 Build and run the gate from the repository root:
 
 ```text
+alr build --validation --stop-after=generation
 alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1
 tools/bin/check_phase_9
 ```

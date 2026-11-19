@@ -5,6 +5,15 @@ with Ada.Text_IO;
 with Project_Tools.Files;
 
 package body Improve_CI_Checks is
+   procedure Require (Path, Fragment : String) is
+   begin
+      if not Project_Tools.Files.File_Contains (Path, Fragment) then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error, "CI contract is missing from " & Path & ": " & Fragment);
+         raise Program_Error with "incomplete CI contract";
+      end if;
+   end Require;
+
    procedure Validate_Action_Pins is
    begin
       for Path_Value of Project_Tools.Files.List_Tree (".github", "*.yml") loop
@@ -41,4 +50,33 @@ package body Improve_CI_Checks is
          end;
       end loop;
    end Validate_Action_Pins;
+
+   procedure Validate_Workflow_Contracts is
+      type Manifest_List is array (Positive range <>) of Ada.Strings.Unbounded.Unbounded_String;
+      Manifests : constant Manifest_List :=
+        [Ada.Strings.Unbounded.To_Unbounded_String ("alire.toml"),
+         Ada.Strings.Unbounded.To_Unbounded_String ("alire.release.toml"),
+         Ada.Strings.Unbounded.To_Unbounded_String ("tests/alire.toml"),
+         Ada.Strings.Unbounded.To_Unbounded_String ("tests/alire.release.toml"),
+         Ada.Strings.Unbounded.To_Unbounded_String ("model_runner_runtime/alire.toml"),
+         Ada.Strings.Unbounded.To_Unbounded_String ("model_runner_runtime/alire.release.toml")];
+   begin
+      for Manifest of Manifests loop
+         Require (Ada.Strings.Unbounded.To_String (Manifest), "[available.'case(os)']");
+         Require (Ada.Strings.Unbounded.To_String (Manifest), "'linux|macos' = true");
+         Require (Ada.Strings.Unbounded.To_String (Manifest), "'...' = false");
+      end loop;
+      Require ("model_runner_runtime/improve_model_runner_runtime.gpr", "with ""model_runner_inference.gpr"";");
+      Require (".github/workflows/ci.yml", "dependency-preflight:");
+      Require (".github/workflows/ci.yml", "clean-room-build:");
+      Require (".github/workflows/ci.yml", "phase0/bin/contract_probe");
+      Require (".github/workflows/ci.yml", "macos-15-intel");
+      Require (".github/workflows/ci.yml", "cache-build-artifacts: ""false""");
+      Require (".github/actions/setup-workspace/action.yml", "gnatdoc_bin=26.0.0");
+      Require (".github/actions/setup-workspace/action.yml", "gnatprove=15.1.0");
+      Require (".github/workflows/ci.yml", "install-release-tools: ""true""");
+      Require (".github/workflows/release.yml", "install-release-tools: ""true""");
+      Require (".github/workflows/ci.yml", "RUNNER_TEMP/improve-ci-artifacts");
+      Require (".github/workflows/ci.yml", "path: ${{ runner.temp }}/improve-ci-artifacts");
+   end Validate_Workflow_Contracts;
 end Improve_CI_Checks;
