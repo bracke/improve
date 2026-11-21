@@ -69,6 +69,31 @@ package body Improve_CLI_Asset_Publication is
             end;
          end loop;
       end Discard_Backups;
+
+      procedure Recover_Backups is
+         Failures : Unbounded_String;
+      begin
+         for Index in reverse Paths'Range loop
+            declare
+               Path   : constant String := To_String (Paths (Index));
+               Backup : constant String := Backup_Path (Path);
+            begin
+               if Ada.Directories.Exists (Backup) then
+                  begin
+                     if not Replace_File (Backup, Path) then
+                        Record_Failure (Failures, Backup);
+                     end if;
+                  exception
+                     when others => Record_Failure (Failures, Backup);
+                  end;
+               end if;
+            end;
+         end loop;
+         if Length (Failures) > 0 then
+            raise Program_Error with
+              "could not recover interrupted CLI asset publication from: " & To_String (Failures);
+         end if;
+      end Recover_Backups;
    begin
       declare
          Outcome : constant Hostkit.Locks.Lock_Outcome :=
@@ -83,6 +108,7 @@ package body Improve_CLI_Asset_Publication is
             raise Program_Error with "could not lock CLI asset publication at " & Lock_Path;
          end if;
       end;
+      Recover_Backups;
       for Index in Paths'Range loop
          declare
             Path : constant String := To_String (Paths (Index));
@@ -95,7 +121,6 @@ package body Improve_CLI_Asset_Publication is
          declare
             Path : constant String := To_String (Paths (Index));
          begin
-            Require_Discard (Backup_Path (Path));
             Copy_File (Path, Backup_Path (Path));
             Backed_Up (Index) := True;
          end;

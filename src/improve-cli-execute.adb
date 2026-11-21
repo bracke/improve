@@ -9,7 +9,7 @@ begin
    Item := Parse (Arguments);
    declare
       Configuration : constant Improve.Config.Loaded_Configuration :=
-        Configuration_For (Arguments);
+        Configuration_For (Item);
       Settings : Improve.Config.Settings renames Configuration.Values;
    begin
       if not Item.Has_Format then Item.Format := Settings.Format; end if;

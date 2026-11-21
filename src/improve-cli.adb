@@ -299,9 +299,7 @@ package body Improve.CLI is
       return Message ("error.prefix", [Arg ("message", Rendered)]) & LF;
    end Diagnostic;
 
-   function Configuration_For
-     (Arguments : String_Vectors.Vector) return Improve.Config.Loaded_Configuration is
-      Item : constant Invocation := Parse (Arguments);
+   function Configuration_For (Item : Invocation) return Improve.Config.Loaded_Configuration is
    begin
       declare
          Result : Improve.Config.Loaded_Configuration :=
@@ -328,6 +326,10 @@ package body Improve.CLI is
          return Result;
       end;
    end Configuration_For;
+
+   function Configuration_For
+     (Arguments : String_Vectors.Vector) return Improve.Config.Loaded_Configuration is
+     (Configuration_For (Parse (Arguments)));
 
    function Execute
      (Arguments : String_Vectors.Vector;

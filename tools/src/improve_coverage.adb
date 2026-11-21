@@ -7,7 +7,6 @@ with Ada.Text_IO;
 with Ada_Quality.Checks;
 with Ada_Quality.Coverage;
 with Hostkit.Fs;
-with Hostkit.Host;
 with Improve;
 with Improve_Coverage_Units;
 with Improve_Overlay_Identities;
@@ -229,9 +228,7 @@ begin
          Separator : constant Natural := Ada.Strings.Fixed.Index (Digest, ":");
          Evidence_Dir : constant String := Project_Tools.Files.Join (Root, "coverage");
          Evidence : constant String := Project_Tools.Files.Join (Evidence_Dir, "gcov-summary.txt");
-         Process_Tag : constant String :=
-           Ada.Strings.Fixed.Trim (Integer'Image (Hostkit.Host.Own_Process_Id), Ada.Strings.Both);
-         Staged_Evidence : constant String := Evidence & ".improve-" & Process_Tag & ".tmp";
+         Staged_Evidence : constant String := Evidence & ".improve.tmp";
          Evidence_Text : constant String :=
            "Lines executed:" & Project_Tools.Gcov.Percent_Image (Summary) & " of " & Trim (Total) & ASCII.LF &
            "covered=" & Trim (Covered) & ASCII.LF &

@@ -28,21 +28,27 @@ procedure Check_All is
          Column : Natural := 0;
          Lines  : Natural := (if Text = "" then 0 else 1);
       begin
-         for C of Text loop
-            if C = Character'Val (10) then
-               Column := 0;
-               Lines := Lines + 1;
-            else
-               Column := Column + 1;
-               if Column = 121 then
-                  Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "line exceeds 120 columns: " & Path);
+         for Index in Text'Range loop
+            declare
+               C : constant Character := Text (Index);
+            begin
+               if C = Character'Val (10) then
+                  Column := 0;
+                  if Index < Text'Last then
+                     Lines := Lines + 1;
+                  end if;
+               else
+                  Column := Column + 1;
+                  if Column = 121 then
+                     Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "line exceeds 120 columns: " & Path);
+                     Failed := True;
+                  end if;
+               end if;
+               if C = Character'Val (9) then
+                  Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "tab character in source: " & Path);
                   Failed := True;
                end if;
-            end if;
-            if C = Character'Val (9) then
-               Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "tab character in source: " & Path);
-               Failed := True;
-            end if;
+            end;
          end loop;
          if Maximum_Lines > 0 and then Lines > Maximum_Lines then
             Ada.Text_IO.Put_Line

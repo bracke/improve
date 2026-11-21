@@ -125,6 +125,8 @@ procedure Check_CLI_Asset_Publication is
          end;
       end loop;
    end Assert_Old_And_Clean;
+
+   procedure Check_Recovery_Retry is separate;
 begin
    Write_Old_Contents;
    begin
@@ -195,6 +197,7 @@ begin
          end if;
       end;
    end loop;
+   Check_Recovery_Retry;
    Reset_Fixture;
 
    declare
