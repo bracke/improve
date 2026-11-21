@@ -1,5 +1,5 @@
 --  Deterministic generated command-line integration assets.
-package Improve.CLI_Assets is
+private package Improve.CLI_Assets is
    function Completion (Shell : String) return String;
    --  Generate completion source for one supported shell.
    --  @param Shell `bash`, `zsh`, or `fish`.

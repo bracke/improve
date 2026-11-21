@@ -8,6 +8,8 @@ begin
          Origin       : Unbounded_String := To_Unbounded_String
            (Origin_Of (Plan, Spec, To_String (Contract), Publication_Namespace));
          Harness_Id   : Unbounded_String;
+         Harness_State : Unbounded_String;
+         Core_State    : Improve.Harness_States.State;
          Was_Mapped   : Boolean := False;
          Predecessors : constant Improve.Model.UString_Vectors.Vector := Predecessors_Of (Spec);
       begin
@@ -46,15 +48,21 @@ begin
             Harness_Id := To_Unbounded_String
               (Existing_By_Origin (To_String (Origin), Spec, Kind, To_String (Contract), Predecessors));
          end if;
+         if Length (Harness_Id) > 0 then
+            Harness_State := To_Unbounded_String (Tasks.State_Of (Store, To_String (Harness_Id)));
+            Core_State := Core_State_Of (To_String (Harness_Id), To_String (Harness_State));
+         elsif Dry_Run then
+            Harness_State := To_Unbounded_String ("candidate");
+            Core_State := Improve.Harness_States.Parse_Core ("candidate");
+         end if;
          Result.Tasks.Append
            (Published_Task'
               (Improve_Id => Spec.Id,
                Harness_Id => Harness_Id,
                Origin     => Origin,
                Contract   => Contract,
-               State      => To_Unbounded_String
-                 (if Length (Harness_Id) = 0 then (if Dry_Run then "candidate" else "")
-                  else Tasks.State_Of (Store, To_String (Harness_Id))),
+               State      => Harness_State,
+               Core_State => Core_State,
                Recovered  => Length (Harness_Id) > 0));
       end;
    end loop;

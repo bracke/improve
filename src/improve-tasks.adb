@@ -1,11 +1,13 @@
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Strings.Hash;
+with Model_Runner.Framework.Tasks;
 
 package body Improve.Tasks is
    use Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
    use type Improve.Model.Quality_Outcome;
    use type Improve.Model.Verification_Scope;
+   use type Model_Runner.Framework.Tasks.Core_State;
 
    package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (Key_Type => String, Element_Type => Positive,
@@ -40,31 +42,50 @@ package body Improve.Tasks is
 
    function Status (Value : Task_View) return Operational_Status is
       Harness : constant String := To_String (Value.Harness_State);
+      Core    : constant Improve.Harness_States.State := Value.Harness_Core_State;
       Current : constant Boolean := Value.Freshness = Freshness_Current;
    begin
-      if Current and then Value.Quality = Improve.Model.Verified and then
-        Harness in "complete" | "verification"
+      if Harness = "" then
+         if Improve.Harness_States.Is_Known (Core) then
+            raise Data_Error with "unpublished task has a cached harness core state";
+         end if;
+         return Proposed;
+      elsif not Improve.Harness_States.Is_Known (Core) then
+         raise Data_Error with "cached harness task has no normalized core state";
+      elsif not Improve.Harness_States.Consistent (Harness, Core) then
+         raise Data_Error with "cached harness task state does not match its normalized core state";
+      elsif Current and then Value.Quality = Improve.Model.Verified and then
+        Improve.Harness_States.Core_Value (Core) in
+          Model_Runner.Framework.Tasks.Complete | Model_Runner.Framework.Tasks.Verification
       then
          return Verified;
       elsif Current and then Value.Quality = Improve.Model.Regressed then return Regressed;
       elsif Current and then Value.Quality = Improve.Model.Superseded then return Superseded;
-      elsif Harness = "" then return Proposed;
-      elsif Harness = "running" then return In_Progress;
-      elsif Harness = "blocked" then return Blocked;
-      elsif Harness = "failed" then return Failed;
-      elsif Harness = "cancelled" then return Cancelled;
-      elsif Harness = "rejected" then return Rejected;
-      elsif Harness in "complete" | "verification" and then Current then
+      elsif Improve.Harness_States.Core_Value (Core) = Model_Runner.Framework.Tasks.Running then return In_Progress;
+      elsif Improve.Harness_States.Core_Value (Core) = Model_Runner.Framework.Tasks.Blocked then return Blocked;
+      elsif Improve.Harness_States.Core_Value (Core) = Model_Runner.Framework.Tasks.Failed then return Failed;
+      elsif Improve.Harness_States.Core_Value (Core) = Model_Runner.Framework.Tasks.Cancelled then return Cancelled;
+      elsif Improve.Harness_States.Core_Value (Core) = Model_Runner.Framework.Tasks.Rejected then return Rejected;
+      elsif Improve.Harness_States.Core_Value (Core) in
+        Model_Runner.Framework.Tasks.Complete | Model_Runner.Framework.Tasks.Verification
+        and then Current
+      then
          case Value.Quality is
             when Improve.Model.Partially_Resolved => return Partially_Resolved;
             when Improve.Model.Still_Failing => return Still_Failing;
             when Improve.Model.Inconclusive => return Inconclusive;
             when others => return Awaiting_Verification;
          end case;
-      elsif Harness in "complete" | "verification" then
+      elsif Improve.Harness_States.Core_Value (Core) in
+        Model_Runner.Framework.Tasks.Complete | Model_Runner.Framework.Tasks.Verification
+      then
          return Awaiting_Verification;
-      else
+      elsif Improve.Harness_States.Core_Value (Core) in
+        Model_Runner.Framework.Tasks.Candidate | Model_Runner.Framework.Tasks.Accepted
+      then
          return Published;
+      else
+         raise Program_Error with "validated harness core state is not classified";
       end if;
    end Status;
 
@@ -153,6 +174,7 @@ package body Improve.Tasks is
                begin
                   View.Harness_Id := Published.Harness_Task_Id;
                   View.Harness_State := Published.State;
+                  View.Harness_Core_State := Published.Core_State;
                end;
             end if;
             if Latest_Verification.Contains (Identity) then

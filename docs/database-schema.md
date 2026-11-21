@@ -1,6 +1,6 @@
 # Improve state schema
 
-Improve owns schema version 7 of its state database. It uses the existing `database` crate and its typed rows,
+Improve owns schema version 8 of its state database. It uses the existing `database` crate and its typed rows,
 transactions, write-ahead recovery, process locking, and read-only open mode. Ada Quality and model runner state are
 never stored here.
 
@@ -75,7 +75,7 @@ project records retain the immutable plan fingerprint. Thus two revisions can be
 without conflicting, while an identical evaluation remains idempotent.
 
 Read-only commands use `Database.Open_Read_Only`. They do not create a missing file, register schemas, migrate state, or
-perform recovery. Writable open initializes a missing version-7 database and upgrades older supported state before
+perform recovery. Writable open initializes a missing version-8 database and upgrades older supported state before
 writing. The version-3 migration backfills indexed plan parents for publication and verification records; the version-4
 migration builds the logical-task history index. Version 5 links plans and baselines to database-qualified local
 project references and validates duplicated provenance so
@@ -88,6 +88,12 @@ logical identity counters from the greatest existing identity in each namespace.
 Version-5 migration bounds plan count, revision count, and payload size before updating data. Summary and full-plan
 reads use the same normalized project and baseline relationships; duplicated revision provenance remains an audited
 consistency check rather than a second authority.
+
+Schema version 8 preserves both the raw model_runner task state and its normalized core meaning. Existing core states
+are migrated directly; an older extension state keeps its raw value and remains unavailable for operational
+classification until reconciliation resolves its configured meaning through model_runner's typed API. New and
+reconciled publication writes accept only built-in states or values resolved through that typed API; reconstructing a
+raw/core pair from Improve persistence does not grant authority to create or change a publication mapping.
 
 Verification evidence is append-only by evaluation scope and completed assessment. Task, complete-plan, and
 complete-project records use distinct identities. Repeating an evaluation at the same scope is idempotent; a

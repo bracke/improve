@@ -32,6 +32,11 @@ begin
             raise Data_Error with "publication does not match the persisted task contract";
          elsif Length (Value.Harness_Task_Id) = 0 or else Length (Value.Origin) = 0 then
             raise Data_Error with "publication mapping is incomplete";
+         elsif not Improve.Harness_States.Consistent (To_String (Value.State), Value.Core_State)
+         then
+            raise Data_Error with "publication mapping has invalid harness state";
+         elsif not Improve.Harness_States.Authoritative_For_Write (Value.Core_State) then
+            raise Data_Error with "publication mapping state was not resolved by model_runner";
          end if;
       end;
    end loop;
@@ -75,6 +80,7 @@ begin
              Harness_Id    => Value.Harness_Task_Id,
              Origin        => Value.Origin,
              Contract      => Value.Contract,
+             Core_State    => To_Unbounded_String (Improve.Harness_States.Image (Value.Core_State)),
              Plan_Revision => Value.Plan_Revision));
       begin
          if Existing and then To_String (Stored.Element (Key)) /= Expected then

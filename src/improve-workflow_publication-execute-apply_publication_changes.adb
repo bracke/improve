@@ -111,6 +111,7 @@ begin
             Require_Ok (Status, "create native harness task " & To_String (Spec.Id));
             Result.Tasks (Index).Harness_Id := Id;
             Result.Tasks (Index).State := To_Unbounded_String ("candidate");
+            Result.Tasks (Index).Core_State := Improve.Harness_States.Parse_Core ("candidate");
             Remaining := Remaining - 1;
             for Dependent of Dependents (Index) loop
                Pending (Dependent) := Pending (Dependent) - 1;
@@ -130,8 +131,13 @@ begin
    end if;
    if not Dry_Run then
       for Index in 1 .. Natural (Result.Tasks.Length) loop
-         Result.Tasks (Index).State :=
-           To_Unbounded_String (Tasks.State_Of (Store, To_String (Result.Tasks (Index).Harness_Id)));
+         declare
+            Harness_Id : constant String := To_String (Result.Tasks (Index).Harness_Id);
+            Raw        : constant String := Tasks.State_Of (Store, Harness_Id);
+         begin
+            Result.Tasks (Index).State := To_Unbounded_String (Raw);
+            Result.Tasks (Index).Core_State := Core_State_Of (Harness_Id, Raw);
+         end;
       end loop;
    end if;
 end Apply_Publication_Changes;

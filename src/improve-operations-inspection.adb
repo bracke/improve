@@ -68,7 +68,7 @@ package body Improve.Operations.Inspection is
               (Selected,
                Improve.Config.Quality_Severity (Settings.Minimum_Severity),
                Settings.Allow_Investigation_Tasks,
-               Positive'Min (Settings.Maximum_Assessment_Findings, Settings.Maximum_Output_Items),
+               Settings.Maximum_Assessment_Findings,
                Settings.Maximum_Normalized_Finding_Bytes);
          end;
       end;

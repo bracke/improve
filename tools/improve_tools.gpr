@@ -1,6 +1,7 @@
 with "../improve.gpr";
 with "ada_quality";
 with "project_tools";
+with "hostkit";
 
 project Improve_Tools is
    for Languages use ("Ada");
@@ -8,7 +9,8 @@ project Improve_Tools is
    for Object_Dir use "obj";
    for Exec_Dir use "bin";
    for Main use
-     ("check_all.adb", "check_phase_9.adb", "check_release_candidate.adb", "improve_coverage.adb");
+     ("check_all.adb", "check_cli_asset_publication.adb", "check_phase_9.adb",
+      "check_release_candidate.adb", "generate_cli_surface.adb", "improve_coverage.adb");
    for Create_Missing_Dirs use "True";
 
    package Compiler is

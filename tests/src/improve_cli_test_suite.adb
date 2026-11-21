@@ -1,4 +1,5 @@
 with Ada.Exceptions;
+with Ada.Environment_Variables;
 with Ada.Real_Time;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
@@ -13,8 +14,9 @@ with Improve.Results;
 with Improve.State;
 with Improve.Tasks;
 with Project_Tools.Files;
+with Project_Tools.Processes;
+with Project_Tools.Test_Fixtures;
 with Terminal_Styles;
-
 package body Improve_CLI_Test_Suite is
    use Ada.Strings.Unbounded;
    use AUnit.Assertions;
@@ -24,17 +26,14 @@ package body Improve_CLI_Test_Suite is
    use type Improve.Config.Color_Mode;
    use type Improve.Config.Output_Format;
    use type Terminal_Styles.Color_Policy;
-
    type Test_Id is
      (Parse_Plan, Reject_Duplicate, Reject_Conflict, Reject_Missing_Project, Reject_Command_Option,
       JSON_Disables_Color, Terminal_Text_Sanitized, Styling_Concurrency, Help_Smoke, Version_Smoke,
       Quiet_Smoke, Verbose_Smoke, Config_Smoke, Extended_Parse, Assets_Smoke, Invalid_Smoke);
-
    type Case_Test (Id : Test_Id) is new AUnit.Simple_Test_Cases.Test_Case with null record;
    type Case_Access is access all Case_Test;
 
    overriding procedure Run_Test (Item : in out Case_Test);
-
    overriding function Name (Item : Case_Test) return AUnit.Message_String is
      (AUnit.Format ("IMP_" & Test_Id'Image (Item.Id)));
 
@@ -54,7 +53,6 @@ package body Improve_CLI_Test_Suite is
       Result.Append (Text (Start .. Text'Last));
       return Result;
    end Args;
-
    procedure Must_Reject (Text, Expected : String) is
       Rejected : Boolean := False;
    begin
@@ -71,6 +69,130 @@ package body Improve_CLI_Test_Suite is
       end;
       Assert (Rejected, "expected rejection containing '" & Expected & "'");
    end Must_Reject;
+   function Shell_Syntax_Valid (Shell, Script : String) return Boolean is
+      Path : constant String := Project_Tools.Processes.Locate_Command (Shell);
+      Required : constant Boolean :=
+        Ada.Environment_Variables.Value ("IMPROVE_REQUIRE_COMPLETION_SHELLS", "") = "1";
+   begin
+      if Path = "" then
+         return not Required;
+      end if;
+      declare
+         Probe : constant Project_Tools.Processes.Captured_Process :=
+           Project_Tools.Processes.Capture_Command
+             (Path,
+              Project_Tools.Processes.Arguments
+                ([Project_Tools.Processes.Argument ("-n"),
+                  Project_Tools.Processes.Argument ("-c"),
+                  Project_Tools.Processes.Argument (Script)]),
+              Err_To_Out => True);
+      begin
+         return Probe.Status = 0;
+      end;
+   end Shell_Syntax_Valid;
+   function Fish_Completion_Valid (Script : String) return Boolean is
+      Path : constant String := Project_Tools.Processes.Locate_Command ("fish");
+      Required : constant Boolean :=
+        Ada.Environment_Variables.Value ("IMPROVE_REQUIRE_COMPLETION_SHELLS", "") = "1";
+   begin
+      if Path = "" then
+         return not Required;
+      end if;
+      declare
+         Probe : constant Project_Tools.Processes.Captured_Process :=
+           Project_Tools.Processes.Capture_Command
+             (Path,
+              Project_Tools.Processes.Arguments
+                ([Project_Tools.Processes.Argument ("-c"),
+                  Project_Tools.Processes.Argument
+                    (Script & ASCII.LF &
+                     "for item in (complete -C 'improve --format '); echo format:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve audit '); echo audit:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve config '); echo config:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve help '); echo help:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve config --s'); echo config-option:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve audit verify --s'); echo audit-option:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve plan show PLAN-1 --l'); " &
+                     "echo plan-option:$item; end" & ASCII.LF &
+                     "for item in (complete -C 'improve --project completion '); echo collision:$item; end")]),
+              Err_To_Out => True);
+         Output : constant String := To_String (Probe.Output);
+      begin
+         return Probe.Status = 0 and then
+           Ada.Strings.Fixed.Index (Output, "format:terminal") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "format:json") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "format:markdown") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "format:dot") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "audit:verify") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "config:validate") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "config:explain") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "help:projects") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "config-option:--state") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "config-option:--signing-key") = 0 and then
+           Ada.Strings.Fixed.Index (Output, "audit-option:--signing-key") = 0 and then
+           Ada.Strings.Fixed.Index (Output, "plan-option:--limit") = 0 and then
+           Ada.Strings.Fixed.Index (Output, "collision:projects") > 0 and then
+           Ada.Strings.Fixed.Index (Output, "collision:bash") = 0;
+      end;
+   end Fish_Completion_Valid;
+
+   function Zsh_Completion_Valid (Script : String) return Boolean is
+      Path : constant String := Project_Tools.Processes.Locate_Command ("zsh");
+      Required : constant Boolean :=
+        Ada.Environment_Variables.Value ("IMPROVE_REQUIRE_COMPLETION_SHELLS", "") = "1";
+   begin
+      if Path = "" then
+         return not Required;
+      end if;
+      declare
+         Root : constant String := Project_Tools.Test_Fixtures.Fresh_Temp_Dir ("improve-zsh-completion");
+      begin
+         begin
+            Project_Tools.Files.Write_Raw_File (Project_Tools.Files.Join (Root, "_improve"), Script);
+            declare
+               Probe : constant Project_Tools.Processes.Captured_Process :=
+                 Project_Tools.Processes.Capture_Command
+                   (Path,
+                    Project_Tools.Processes.Arguments
+                      ([Project_Tools.Processes.Argument ("-f"),
+                        Project_Tools.Processes.Argument ("-c"),
+                        Project_Tools.Processes.Argument
+                          ("zmodload zsh/zpty || exit 1" & ASCII.LF &
+                           "zpty improve_probe env PS1=IMPROVE_READY " & Path & " -f || exit 1" & ASCII.LF &
+                           "zpty -r improve_probe chunk '*IMPROVE_READY*' || exit 1" & ASCII.LF &
+                           "zpty -w improve_probe 'fpath=(" & Root & " $fpath); autoload -Uz compinit; " &
+                           "compinit -i -D; setopt AUTO_LIST LIST_AMBIGUOUS'" & ASCII.LF &
+                           "zpty -r improve_probe chunk '*IMPROVE_READY*' || exit 1" & ASCII.LF &
+                           "zpty -w improve_probe $'improve plan \t\t\n'" & ASCII.LF &
+                           "zpty -r improve_probe chunk '*IMPROVE_READY*' || exit 1" & ASCII.LF &
+                           "print -r -- ""$chunk""" & ASCII.LF &
+                           "zpty -w improve_probe $'improve config --s\t\t\n'" & ASCII.LF &
+                           "zpty -r improve_probe chunk '*IMPROVE_READY*' || exit 1" & ASCII.LF &
+                           "print -r -- ""$chunk""" & ASCII.LF &
+                           "zpty -w improve_probe $'improve audit verify --s\t\t\n'" & ASCII.LF &
+                           "zpty -r improve_probe chunk '*IMPROVE_READY*' || exit 1" & ASCII.LF &
+                           "print -r -- ""$chunk""" & ASCII.LF &
+                           "zpty -w improve_probe exit")]),
+                    Err_To_Out => True);
+               Output : constant String := To_String (Probe.Output);
+               Valid  : constant Boolean :=
+                 Probe.Status = 0 and then
+                 Ada.Strings.Fixed.Index (Output, "list") > 0 and then
+                 Ada.Strings.Fixed.Index (Output, "approve") > 0 and then
+                 Ada.Strings.Fixed.Index (Output, "graph") > 0 and then
+                 Ada.Strings.Fixed.Index (Output, "--state") > 0 and then
+                 Ada.Strings.Fixed.Index (Output, "--signing-key") = 0;
+            begin
+               Project_Tools.Test_Fixtures.Cleanup (Root);
+               return Valid;
+            end;
+         exception
+            when others =>
+               Project_Tools.Test_Fixtures.Cleanup (Root);
+               return False;
+         end;
+      end;
+   end Zsh_Completion_Valid;
 
    procedure Check_Styling_Concurrency is
       protected type Start_Gate is
@@ -204,7 +326,6 @@ package body Improve_CLI_Test_Suite is
       Exercise ("version|--format|json", False, "JSON rendering");
       Exercise ("config|--format|terminal|--color|never", True, "terminal rendering");
    end Check_Styling_Concurrency;
-
    overriding procedure Run_Test (Item : in out Case_Test) is
    begin
       case Item.Id is
@@ -288,7 +409,13 @@ package body Improve_CLI_Test_Suite is
             begin
                Assert
                  (Result.Exit_Code = 0 and then Broken_Config.Exit_Code = 0 and then
-                  Ada.Strings.Fixed.Index (To_String (Result.Output), "Usage:") > 0,
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), "Usage:") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), "Pagination limit and cursor") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), "Signing key file") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Result.Output), "Validate the pin-free release candidate") > 0 and then
+                  Ada.Strings.Fixed.Index
+                    (To_String (Result.Output), "terminal, json, markdown, or dot") > 0,
                   "help depended on operational configuration");
             end;
          when Version_Smoke =>
@@ -299,7 +426,7 @@ package body Improve_CLI_Test_Suite is
             begin
                Assert
                  (Result.Exit_Code = 0 and then Broken_Config.Exit_Code = 0 and then
-                  Ada.Strings.Fixed.Index (To_String (Result.Output), """schema_version"":1") > 0,
+                  Ada.Strings.Fixed.Index (To_String (Result.Output), """schema_version"":2") > 0,
                   "version output depended on operational configuration or was not versioned");
             end;
          when Quiet_Smoke =>
@@ -358,7 +485,7 @@ package body Improve_CLI_Test_Suite is
                Disabled_Config : constant Improve.Config.Loaded_Configuration :=
                  Improve.CLI.Configuration_For (Args ("version|--no-agent"));
                Verify_Audit : constant Improve.CLI.Invocation :=
-                 Improve.CLI.Parse (Args ("audit|verify|bundle.json"));
+                 Improve.CLI.Parse (Args ("audit|verify|bundle.json|--verification-key|release.pub"));
             begin
                Assert
                  (Diff.Plan_Action = Improve.CLI.Diff_Plan and then Diff.Against_Revision = 1 and then
@@ -369,6 +496,7 @@ package body Improve_CLI_Test_Suite is
                   Audit.Revision = 2 and then Graph.Plan_Action = Improve.CLI.Graph_Plan and then
                   Graph.Format = Improve.Config.DOT_Format and then Page.Limit = 25 and then Page.Cursor = 50 and then
                   Release.Release_Check and then Verify_Audit.Audit_Verify and then
+                  Verify_Audit.Has_Verification_Key and then
                   Agent.Has_Agent_Model and then Agent.Has_Agent_Model_Path and then
                   Agent.Has_Agent_Model_SHA256 and then Agent.Has_Progress and then
                   Agent.Progress = Improve.CLI.Progress_Always and then Agent_Config.Values.Agent_Enabled and then
@@ -381,15 +509,63 @@ package body Improve_CLI_Test_Suite is
                Must_Reject ("plan|--no-agent|--agent-model|fixture", "cannot be combined");
                Must_Reject ("plan|--progress|sometimes", "invalid --progress");
                Must_Reject ("plan|--quiet|--progress|always", "mutually exclusive");
+               Must_Reject ("audit|PLAN-1|--verification-key|release.pub", "audit verify");
+               Must_Reject ("config|show validate", "unexpected argument");
+               Must_Reject ("completion|bash zsh", "unexpected argument");
+               Must_Reject ("--format|=|json|version", "invalid --format");
             end;
          when Assets_Smoke =>
             declare
+               Root_Prefix : constant String :=
+                 (if Project_Tools.Files.File_Exists ("completions/improve.bash") then "" else "../");
                Completion : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|bash"));
                Zsh        : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|zsh"));
                Fish       : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("completion|fish"));
                Manpage    : constant Improve.CLI.Outcome := Improve.CLI.Execute (Args ("manpage"));
                Markdown   : constant Improve.CLI.Outcome :=
                  Improve.CLI.Execute (Args ("version|--format|markdown"));
+               Bash_Text  : constant String := To_String (Completion.Output);
+               Zsh_Text   : constant String := To_String (Zsh.Output);
+               Fish_Text  : constant String := To_String (Fish.Output);
+               Zsh_Syntax_Valid : constant Boolean := Shell_Syntax_Valid ("zsh", Zsh_Text);
+               Fish_Syntax_Valid : constant Boolean := Shell_Syntax_Valid ("fish", Fish_Text);
+               Zsh_Behavior_Valid : constant Boolean := Zsh_Completion_Valid (Zsh_Text);
+               Fish_Behavior_Valid : constant Boolean := Fish_Completion_Valid (Fish_Text);
+               Bash_Path  : constant String := Project_Tools.Processes.Locate_Command ("bash");
+               Probe      : constant Project_Tools.Processes.Captured_Process :=
+                 Project_Tools.Processes.Capture_Command
+                   (Bash_Path,
+                    Project_Tools.Processes.Arguments
+                      ([Project_Tools.Processes.Argument ("-c"),
+                        Project_Tools.Processes.Argument
+                          (Bash_Text & ASCII.LF &
+                           "COMP_WORDS=(improve --format json plan ''); COMP_CWORD=4; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'plan:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve findings ''); COMP_CWORD=2; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'findings:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve --project completion ''); COMP_CWORD=3; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'collision:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve --format=j); COMP_CWORD=1; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'inline:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve --format = j); COMP_CWORD=3; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'split:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve config --s); COMP_CWORD=2; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do " &
+                           "printf 'config-option:%s\n' ""$item""; done" & ASCII.LF &
+                           "COMP_WORDS=(improve config --severity ''); COMP_CWORD=3; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'config-value:%s\n' ""$item""; done" &
+                           ASCII.LF &
+                           "COMP_WORDS=(improve audit verify --s); COMP_CWORD=3; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'audit-option:%s\n' ""$item""; done" &
+                           ASCII.LF &
+                           "COMP_WORDS=(improve plan show PLAN-1 --l); COMP_CWORD=4; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'plan-option:%s\n' ""$item""; done" &
+                           ASCII.LF &
+                           "compopt() { printf 'compopt:%s\n' ""$*""; }" & ASCII.LF &
+                           "compgen() { printf '%s\n' 'file with space'; }" & ASCII.LF &
+                           "COMP_WORDS=(improve --config ''); COMP_CWORD=2; _improve_complete" & ASCII.LF &
+                           "for item in ""${COMPREPLY[@]}""; do printf 'file:%s\n' ""$item""; done")]),
+                    Err_To_Out => True);
             begin
                Assert
                  (Completion.Exit_Code = 0 and then
@@ -398,8 +574,53 @@ package body Improve_CLI_Test_Suite is
                   Ada.Strings.Fixed.Index (To_String (Fish.Output), "complete -c") > 0 and then
                   Manpage.Exit_Code = 0 and then
                   Ada.Strings.Fixed.Index (To_String (Manpage.Output), ".TH IMPROVE") > 0 and then
+                  To_String (Completion.Output) =
+                    Project_Tools.Files.Read_Raw_File (Root_Prefix & "completions/improve.bash") and then
+                  To_String (Zsh.Output) =
+                    Project_Tools.Files.Read_Raw_File (Root_Prefix & "completions/_improve") and then
+                  To_String (Fish.Output) =
+                    Project_Tools.Files.Read_Raw_File (Root_Prefix & "completions/improve.fish") and then
+                  To_String (Manpage.Output) =
+                    Project_Tools.Files.Read_Raw_File (Root_Prefix & "docs/improve.1") and then
+                  Ada.Strings.Fixed.Index (Zsh_Text, "--against-revision") > 0 and then
+                  Ada.Strings.Fixed.Index (Fish_Text, "-l against-revision") > 0 and then
+                  Ada.Strings.Fixed.Index (Zsh_Text, "--dry-run") > 0 and then
+                  Ada.Strings.Fixed.Index (Fish_Text, "-l dry-run") > 0 and then
+                  Zsh_Syntax_Valid and then Fish_Syntax_Valid and then
+                  Zsh_Behavior_Valid and then Fish_Behavior_Valid and then
                   Ada.Strings.Fixed.Index (To_String (Markdown.Output), "# Improve version") = 1,
-                  "generated CLI assets or Markdown output are invalid");
+                  "generated CLI assets drifted from committed artifacts or Markdown output is invalid");
+               Assert
+                 (Bash_Path /= "" and then Probe.Status = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "plan:list") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "findings:list") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "collision:projects") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "collision:bash") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "inline:--format=json") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "split:json") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "compopt:-o filenames") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "file:file with space") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "config-option:--state") > 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "config-option:--signing-key") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "config-value:critical") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "audit-option:--signing-key") = 0 and then
+                  Ada.Strings.Fixed.Index (To_String (Probe.Output), "plan-option:--limit") = 0,
+                  "Bash completion did not locate an option-displaced command or leaked plan operations: " &
+                  To_String (Probe.Output));
+               Assert
+                 (Ada.Strings.Fixed.Index (Bash_Text, "unresolved") > 0 and then
+                  Ada.Strings.Fixed.Index (Zsh_Text, "unresolved") > 0 and then
+                  Ada.Strings.Fixed.Index (Fish_Text, "unresolved") > 0,
+                  "completion assets omitted the aggregate unresolved task status");
+               for Status in Improve.Tasks.Operational_Status loop
+                  declare Value : constant String := Improve.Tasks.Image (Status); begin
+                     Assert
+                       (Ada.Strings.Fixed.Index (Bash_Text, Value) > 0 and then
+                        Ada.Strings.Fixed.Index (Zsh_Text, Value) > 0 and then
+                        Ada.Strings.Fixed.Index (Fish_Text, Value) > 0,
+                        "completion assets omitted task status " & Value);
+                  end;
+               end loop;
             end;
          when Invalid_Smoke =>
             declare
@@ -416,7 +637,6 @@ package body Improve_CLI_Test_Suite is
             end;
       end case;
    end Run_Test;
-
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin

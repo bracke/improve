@@ -12,6 +12,7 @@ package Improve.Persistence_Records is
       Harness_Id    : UString;
       Origin        : UString;
       Contract      : UString;
+      Core_State    : UString;
       Plan_Revision : Positive := 1;
    end record;
    --  Typed payload stored for one native task mapping.
@@ -19,6 +20,7 @@ package Improve.Persistence_Records is
    --  @field Harness_Id Native model_runner task identity.
    --  @field Origin Authenticated Improve publication origin.
    --  @field Contract Dependency-qualified execution contract.
+   --  @field Core_State Normalized model_runner core task state, or empty in a legacy payload.
    --  @field Plan_Revision Immutable plan revision that published the mapping.
 
    function Encode_Publication (Value : Publication_Data) return String;

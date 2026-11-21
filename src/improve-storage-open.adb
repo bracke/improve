@@ -141,6 +141,10 @@ begin
             Migrate_To_Version_7 (Item, Metadata, Limits);
             Item.Schema_Version := 7;
          end if;
+         if Item.Schema_Version < 8 and then Writable then
+            Migrate_To_Version_8 (Item, Metadata, Limits);
+            Item.Schema_Version := 8;
+         end if;
          if Item.Schema_Version >= 6 then
             Item.Store_Id := To_Unbounded_String (Field (S (Metadata.Payload), "store_id"));
             if Length (Item.Store_Id) = 0 then

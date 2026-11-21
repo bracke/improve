@@ -48,7 +48,8 @@ contain control characters. Configuration tables and settings may each be declar
 
 Command-line configuration, database, state, project, format, and color values override defaults where applicable.
 Read-only commands do not create, migrate, recover, or repair an external database.
-`output.format` and `--format` accept `terminal`, `json`, or `markdown`. Markdown and JSON always disable terminal color.
+`output.format` and `--format` accept `terminal`, `json`, or `markdown`. Markdown and JSON always disable terminal
+color.
 
 Operational output is bounded by `output.maximum_output_items`, which defaults to 10,000 and may not exceed
 100,000. Persisted history examined or appended by one operation is independently bounded by

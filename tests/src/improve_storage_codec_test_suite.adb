@@ -78,6 +78,7 @@ package body Improve_Storage_Codec_Test_Suite is
             Harness_Id    => To_Unbounded_String ("TASK-001"),
             Origin        => To_Unbounded_String ("improve:test"),
             Contract      => To_Unbounded_String ("contract"),
+            Core_State    => To_Unbounded_String ("accepted"),
             Plan_Revision => 2);
          Decoded : constant Improve.Persistence_Records.Publication_Data :=
            Improve.Persistence_Records.Decode_Publication

@@ -145,6 +145,21 @@ begin
       Limits.Maximum_History := 10;
       Saved := Improve.Storage.Save (Store, Large_Plan, Limits);
       History_Records (Saved.Plan, Mappings, Evidence);
+      declare
+         Forged : Improve.State.Publication_Vectors.Vector := Mappings;
+      begin
+         Forged (Forged.First_Index).State := To_Unbounded_String ("parked");
+         Forged (Forged.First_Index).Core_State :=
+           Improve.Harness_States.Persistence.Restore ("parked", "complete");
+         Rejected := False;
+         begin
+            Improve.Storage.Record_Publications
+              (Store, To_String (Saved.Plan.Plan_Id), Forged, Limits);
+         exception
+            when Improve.Data_Error => Rejected := True;
+         end;
+         Assert (Rejected, "publication recording accepted a reconstructed extension-state mapping");
+      end;
       Limits.Maximum_Text_Bytes := 512;
       Rejected := False;
       begin

@@ -47,6 +47,28 @@ package Improve.Config is
    --  @enum Color_Auto Enable color only for a suitable terminal.
    --  @enum Color_Always Force terminal color.
    --  @enum Color_Never Disable terminal color.
+
+   function Image (Value : Output_Format) return String;
+   --  Return the stable CLI and configuration spelling of an output format.
+   --  @param Value Output format.
+   --  @return Stable lowercase spelling.
+
+   function Parse_Output_Format (Text : String; Value : out Output_Format) return Boolean;
+   --  Parse one stable output-format spelling.
+   --  @param Text Candidate lowercase spelling.
+   --  @param Value Parsed output format, or Terminal_Format when parsing fails.
+   --  @return True when Text is a supported output format.
+
+   function Image (Value : Color_Mode) return String;
+   --  Return the stable CLI and configuration spelling of a color mode.
+   --  @param Value Color mode.
+   --  @return Stable lowercase spelling.
+
+   function Parse_Color_Mode (Text : String; Value : out Color_Mode) return Boolean;
+   --  Parse one stable color-mode spelling.
+   --  @param Text Candidate lowercase spelling.
+   --  @param Value Parsed color mode, or Color_Auto when parsing fails.
+   --  @return True when Text is a supported color mode.
    type Severity_Level is (Info, Low, Medium, High, Critical);
    --  Minimum finding severity accepted by planning.
    --  @enum Info Informational findings.
@@ -54,6 +76,17 @@ package Improve.Config is
    --  @enum Medium Medium-severity findings.
    --  @enum High High-severity findings.
    --  @enum Critical Critical findings.
+
+   function Image (Value : Severity_Level) return String;
+   --  Return the stable lowercase spelling of a severity level.
+   --  @param Value Severity level.
+   --  @return Stable lowercase spelling.
+
+   function Parse_Severity_Level (Text : String; Value : out Severity_Level) return Boolean;
+   --  Parse one stable severity spelling.
+   --  @param Text Candidate lowercase spelling.
+   --  @param Value Parsed severity, or Info when parsing fails.
+   --  @return True when Text is a supported severity.
    type Selection_Mode is (Latest_Completed);
    --  Default assessment selection policy.
    --  @enum Latest_Completed Greatest successfully completed run identity.

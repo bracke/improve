@@ -75,6 +75,7 @@ package body Improve.Operations.Reconciliation is
                            Origin          => Value.Origin,
                            Contract        => Value.Contract,
                            State           => Value.State,
+                           Core_State      => Value.Core_State,
                            Plan_Revision   => Revision));
                   end loop;
                end;

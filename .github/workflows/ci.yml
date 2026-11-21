@@ -64,9 +64,16 @@ jobs:
       - uses: ./improve/.github/actions/setup-workspace
         with:
           install-release-tools: "true"
+      - name: Install completion validation shells
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes fish zsh
       - name: Run Phase 9 release gate
         working-directory: improve
         shell: bash
+        env:
+          IMPROVE_REQUIRE_COMPLETION_SHELLS: "1"
         run: |
           mkdir -p "$RUNNER_TEMP/improve-ci-artifacts"
           set -o pipefail
@@ -74,6 +81,8 @@ jobs:
             tee "$RUNNER_TEMP/improve-ci-artifacts/config-generation.log"
           alr exec -- gprbuild -P tools/improve_tools.gpr -p -j1 2>&1 |
             tee "$RUNNER_TEMP/improve-ci-artifacts/tools-build.log"
+          (cd tests && ../tools/bin/check_all) 2>&1 |
+            tee "$RUNNER_TEMP/improve-ci-artifacts/check-all-subdirectory.log"
           tools/bin/check_phase_9 2>&1 | tee "$RUNNER_TEMP/improve-ci-artifacts/phase-9.log"
       - name: Upload failure diagnostics
         if: failure()
@@ -226,6 +235,10 @@ jobs:
           production_log="$RUNNER_TEMP/improve-ci-artifacts/production-model.log"
           resources="$RUNNER_TEMP/improve-ci-artifacts/production-model-resources.txt"
           /usr/bin/time -v -o "$resources" tests/bin/runtime_external_model 2>&1 | tee -a "$production_log"
+          if ! grep -qx 'metric.CLI_REFINEMENT=accepted' "$production_log"; then
+            echo "production GGUF did not produce a policy-accepted CLI refinement" | tee -a "$production_log"
+            exit 1
+          fi
           maximum_rss=$(awk -F: '/Maximum resident set size/ {gsub(/[[:space:]]/, "", $2); print $2}' \
             "$resources")
           test -n "$maximum_rss"

@@ -261,9 +261,6 @@ package body Improve.Refinement.Codec is
       end;
       Response.Status := Proposal_Ready;
       Response.Diagnostic := Null_Unbounded_String;
-   exception
-      when others =>
-         Malformed ("model response could not be decoded safely");
    end Decode_Response;
 
 end Improve.Refinement.Codec;

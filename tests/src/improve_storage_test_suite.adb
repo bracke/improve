@@ -10,6 +10,8 @@ with Ada_Quality.Types;
 with Database.Fault_Injection;
 with Improve;
 with Improve.Model;
+with Improve.Harness_States;
+with Improve.Harness_States.Persistence;
 with Improve.Persistence_Records;
 with Improve.State;
 with Improve.Storage;
@@ -38,6 +40,8 @@ package body Improve_Storage_Test_Suite is
      renames Improve.Storage.Schema_Testing.Corrupt_Schema_Ownership;
    procedure Downgrade_To_Version_6 (Path : String)
      renames Improve.Storage.Schema_Testing.Downgrade_To_Version_6;
+   procedure Downgrade_To_Version_7 (Path : String)
+     renames Improve.Storage.Schema_Testing.Downgrade_To_Version_7;
    function Identity_Counter_State (Path : String) return String
      renames Improve.Storage.Identity_Testing.Identity_Counter_State;
    function Task_Identity_Counter_Value (Path : String) return String
@@ -166,6 +170,7 @@ package body Improve_Storage_Test_Suite is
                   Origin          => To_Unbounded_String ("improve:scale:" & Image (Index)),
                   Contract        => To_Unbounded_String (Contract),
                   State           => To_Unbounded_String ("candidate"),
+                  Core_State      => Improve.Harness_States.Parse_Core ("candidate"),
                   Plan_Revision   => Stored.Revision));
             Evidence.Append
               (Improve.State.Verification_Record'

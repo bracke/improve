@@ -6,8 +6,11 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada_Quality.Checks;
 with Ada_Quality.Coverage;
+with Hostkit.Fs;
+with Hostkit.Host;
 with Improve;
 with Improve_Coverage_Units;
+with Improve_Overlay_Identities;
 with Project_Tools.Files;
 with Project_Tools.Gcov;
 with Project_Tools.Processes;
@@ -24,8 +27,19 @@ procedure Improve_Coverage is
    Object_Dir : constant String := Project_Tools.Files.Join (Scratch, "obj");
    Binary_Dir : constant String := Project_Tools.Files.Join (Scratch, "bin");
    Alr : constant String := Project_Tools.Processes.Locate_Command ("alr");
-   Project_Overlay : constant String :=
-     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY", "");
+   Project_Overlay : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY", "");
+   Project_Overlay_2 : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_2", "");
+   Project_Overlay_3 : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_3", "");
+   Project_Overlay_Identity : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_ID", "");
+   Project_Overlay_2_Identity : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_2_ID", "");
+   Project_Overlay_3_Identity : constant String := Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_3_ID", "");
+   Initial_Source_Fingerprint    : Unbounded_String;
+   Initial_Overlay_1_Fingerprint : Unbounded_String;
+   Initial_Overlay_2_Fingerprint : Unbounded_String;
+   Initial_Overlay_3_Fingerprint : Unbounded_String;
+   Initial_Overlay_1_Identity    : Unbounded_String;
+   Initial_Overlay_2_Identity    : Unbounded_String;
+   Initial_Overlay_3_Identity    : Unbounded_String;
    Covered : Natural := 0;
    Total   : Natural := 0;
 
@@ -51,6 +65,31 @@ procedure Improve_Coverage is
       raise Program_Error with Message;
    end Fail;
 
+   function Overlay_Fingerprint (Path : String) return String is
+   begin
+      if Path = "" then
+         return "none";
+      elsif not Project_Tools.Files.Directory_Exists (Path) then
+         Fail ("dependency overlay is not a directory: " & Path);
+      end if;
+      return Ada_Quality.Checks.Source_Fingerprint (Path);
+   end Overlay_Fingerprint;
+
+   function Overlay_Identity (Path, Identity, Description : String) return String is
+   begin
+      if Path = "" then
+         if Identity /= "" then
+            Fail (Description & " identity was supplied without an overlay");
+         end if;
+         return "none";
+      elsif Identity = "" then
+         Fail (Description & " requires a stable identity such as dependency@commit");
+      elsif not Improve_Overlay_Identities.Valid (Identity, Allow_None => False) then
+         Fail (Description & " identity is invalid");
+      end if;
+      return Identity;
+   end Overlay_Identity;
+
    function Build_Arguments return Project_Tools.Processes.Argument_Vectors.Vector is
       Result : Project_Tools.Processes.Argument_Vectors.Vector :=
         Project_Tools.Processes.Arguments
@@ -64,12 +103,37 @@ procedure Improve_Coverage is
       if Project_Overlay /= "" then
          Result.Append (Project_Tools.Processes.Argument ("-aP" & Project_Overlay));
       end if;
+      if Project_Overlay_2 /= "" then
+         Result.Append (Project_Tools.Processes.Argument ("-aP" & Project_Overlay_2));
+      end if;
+      if Project_Overlay_3 /= "" then
+         Result.Append (Project_Tools.Processes.Argument ("-aP" & Project_Overlay_3));
+      end if;
       Result.Append (Project_Tools.Processes.Argument ("-p"));
       Result.Append (Project_Tools.Processes.Argument ("-j1"));
       return Result;
    end Build_Arguments;
+
+   procedure Require_Unchanged (Description, Initial, Current : String) is
+   begin
+      if Current /= Initial then
+         Fail (Description & " changed while coverage was running");
+      end if;
+   end Require_Unchanged;
 begin
    if Root = "" or else Alr = "" then Fail ("project root or Alire executable is unavailable"); end if;
+   Initial_Source_Fingerprint := To_Unbounded_String (Ada_Quality.Checks.Source_Fingerprint (Root));
+   Initial_Overlay_1_Fingerprint := To_Unbounded_String (Overlay_Fingerprint (Project_Overlay));
+   Initial_Overlay_2_Fingerprint := To_Unbounded_String (Overlay_Fingerprint (Project_Overlay_2));
+   Initial_Overlay_3_Fingerprint := To_Unbounded_String (Overlay_Fingerprint (Project_Overlay_3));
+   Initial_Overlay_1_Identity :=
+     To_Unbounded_String (Overlay_Identity (Project_Overlay, Project_Overlay_Identity, "first dependency overlay"));
+   Initial_Overlay_2_Identity :=
+     To_Unbounded_String
+       (Overlay_Identity (Project_Overlay_2, Project_Overlay_2_Identity, "second dependency overlay"));
+   Initial_Overlay_3_Identity :=
+     To_Unbounded_String
+       (Overlay_Identity (Project_Overlay_3, Project_Overlay_3_Identity, "third dependency overlay"));
    Project_Tools.Processes.Run
      ("instrumented Improve build", Tests_Dir, Alr, Build_Arguments);
    Project_Tools.Processes.Run
@@ -165,20 +229,63 @@ begin
          Separator : constant Natural := Ada.Strings.Fixed.Index (Digest, ":");
          Evidence_Dir : constant String := Project_Tools.Files.Join (Root, "coverage");
          Evidence : constant String := Project_Tools.Files.Join (Evidence_Dir, "gcov-summary.txt");
+         Process_Tag : constant String :=
+           Ada.Strings.Fixed.Trim (Integer'Image (Hostkit.Host.Own_Process_Id), Ada.Strings.Both);
+         Staged_Evidence : constant String := Evidence & ".improve-" & Process_Tag & ".tmp";
+         Evidence_Text : constant String :=
+           "Lines executed:" & Project_Tools.Gcov.Percent_Image (Summary) & " of " & Trim (Total) & ASCII.LF &
+           "covered=" & Trim (Covered) & ASCII.LF &
+           "total=" & Trim (Total) & ASCII.LF &
+           "complete=true" & ASCII.LF &
+           "inventory=gcov-production-lines-v2" & ASCII.LF &
+           "source_fingerprint=" & To_String (Initial_Source_Fingerprint) & ASCII.LF &
+           "overlay_1_fingerprint=" & To_String (Initial_Overlay_1_Fingerprint) & ASCII.LF &
+           "overlay_1_identity=" & To_String (Initial_Overlay_1_Identity) & ASCII.LF &
+           "overlay_2_fingerprint=" & To_String (Initial_Overlay_2_Fingerprint) & ASCII.LF &
+           "overlay_2_identity=" & To_String (Initial_Overlay_2_Identity) & ASCII.LF &
+           "overlay_3_fingerprint=" & To_String (Initial_Overlay_3_Fingerprint) & ASCII.LF &
+           "overlay_3_identity=" & To_String (Initial_Overlay_3_Identity) & ASCII.LF &
+           "toolchain_fingerprint=" & Digest (Separator + 1 .. Digest'Last) & ASCII.LF;
+
+         procedure Discard_Staged_Evidence is
+         begin
+            if Ada.Directories.Exists (Staged_Evidence) then
+               Ada.Directories.Delete_File (Staged_Evidence);
+            end if;
+         exception
+            when others => null;
+         end Discard_Staged_Evidence;
+
+         procedure Require_Inputs_Unchanged is
+         begin
+            Require_Unchanged
+              ("Improve source", To_String (Initial_Source_Fingerprint), Ada_Quality.Checks.Source_Fingerprint (Root));
+            Require_Unchanged
+              ("first dependency overlay", To_String (Initial_Overlay_1_Fingerprint),
+               Overlay_Fingerprint (Project_Overlay));
+            Require_Unchanged
+              ("second dependency overlay", To_String (Initial_Overlay_2_Fingerprint),
+               Overlay_Fingerprint (Project_Overlay_2));
+            Require_Unchanged
+              ("third dependency overlay", To_String (Initial_Overlay_3_Fingerprint),
+               Overlay_Fingerprint (Project_Overlay_3));
+         end Require_Inputs_Unchanged;
       begin
          if Toolchain.Status /= 0 then Fail ("GNAT toolchain identity is unavailable"); end if;
          if not Project_Tools.Files.Directory_Exists (Evidence_Dir) then
             Ada.Directories.Create_Directory (Evidence_Dir);
          end if;
-         Project_Tools.Files.Write_Text_File
-           (Evidence,
-            "Lines executed:" & Project_Tools.Gcov.Percent_Image (Summary) & " of " & Trim (Total) & ASCII.LF &
-            "covered=" & Trim (Covered) & ASCII.LF &
-            "total=" & Trim (Total) & ASCII.LF &
-            "complete=true" & ASCII.LF &
-            "inventory=gcov-production-lines-v2" & ASCII.LF &
-            "source_fingerprint=" & Ada_Quality.Checks.Source_Fingerprint (Root) & ASCII.LF &
-            "toolchain_fingerprint=" & Digest (Separator + 1 .. Digest'Last) & ASCII.LF);
+         Require_Inputs_Unchanged;
+         Discard_Staged_Evidence;
+         Project_Tools.Files.Write_Text_File (Staged_Evidence, Evidence_Text);
+         Require_Inputs_Unchanged;
+         if not Hostkit.Fs.Replace_File (Staged_Evidence, Evidence) then
+            Fail ("could not atomically replace coverage evidence");
+         end if;
+      exception
+         when others =>
+            Discard_Staged_Evidence;
+            raise;
       end;
    end;
    Project_Tools.Test_Fixtures.Cleanup (Scratch);

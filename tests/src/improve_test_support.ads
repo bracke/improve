@@ -32,7 +32,10 @@ package Improve_Test_Support is
 
    function Add_Fixture_Project (Data : Fixture; Label : String) return Fixture;
 
-   procedure Initialize_Harness (Directory : String);
+   procedure Initialize_Harness
+     (Directory       : String;
+      Extension_State : String := "";
+      Extension_Core  : String := "accepted");
 
    procedure Remove (Item : Fixture);
 

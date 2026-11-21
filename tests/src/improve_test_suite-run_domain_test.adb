@@ -68,30 +68,8 @@ begin
               (Improve.Model.Canonical_Key (Left) /= Improve.Model.Canonical_Key (Right),
                "canonical component encoding lost a field boundary");
          end;
-         declare
-            Seed   : constant String := [1 .. 64 => '0'];
-            Digest : constant String := Improve.Stable_Digest ("canonical");
-            Public_Key, Signature : Unbounded_String;
-            Rejected : Boolean := False;
-         begin
-            Improve.Audit_Artifacts.Sign (Digest, Seed, Public_Key, Signature);
-            declare
-               Text : constant String :=
-                 "{""data"":{""canonical_payload"":""canonical"",""bundle_digest"":""" & Digest &
-                 """,""public_key"":""" & To_String (Public_Key) & """,""signature"":""" &
-                 To_String (Signature) & """}}";
-            begin
-               Improve.Audit_Artifacts.Verify (Text);
-               begin
-                  Improve.Audit_Artifacts.Verify
-                    (Text (Text'First .. Text'Last - 4) &
-                     (if Text (Text'Last - 3) = '0' then "1" else "0") & Text (Text'Last - 2 .. Text'Last));
-               exception
-                  when Improve.Data_Error => Rejected := True;
-               end;
-               Assert (Rejected, "altered signed audit artifact was accepted");
-            end;
-         end;
+         Improve_Audit_Artifacts_Testing.Check;
+         Improve_Audit_Artifacts_Testing.Check_CLI;
       when Plan_Diff_Explanation =>
          declare
             Data    : constant Fixture := Build_Fixture ("plan_diff");
@@ -209,50 +187,6 @@ begin
                   "plan diff identity or 500-task scale property failed");
             end;
             Improve_JSON_Output_Testing.Check_All (Earlier);
-         end;
-         declare
-            Data  : constant Fixture := Build_Fixture ("audit_bundle");
-            Draft : Improve.Model.Plan_Revision := Draft_For (Data);
-            Store : Improve.Storage.Store;
-            State_Path : constant String := To_String (Data.Directory) & "/improve.db";
-         begin
-            Improve.Storage.Open (Store, State_Path, Writable => True);
-            declare Saved : constant Improve.Storage.Save_Result := Improve.Storage.Save (Store, Draft); begin
-               Draft := Saved.Plan;
-            end;
-            Improve.Storage.Approve (Store, To_String (Draft.Plan_Id), Draft.Revision);
-            Improve.Storage.Close (Store);
-            declare Bundle : constant Improve.Results.Audit_Bundle :=
-              Improve.Operations.Audit.Run (State_Path, To_String (Draft.Plan_Id));
-            begin
-               Assert
-                 (Bundle.Approved and then Bundle.Plan.Fingerprint = Draft.Fingerprint and then
-                  Ada.Strings.Fixed.Index (Improve.JSON.Audit (Bundle), """command"":""audit""") > 0,
-                  "read-only audit bundle omitted exact plan approval or provenance");
-            end;
-            declare
-               Common : constant String := "|--state|" & State_Path & "|--format|json";
-               Graph  : constant Improve.CLI.Outcome :=
-                 Improve.CLI.Execute
-                   (Args ("plan|graph|" & To_String (Draft.Plan_Id) & "|--state|" & State_Path & "|--format|dot"));
-               Plans  : constant Improve.CLI.Outcome :=
-                 Improve.CLI.Execute
-                   (Args ("plan|list|--database|" & To_String (Data.Database) & "|--project|" &
-                          Id_Image (Data.Project) & Common & "|--limit|1|--cursor|0"));
-               Tasks  : constant Improve.CLI.Outcome :=
-                 Improve.CLI.Execute
-                   (Args ("tasks|--database|" & To_String (Data.Database) & "|--project|" &
-                          Id_Image (Data.Project) & Common & "|--limit|1|--cursor|0"));
-               Audit  : constant Improve.CLI.Outcome :=
-                 Improve.CLI.Execute
-                   (Args ("audit|" & To_String (Draft.Plan_Id) & Common & "|--limit|1|--cursor|0"));
-            begin
-               Assert
-                 (Graph.Exit_Code = 0 and then Plans.Exit_Code = 0 and then Tasks.Exit_Code = 0 and then
-                  Audit.Exit_Code = 0,
-                  "graph or paged state inspection command failed");
-            end;
-            Remove (Data);
          end;
          declare
             Builder  : Improve.Canonical_Digests.Builder;

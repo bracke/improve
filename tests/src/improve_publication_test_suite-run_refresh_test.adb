@@ -2,7 +2,7 @@ separate (Improve_Publication_Test_Suite)
 procedure Run_Refresh_Test (Item : in out Case_Test) is
 begin
    case Item.Id is
-         when Refresh_Reconciles_State =>
+      when Refresh_Reconciles_State =>
             declare
                package Errors renames Model_Runner.Errors;
                package Stores renames Model_Runner.Framework.Stores;
@@ -21,7 +21,8 @@ begin
             begin
                Planned := Prepare_Verification_Plan (Data, State);
                Assert (Planned.Exit_Code = 0, "refresh fixture plan failed");
-               Initialize_Harness (To_String (Data.Target));
+               Initialize_Harness
+                 (To_String (Data.Target), Extension_State => "parked", Extension_Core => "accepted");
                Approve_Latest (State);
                Applied := Improve.CLI.Execute
                  (Args ("apply|PLAN-000001|--database|" & To_String (Data.Database) & "|--state|" & State &
@@ -38,6 +39,10 @@ begin
                  (Store, Change, To_String (Mapping.Harness_Task_Id), "accepted", "", Status => Status,
                   Actor => "improve-test");
                Assert (Errors.Is_Ok (Status), "refresh fixture task acceptance failed");
+               Tasks.Move
+                 (Store, Change, To_String (Mapping.Harness_Task_Id), "parked", "", Status => Status,
+                  Actor => "improve-test");
+               Assert (Errors.Is_Ok (Status), "refresh fixture extension state failed");
                Stores.Commit (Store, Change, Status);
                Assert (Errors.Is_Ok (Status), "refresh fixture harness commit failed");
                Stores.Close (Store);
@@ -56,7 +61,23 @@ begin
                   Mapping := Improve.Storage.Publications (Improve_State, "PLAN-000001").First_Element;
                   Improve.Storage.Close (Improve_State);
                end;
-               Assert (To_String (Mapping.State) = "accepted", "refresh did not synchronize harness state");
+               Assert
+                 (To_String (Mapping.State) = "parked" and then
+                  Improve.Harness_States.Image (Mapping.Core_State) = "accepted",
+                  "refresh did not preserve raw and normalized harness state");
+               declare
+                  Listed : constant Improve.CLI.Outcome := Improve.CLI.Execute
+                    (Args ("tasks|--project|" & Id_Image (Data.Project) & "|--database|" &
+                           To_String (Data.Database) & "|--state|" & State & "|--format|json"));
+                  Output : constant String := To_String (Listed.Output);
+               begin
+                  Assert
+                    (Listed.Exit_Code = 0 and then
+                     Ada.Strings.Fixed.Index (Output, """harness_state"":""parked""") > 0 and then
+                     Ada.Strings.Fixed.Index (Output, """harness_core_state"":""accepted""") > 0 and then
+                     Ada.Strings.Fixed.Index (Output, """status"":""published""") > 0,
+                     "task inspection did not classify the extension state through its core mapping");
+               end;
                Remove (Data);
             end;
          when Refresh_Rejects_Definition_Drift =>

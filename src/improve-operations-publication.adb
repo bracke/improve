@@ -82,7 +82,8 @@ package body Improve.Operations.Publication is
                for Value of Published.Tasks loop
                   Mappings.Append
                     (Improve.State.Publication_Record'
-                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract, Value.State, Plan.Revision));
+                       (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
+                        Value.State, Value.Core_State, Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);
                Improve.Storage.Record_Publications

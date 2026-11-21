@@ -42,7 +42,7 @@ begin
                   Mappings.Append
                     (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
-                        Value.State, First.Plan.Revision));
+                        Value.State, Value.Core_State, First.Plan.Revision));
                end loop;
                declare Improve_State : Improve.Storage.Store; begin
                   Improve.Storage.Open (Improve_State, State, Writable => True);

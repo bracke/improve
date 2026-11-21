@@ -3,6 +3,7 @@ with Ada_Quality.Types;
 with AUnit;
 with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
+with Improve.Harness_States;
 with Improve.Model;
 with Improve.State;
 with Improve.Tasks;
@@ -73,6 +74,7 @@ package body Improve_Tasks_Test_Suite is
                   Contract        => To_Unbounded_String
                     (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Only.Id)),
                   State           => To_Unbounded_String (Harness_State),
+                  Core_State      => Improve.Harness_States.Parse_Core (Harness_State),
                   Plan_Revision   => Plan.Revision));
          end if;
          if Verified then
@@ -171,6 +173,7 @@ package body Improve_Tasks_Test_Suite is
             Contract        => To_Unbounded_String
               (Improve.Model.Effective_Task_Contract_Fingerprint (Plan, Only.Id)),
             State           => To_Unbounded_String ("candidate"),
+            Core_State      => Improve.Harness_States.Parse_Core ("candidate"),
             Plan_Revision   => Plan.Revision);
          Verification : constant Improve.State.Verification_Record :=
            (Scope                => Improve.Model.Task_Evaluation,
@@ -215,6 +218,19 @@ package body Improve_Tasks_Test_Suite is
       Check ("", Improve.Tasks.Proposed);
       Check ("candidate", Improve.Tasks.Published);
       Check ("accepted", Improve.Tasks.Published);
+      declare
+         Unknown : constant Improve.Harness_States.State :=
+           Improve.Harness_States.Parse_Core ("future-extension-state");
+         Accepted : constant Improve.Harness_States.State :=
+           Improve.Harness_States.Parse_Core ("accepted");
+      begin
+         Assert
+           (not Improve.Harness_States.Is_Known (Unknown) and then
+            Improve.Harness_States.Image (Unknown) = "" and then
+            not Improve.Harness_States.Consistent ("parked", Accepted) and then
+            not Improve.Harness_States.Consistent ("running", Accepted),
+            "raw/core model_runner state binding was not enforced");
+      end;
       Check ("running", Improve.Tasks.In_Progress);
       Check ("blocked", Improve.Tasks.Blocked);
       Check ("failed", Improve.Tasks.Failed);
@@ -231,6 +247,30 @@ package body Improve_Tasks_Test_Suite is
       Check ("running", Improve.Tasks.Superseded, True, Improve.Model.Superseded);
       Check ("complete", Improve.Tasks.Awaiting_Verification, True, Improve.Model.Regressed, 3);
       Check ("complete", Improve.Tasks.Awaiting_Verification, True, Improve.Model.Superseded, 3);
+      declare
+         Views    : Improve.Tasks.View_Vectors.Vector :=
+           Improve.Tasks.Build
+             (Plan, Improve.State.Publication_Vectors.Empty_Vector,
+              Improve.State.Verification_Vectors.Empty_Vector);
+      begin
+         Views (Views.First_Index).Harness_State := To_Unbounded_String ("unmapped-extension");
+         Views (Views.First_Index).Harness_Core_State :=
+           Improve.Harness_States.Parse_Core ("unmapped-extension");
+         Views (Views.First_Index).Freshness := Improve.Tasks.Freshness_Current;
+         Views (Views.First_Index).Quality := Improve.Model.Regressed;
+         begin
+            declare
+               Returned : constant Improve.Tasks.Operational_Status :=
+                 Improve.Tasks.Status (Views.First_Element);
+            begin
+               Assert
+                 (False,
+                  "an unrecognized cached harness state returned " & Improve.Tasks.Image (Returned));
+            end;
+         exception
+            when Improve.Data_Error => null;
+         end;
+      end;
       Assert
         (Improve.Tasks.Valid_Filter ("unresolved") and then Improve.Tasks.Valid_Filter ("verified") and then
          not Improve.Tasks.Valid_Filter ("unknown") and then

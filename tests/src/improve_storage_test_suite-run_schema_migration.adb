@@ -16,6 +16,40 @@ begin
    Improve.Storage.Record_Verification (Store, To_String (Stored.Plan_Id), Evidence, Limits);
    Improve.Storage.Close (Store);
    declare
+      Legacy_Path : constant String := Root & "/legacy-v7.db";
+      Bounded     : Improve.Storage.Persistence_Limits := Limits;
+      Rejected    : Boolean := False;
+      LF          : constant Character := Character'Val (10);
+      Legacy      : constant String :=
+        Improve.Storage_Codec.Pair ("plan_id", To_String (Stored.Plan_Id)) & LF &
+        Improve.Storage_Codec.Pair ("harness_id", To_String (Mappings (1).Harness_Task_Id)) & LF &
+        Improve.Storage_Codec.Pair ("origin", To_String (Mappings (1).Origin)) & LF &
+        Improve.Storage_Codec.Pair ("contract", To_String (Mappings (1).Contract)) & LF &
+        Improve.Storage_Codec.Pair ("plan_revision", Image (Mappings (1).Plan_Revision));
+   begin
+      Ada.Directories.Copy_File (Path, Legacy_Path);
+      Downgrade_To_Version_7 (Legacy_Path);
+      Replace_Row_Payload (Legacy_Path, Table => 10, Id => 1, Payload => Legacy);
+      Bounded.Maximum_Migration_Rows := 1;
+      begin
+         Improve.Storage.Open (Store, Legacy_Path, Writable => True, Limits => Bounded);
+      exception
+         when Improve.Data_Error => Rejected := True;
+      end;
+      Assert (Rejected, "version-8 migration ignored its configured row limit");
+      Improve.Storage.Open (Store, Legacy_Path, Writable => True, Limits => Limits);
+      declare
+         Migrated : constant Improve.State.Publication_Record :=
+           Improve.Storage.Publications (Store, To_String (Stored.Plan_Id)).First_Element;
+      begin
+         Assert
+           (To_String (Migrated.State) = "candidate" and then
+            Improve.Harness_States.Image (Migrated.Core_State) = "candidate",
+            "version-8 migration did not preserve raw and normalized harness state");
+      end;
+      Improve.Storage.Close (Store);
+   end;
+   declare
       Legacy_Path : constant String := Root & "/oversized-v2.db";
       Bounded     : Improve.Storage.Persistence_Limits := Limits;
       Rejected    : Boolean := False;

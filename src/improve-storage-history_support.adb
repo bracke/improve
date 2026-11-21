@@ -91,19 +91,30 @@ package body History_Support is
          Stored_Plan : constant String := To_String (Data.Plan_Id);
          Expected    : constant String :=
            (if Expected_Plan_Id = "" then Stored_Plan else Expected_Plan_Id);
+         Core        : constant Improve.Harness_States.State :=
+           (if Length (Data.Core_State) > 0 then
+              Improve.Harness_States.Persistence.Restore
+                (S (Row.State), To_String (Data.Core_State))
+            else Improve.Harness_States.Parse_Core (S (Row.State)));
       begin
          Improve.Persistence_Validation.Validate (Data, Expected);
          Require_Relationship (Item, Row, Stored_Plan, "publication mapping");
+         if Length (Data.Core_State) > 0 and then
+           not Improve.Harness_States.Consistent (S (Row.State), Core)
+         then
+            raise Data_Error with "publication mapping has an invalid normalized core state";
+         end if;
+         Value :=
+           (Plan_Id => Data.Plan_Id,
+            Value   =>
+              (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
+               Harness_Task_Id => Data.Harness_Id,
+               Origin          => Data.Origin,
+               Contract        => Data.Contract,
+               State           => To_Unbounded_String (S (Row.State)),
+               Core_State      => Core,
+               Plan_Revision   => Data.Plan_Revision));
       end;
-      Value :=
-        (Plan_Id => Data.Plan_Id,
-         Value   =>
-           (Improve_Task_Id => To_Unbounded_String (S (Row.Kind)),
-            Harness_Task_Id => Data.Harness_Id,
-            Origin          => Data.Origin,
-            Contract        => Data.Contract,
-            State           => To_Unbounded_String (S (Row.State)),
-            Plan_Revision   => Data.Plan_Revision));
    end Decode_Publication;
 
    procedure Decode_Verification

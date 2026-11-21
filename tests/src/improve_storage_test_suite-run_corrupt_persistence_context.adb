@@ -102,6 +102,7 @@ begin
              Harness_Id    => Mappings (1).Harness_Task_Id,
              Origin        => Mappings (1).Origin,
              Contract      => To_Unbounded_String ("unrelated-contract"),
+             Core_State    => To_Unbounded_String (Improve.Harness_States.Image (Mappings (1).Core_State)),
              Plan_Revision => Mappings (1).Plan_Revision)));
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error
@@ -157,6 +158,7 @@ begin
              Harness_Id    => Mappings (1).Harness_Task_Id,
              Origin        => Mappings (1).Origin,
              Contract      => Mappings (1).Contract,
+             Core_State    => To_Unbounded_String (Improve.Harness_States.Image (Mappings (1).Core_State)),
              Plan_Revision => Mappings (1).Plan_Revision)));
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error
@@ -256,6 +258,7 @@ begin
              Harness_Id    => Mappings (1).Harness_Task_Id,
              Origin        => Mappings (1).Origin,
              Contract      => Mappings (1).Contract,
+             Core_State    => To_Unbounded_String (Improve.Harness_States.Image (Mappings (1).Core_State)),
              Plan_Revision => Mappings (1).Plan_Revision)));
       Improve.Storage.Open (Store, Path, Writable => False);
       Expect_Data_Error

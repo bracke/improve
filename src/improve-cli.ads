@@ -69,6 +69,7 @@ package Improve.CLI is
       Severity_Filter  : Ada.Strings.Unbounded.Unbounded_String;
       Path_Filter      : Ada.Strings.Unbounded.Unbounded_String;
       Signing_Key      : Ada.Strings.Unbounded.Unbounded_String;
+      Verification_Key : Ada.Strings.Unbounded.Unbounded_String;
       Agent_Model      : Ada.Strings.Unbounded.Unbounded_String;
       Agent_Model_Path : Ada.Strings.Unbounded.Unbounded_String;
       Agent_Model_SHA256 : Ada.Strings.Unbounded.Unbounded_String;
@@ -91,6 +92,7 @@ package Improve.CLI is
       Has_Severity  : Boolean := False;
       Has_Path      : Boolean := False;
       Has_Signing_Key : Boolean := False;
+      Has_Verification_Key : Boolean := False;
       Has_Agent_Model : Boolean := False;
       Has_Agent_Model_Path : Boolean := False;
       Has_Agent_Model_SHA256 : Boolean := False;
@@ -124,6 +126,7 @@ package Improve.CLI is
    --  @field Severity_Filter Finding severity filter.
    --  @field Path_Filter Finding path filter.
    --  @field Signing_Key Optional Ed25519 seed file for audit export.
+   --  @field Verification_Key Trusted Ed25519 public-key file for audit verification.
    --  @field Agent_Model Invocation-local model identity override.
    --  @field Agent_Model_Path Invocation-local model path override.
    --  @field Agent_Model_SHA256 Invocation-local expected model digest override.
@@ -146,6 +149,7 @@ package Improve.CLI is
    --  @field Has_Severity Whether Severity_Filter was supplied.
    --  @field Has_Path Whether Path_Filter was supplied.
    --  @field Has_Signing_Key Whether Signing_Key was supplied.
+   --  @field Has_Verification_Key Whether Verification_Key was supplied.
    --  @field Has_Agent_Model Whether Agent_Model was supplied.
    --  @field Has_Agent_Model_Path Whether Agent_Model_Path was supplied.
    --  @field Has_Agent_Model_SHA256 Whether Agent_Model_SHA256 was supplied.

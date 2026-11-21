@@ -1,6 +1,7 @@
 with Ada.Command_Line;
 with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -79,6 +80,15 @@ procedure Check_Release_Candidate is
 begin
    if Root = "" or else Alr = "" then
       raise Program_Error with "project root or Alire is unavailable";
+   end if;
+   if Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY", "") /= "" or else
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_2", "") /= "" or else
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_3", "") /= "" or else
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_ID", "") /= "" or else
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_2_ID", "") /= "" or else
+     Ada.Environment_Variables.Value ("IMPROVE_GPR_OVERLAY_3_ID", "") /= ""
+   then
+      raise Program_Error with "dependency overlays are not permitted for a release candidate";
    end if;
    Project_Tools.Release_Checks.Require_Clean_Git_Worktree ("Improve", Root);
    Project_Tools.Files.Copy_Release_Source_Tree

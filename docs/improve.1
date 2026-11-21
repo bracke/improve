@@ -5,16 +5,17 @@ improve \- deterministic Ada quality remediation planning
 .B improve
 command [options]
 .SH DESCRIPTION
-Improve reads completed Ada Quality assessments, stores immutable remediation plans, and publishes approved work as
+Improve reads completed Ada Quality assessments, stores immutable remediation plans, and publishes
 native model_runner tasks.
 .SH COMMANDS
-projects, findings, plan, audit, apply, tasks, status, refresh, verify, recover, doctor, config, completion, manpage,
-help, and version.
+projects, findings, plan, audit, apply, tasks, status, refresh, verify, recover, doctor, config,
+completion, manpage, help, and version.
 .SH PLAN OPERATIONS
-plan supports list, show, approve, diff, explain, and graph in addition to deterministic generation.
+plan supports list, show, approve, diff, explain, or graph in addition to deterministic generation.
 .SH AUDIT
 audit PLAN-ID [--revision N] exports immutable provenance, approval, publication, and verification evidence.
-audit verify FILE checks its canonical digest and optional Ed25519 signature.
+audit verify FILE checks its canonical digest. Signed artifacts require --verification-key FILE as an independent
+trust anchor for the Ed25519 signature.
 .SH OUTPUT
 --format accepts terminal, json, markdown, or dot for plan graph. JSON output and JSON errors are single versioned
 documents.

@@ -1,10 +1,11 @@
 with Ada.Command_Line;
-with Ada.Containers.Vectors;
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada_Quality.Checks;
 with Improve_CI_Checks;
+with Improve_Check_All_Support;
+with Improve_Overlay_Identities;
 with Project_Tools.Alire_Manifests;
 with Project_Tools.Files;
 with Project_Tools.Release_Checks;
@@ -12,14 +13,9 @@ with Project_Tools.Release_Checks;
 --  Fast repository checks used before the deeper Ada Quality release gates exist.
 procedure Check_All is
    use Ada.Strings.Unbounded;
-   use type Ada.Containers.Count_Type;
    Root : constant String := Project_Tools.Files.Find_Root_Upward (Ada.Directories.Current_Directory, "improve.gpr");
    Check : constant Project_Tools.Release_Checks.Checker := Project_Tools.Release_Checks.Create (Root);
    Failed : Boolean := False;
-
-   package Text_Vectors is new Ada.Containers.Vectors
-     (Index_Type => Positive, Element_Type => Unbounded_String);
-
    procedure Check_File (Path : String; Maximum_Lines : Natural := 0) is
    begin
       if not Project_Tools.Files.File_Exists (Path) then
@@ -93,86 +89,29 @@ procedure Check_All is
       return "";
    end Evidence_Value;
 
-   procedure Validate_Dependency_Lock is
-      Text  : constant String := Project_Tools.Files.Read_Raw_File (".github/dependency-lock.txt");
-      Lines : Text_Vectors.Vector;
-      Start : Natural := Text'First;
+   function Valid_Optional_Fingerprint (Value : String) return Boolean is
+     (Value = "none" or else
+      (Value'Length = 16 and then
+       (for all Character_Of_Value of Value => Character_Of_Value in '0' .. '9' | 'a' .. 'f')));
 
-      procedure Report (Message : String) is
-      begin
-         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "dependency lock: " & Message);
-         Failed := True;
-      end Report;
-
-      procedure Require_Repository (Name : String) is
-         Matches : Natural := 0;
-      begin
-         for Line of Lines loop
-            declare Value : constant String := To_String (Line); begin
-               if Value'Length > Name'Length and then
-                 Value (Value'First .. Value'First + Name'Length) = Name & "="
-               then
-                  Matches := Matches + 1;
-               end if;
-            end;
-         end loop;
-         if Matches /= 1 then
-            Report (Name & " must have exactly one pinned revision");
-         end if;
-      end Require_Repository;
+   procedure Validate_Overlay_Identity_Parser is
+      Valid_Example : constant String := "database@a14d0ef228be887108d7c89612ca06940365dfde";
    begin
-      while Start <= Text'Last loop
-         declare Stop : Natural := Start; begin
-            while Stop <= Text'Last and then Text (Stop) /= ASCII.LF loop
-               Stop := Stop + 1;
-            end loop;
-            if Stop > Start then Lines.Append (To_Unbounded_String (Text (Start .. Stop - 1))); end if;
-            Start := Stop + 1;
-         end;
-      end loop;
-      if Lines.Length /= 19 then
-         Report ("expected 19 workspace repositories, found" & Natural'Image (Natural (Lines.Length)));
+      if not Improve_Overlay_Identities.Valid (Valid_Example) or else
+        Improve_Overlay_Identities.Valid ("@") or else
+        Improve_Overlay_Identities.Valid ("database@") or else
+        Improve_Overlay_Identities.Valid (Valid_Example & ",")
+      then
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "coverage overlay identity validation is inconsistent");
+         Failed := True;
       end if;
-      for Line of Lines loop
-         declare
-            Value : constant String := To_String (Line);
-            Equal : Natural := 0;
-         begin
-            for Index in Value'Range loop
-               if Value (Index) = '=' then Equal := Index; exit; end if;
-            end loop;
-            if Equal = 0 or else Value'Last - Equal /= 40 or else
-              (for some Index in Equal + 1 .. Value'Last =>
-                 Value (Index) not in '0' .. '9' | 'a' .. 'f')
-            then
-               Report ("invalid repository=commit entry: " & Value);
-            end if;
-         end;
-      end loop;
-      Require_Repository ("ada_quality");
-      Require_Repository ("database");
-      Require_Repository ("jsonlib");
-      Require_Repository ("messages");
-      Require_Repository ("terminal_styles");
-      Require_Repository ("project_tools");
-      Require_Repository ("hostkit");
-      Require_Repository ("model_runner");
-      Require_Repository ("cryptolib");
-      Require_Repository ("i18n");
-      Require_Repository ("regexp");
-      Require_Repository ("httpclient");
-      Require_Repository ("ssllib");
-      Require_Repository ("truststores");
-      Require_Repository ("zlib");
-      Require_Repository ("jpeglib");
-      Require_Repository ("versionlib");
-      Require_Repository ("sshlib");
-      Require_Repository ("awklib");
-   end Validate_Dependency_Lock;
+   end Validate_Overlay_Identity_Parser;
+
 begin
    if Root = "" then
       Project_Tools.Release_Checks.Fail ("cannot locate Improve project root");
    end if;
+   Ada.Directories.Set_Directory (Root);
    for Path of Project_Tools.Files.List_Tree ("src", "*.ad?") loop
       Check_File (To_String (Path), Maximum_Lines => 700);
    end loop;
@@ -198,6 +137,7 @@ begin
    Check_File ("docs/improve.1");
    Check_File ("docs/dependency-licenses.md");
    Check_File ("schemas/improve-output-v1.schema.json");
+   Check_File ("schemas/improve-output-v2.schema.json");
    Check_File ("completions/improve.bash");
    Check_File ("completions/_improve");
    Check_File ("completions/improve.fish");
@@ -222,7 +162,8 @@ begin
    Check.Require_Text ("tests/alire.release.toml", "improve = { path = "".."" }");
    Check.Require_Text ("coverage/gcov-summary.txt", "complete=true");
    Check.Require_Text ("coverage/gcov-summary.txt", "inventory=gcov-production-lines-v2");
-   Validate_Dependency_Lock;
+   Validate_Overlay_Identity_Parser;
+   Improve_Check_All_Support.Validate_Dependency_Lock (Failed);
    Improve_CI_Checks.Validate_Action_Pins;
    Improve_CI_Checks.Validate_Workflow_Contracts;
    if Evidence_Value ("source_fingerprint") /= Ada_Quality.Checks.Source_Fingerprint (Root) then
@@ -232,6 +173,21 @@ begin
          Ada_Quality.Checks.Source_Fingerprint (Root));
       Failed := True;
    end if;
+   for Index in 1 .. 3 loop
+      declare
+         Prefix      : constant String := "overlay_" & Character'Val (Character'Pos ('0') + Index);
+         Name        : constant String := Prefix & "_fingerprint";
+         Value       : constant String := Evidence_Value (Name);
+         Identity    : constant String := Evidence_Value (Prefix & "_identity");
+      begin
+         if not Valid_Optional_Fingerprint (Value) or else not Improve_Overlay_Identities.Valid (Identity) or else
+           ((Value = "none") /= (Identity = "none"))
+         then
+            Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "coverage evidence has invalid " & Name);
+            Failed := True;
+         end if;
+      end;
+   end loop;
    Check.Require_Text ("CHANGELOG.md", "## 0.1.0 — 2026-11-03");
    Check.Require_Text ("LICENSE", "MIT License");
    Require_Release_Dependency ("gnat_native", "=15.2.1");

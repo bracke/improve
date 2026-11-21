@@ -7,6 +7,7 @@ with AUnit.Assertions;
 with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
+with Improve.Harness_States;
 with Improve.Model;
 with Improve.Operations;
 with Improve.State;

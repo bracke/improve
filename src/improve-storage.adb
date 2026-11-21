@@ -13,6 +13,8 @@ with Database.Transactions;
 with Database.UUIDs;
 with Database.Values;
 with Database.WAL;
+with Improve.Harness_States;
+with Improve.Harness_States.Persistence;
 with Improve.Persistence_Records;
 with Improve.Persistence_Validation;
 with Improve.Storage.Allocation;
@@ -237,6 +239,11 @@ package body Improve.Storage is
       Metadata : in out Entity) is separate;
 
    procedure Migrate_To_Version_7
+     (Item     : in out Store;
+      Metadata : in out Entity;
+      Limits   : Persistence_Limits) is separate;
+
+   procedure Migrate_To_Version_8
      (Item     : in out Store;
       Metadata : in out Entity;
       Limits   : Persistence_Limits) is separate;

@@ -1,5 +1,6 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Improve.Harness_States;
 with Improve.Model;
 with Improve.State;
 
@@ -56,6 +57,7 @@ package Improve.Tasks is
       Harness_Id     : UString;
       Title          : UString;
       Harness_State  : UString;
+      Harness_Core_State : Improve.Harness_States.State;
       Quality        : Improve.Model.Quality_Outcome := Improve.Model.Unverified;
       Has_Verification : Boolean := False;
       Verification_Run : Natural := 0;
@@ -68,7 +70,8 @@ package Improve.Tasks is
    --  @field Improve_Id Stable Improve task identity.
    --  @field Harness_Id Native task identity, when published.
    --  @field Title Task title.
-   --  @field Harness_State Cached harness-owned state.
+   --  @field Harness_State Cached raw harness-owned state.
+   --  @field Harness_Core_State Cached normalized model_runner core state.
    --  @field Quality Latest independent quality outcome.
    --  @field Has_Verification Whether quality evidence has been recorded.
    --  @field Verification_Run Assessment evaluated by the historical quality outcome.

@@ -1,5 +1,6 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Improve.Harness_States;
 with Improve.Model;
 with Improve.State;
 
@@ -106,6 +107,7 @@ package Improve.Results is
       Origin     : UString;
       Contract   : UString;
       State      : UString;
+      Core_State : Improve.Harness_States.State;
       Recovered  : Boolean := False;
    end record;
    --  Native publication mapping returned by an application operation.
@@ -113,7 +115,8 @@ package Improve.Results is
    --  @field Harness_Id Native model_runner task identity.
    --  @field Origin Authenticated Improve publication origin.
    --  @field Contract Dependency-qualified execution contract.
-   --  @field State Harness-owned runtime state.
+   --  @field State Raw harness-owned runtime state.
+   --  @field Core_State Normalized model_runner core state.
    --  @field Recovered Whether an existing native task was reused.
 
    package Published_Task_Vectors is new Ada.Containers.Vectors (Positive, Published_Task);

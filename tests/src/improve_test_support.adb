@@ -243,7 +243,10 @@ package body Improve_Test_Support is
          Interrupted => Later, Target => To_Unbounded_String (Target));
    end Add_Fixture_Project;
 
-   procedure Initialize_Harness (Directory : String) is
+   procedure Initialize_Harness
+     (Directory       : String;
+      Extension_State : String := "";
+      Extension_Core  : String := "accepted") is
       package Config renames Model_Runner.Framework.Configuration_Records;
       package Errors renames Model_Runner.Errors;
       package Records renames Model_Runner.Framework.Records;
@@ -260,6 +263,13 @@ package body Improve_Test_Support is
       Records.Set (Resolved, "template_origin", "Improve tests");
       Records.Set (Resolved, "template_order", "improve-tests");
       Records.Set (Resolved, "task_kind.remediation", "acceptance, notes?");
+      if Extension_State /= "" then
+         Records.Set
+           (Resolved, "map.task.state." & Extension_State,
+            Extension_Core & ", Improve integration fixture state");
+         Records.Set
+           (Resolved, "set.task.transitions", Extension_Core & " -> " & Extension_State);
+      end if;
       Records.Set (Resolved, "configuration_fingerprint", Config.Fingerprint (Resolved));
       Stores.Put (Initial, Model_Runner.Framework.Config_Area, "resolved", Resolved);
       Stores.Create (Store, Directory, "Improve tests", Status, Initial);

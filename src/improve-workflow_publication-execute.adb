@@ -26,6 +26,17 @@ function Execute
    type Natural_Array is array (Natural range <>) of Natural;
    Existing_Next     : Natural_Array (1 .. Natural (Existing.Length)) := [others => 0];
 
+   function Core_State_Of (Harness_Id, Raw : String) return Improve.Harness_States.State is
+      Core : constant Improve.Harness_States.State :=
+        Improve.Harness_States.Resolve (Store, Raw);
+   begin
+      if not Improve.Harness_States.Is_Known (Core) then
+         raise Data_Error with
+           "native task " & Harness_Id & " has unrecognized state " & Raw;
+      end if;
+      return Core;
+   end Core_State_Of;
+
    procedure Build_Indexes is
    begin
       for Index in 1 .. Natural (Plan.Tasks.Length) loop

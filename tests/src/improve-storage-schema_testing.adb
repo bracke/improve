@@ -177,4 +177,22 @@ package body Improve.Storage.Schema_Testing is
       end loop;
       Commit (Item);
    end Downgrade_To_Version_6;
+
+   procedure Downgrade_To_Version_7 (Path : String) is
+      Item   : Session;
+      Schema : constant Database.Schema.Table_Schema := Raw_Schema;
+      Row    : Persistence_Entity;
+   begin
+      Open_Write (Item, Path);
+      Check
+        (Persistence_Entity_Tables.Find
+           (Item.Tx, Item.DB, Schema,
+            Persistence_Physical_Key (Schema_Metadata_Table, 1), Row),
+         "schema metadata is missing");
+      Row.State := To_Unbounded_Wide_Wide_String ("7");
+      Check
+        (Persistence_Entity_Tables.Update (Item.Tx, Item.DB, Schema, Row),
+         "schema metadata could not be downgraded");
+      Commit (Item);
+   end Downgrade_To_Version_7;
 end Improve.Storage.Schema_Testing;

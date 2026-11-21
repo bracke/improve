@@ -94,6 +94,7 @@ package body Improve.Operations.Recovery is
                         Origin          => Published_Task.Origin,
                         Contract        => Published_Task.Contract,
                         State           => Published_Task.State,
+                        Core_State      => Published_Task.Core_State,
                         Plan_Revision   => Plan.Revision));
                end loop;
                Improve.Storage.Open (State, State_Path, Writable => True, Limits => Limits);

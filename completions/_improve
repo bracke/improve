@@ -1,18 +1,223 @@
 #compdef improve
-local improve_commands
-improve_commands='(projects findings plan audit apply tasks status refresh verify recover doctor'
-improve_commands="$improve_commands config completion manpage help version)"
-_arguments \
-  "1:command:$improve_commands" \
-  '2:operation:(list show approve diff explain graph verify bash zsh fish)' \
-  '--format[output format]:(terminal json markdown dot)' \
-  '--color[color policy]:(auto always never)' \
-  '--progress[runtime progress]:(auto always never)' \
-  '--severity[finding severity]:(critical high medium low info)' \
-  '--status[task status]:(all planned ready running blocked completed failed stale)' \
-  '--config[configuration file]:file:_files' '--database[quality database]:file:_files' \
-  '--state[Improve state]:file:_files' \
-  '--agent-model[local model identity]:name:' \
-  '--agent-model-path[local GGUF model]:file:_files' \
-  '--agent-model-sha256[expected model digest]:digest:' \
-  '--no-agent[disable local refinement]' '*:argument:'
+local context state state_descr line
+typeset -A opt_args
+local -a improve_commands improve_value_options improve_original_words improve_option_specs
+improve_commands=()
+improve_value_options=()
+improve_option_specs=()
+improve_original_words=("${words[@]}")
+improve_commands+=(projects)
+improve_commands+=(findings)
+improve_commands+=(plan)
+improve_commands+=(audit)
+improve_commands+=(apply)
+improve_commands+=(tasks)
+improve_commands+=(status)
+improve_commands+=(refresh)
+improve_commands+=(verify)
+improve_commands+=(recover)
+improve_commands+=(doctor)
+improve_commands+=(config)
+improve_commands+=(completion)
+improve_commands+=(manpage)
+improve_commands+=(help)
+improve_commands+=(version)
+improve_value_options+=(--config)
+improve_value_options+=(--database)
+improve_value_options+=(--state)
+improve_value_options+=(--project)
+improve_value_options+=(--format)
+improve_value_options+=(--color)
+improve_value_options+=(--progress)
+improve_value_options+=(--run)
+improve_value_options+=(--revision)
+improve_value_options+=(--against-revision)
+improve_value_options+=(--task)
+improve_value_options+=(--status)
+improve_value_options+=(--indicator)
+improve_value_options+=(--severity)
+improve_value_options+=(--path)
+improve_value_options+=(--limit)
+improve_value_options+=(--cursor)
+improve_value_options+=(--signing-key)
+improve_value_options+=(--verification-key)
+improve_value_options+=(--agent-model)
+improve_value_options+=(--agent-model-path)
+improve_value_options+=(--agent-model-sha256)
+  local improve_statuses='all unresolved'
+  improve_statuses="$improve_statuses proposed"
+  improve_statuses="$improve_statuses published"
+  improve_statuses="$improve_statuses in_progress"
+  improve_statuses="$improve_statuses awaiting_verification"
+  improve_statuses="$improve_statuses verified"
+  improve_statuses="$improve_statuses blocked"
+  improve_statuses="$improve_statuses failed"
+  improve_statuses="$improve_statuses cancelled"
+  improve_statuses="$improve_statuses rejected"
+  improve_statuses="$improve_statuses partially_resolved"
+  improve_statuses="$improve_statuses still_failing"
+  improve_statuses="$improve_statuses inconclusive"
+  improve_statuses="$improve_statuses regressed"
+  improve_statuses="$improve_statuses superseded"
+local command='' operation='' command_context='' word skip_next=0
+for word in $improve_original_words[2,-1]; do
+  if ((skip_next)); then skip_next=0; continue; fi
+  if [[ $word == --*=* ]]; then continue; fi
+  if (( ${improve_value_options[(Ie)$word]} )); then skip_next=1; continue; fi
+  if [[ -z $command ]] && (( ${improve_commands[(Ie)$word]} )); then command=$word; continue; fi
+  if [[ -n $command && -z $operation && $word != --* ]]; then
+    if [[ $command == plan &&
+          ' list show approve diff explain graph ' == *' '$word' '* ]]; then
+      operation=$word
+    elif [[ $command == audit ]]; then
+      if [[ $word == verify ]]; then
+        operation=verify
+      else
+        operation=export
+      fi
+    fi
+  fi
+done
+command_context=$command
+if [[ -n $operation ]]; then command_context=$command:$operation; fi
+_improve_context_allowed() {
+  local expected
+  [[ -z $command ]] && return 0
+  for expected in $@; do
+    [[ $command_context == $expected ]] && return 0
+  done
+  return 1
+}
+improve_option_specs+=('--config[configuration file]:file:_files')
+improve_option_specs+=('--database[quality database]:file:_files')
+improve_option_specs+=('--state[Improve state]:file:_files')
+improve_option_specs+=('--project[project identity]:value:')
+improve_option_specs+=('--format[output format]:value:(terminal json markdown dot)')
+improve_option_specs+=('--color[color policy]:value:(auto always never)')
+improve_option_specs+=('--progress[runtime progress]:value:(auto always never)')
+if _improve_context_allowed \
+  findings \
+  plan \
+  verify \
+  plan:create \
+  plan:list \
+  plan:show \
+  plan:approve \
+  plan:diff \
+  plan:explain \
+  plan:graph; then
+  improve_option_specs+=('--run[assessment identity]:value:')
+fi
+if _improve_context_allowed \
+  plan \
+  audit \
+  tasks \
+  verify \
+  plan:show \
+  plan:diff \
+  plan:explain \
+  plan:graph \
+  audit:export \
+  audit:verify; then
+  improve_option_specs+=('--revision[plan revision]:value:')
+fi
+if _improve_context_allowed \
+  plan \
+  plan:diff; then
+  improve_option_specs+=('--against-revision[earlier revision]:value:')
+fi
+if _improve_context_allowed \
+  apply \
+  tasks \
+  verify; then
+  improve_option_specs+=('--task[Improve task identity]:value:')
+fi
+if _improve_context_allowed \
+  tasks; then
+  improve_option_specs+=('--status[task status]:status:($improve_statuses)')
+fi
+if _improve_context_allowed \
+  findings; then
+  improve_option_specs+=('--indicator[finding indicator]:value:')
+fi
+if _improve_context_allowed \
+  findings; then
+  improve_option_specs+=('--severity[finding severity]:value:(critical high medium low info)')
+fi
+if _improve_context_allowed \
+  findings; then
+  improve_option_specs+=('--path[finding path]:file:_files')
+fi
+if _improve_context_allowed \
+  findings \
+  plan \
+  audit \
+  tasks \
+  plan:list \
+  audit:export \
+  audit:verify; then
+  improve_option_specs+=('--limit[page size]:value:')
+fi
+if _improve_context_allowed \
+  findings \
+  plan \
+  audit \
+  tasks \
+  plan:list \
+  audit:export \
+  audit:verify; then
+  improve_option_specs+=('--cursor[page cursor]:value:')
+fi
+if _improve_context_allowed \
+  audit \
+  audit:export; then
+  improve_option_specs+=('--signing-key[private signing key]:file:_files')
+fi
+if _improve_context_allowed \
+  audit \
+  audit:verify; then
+  improve_option_specs+=('--verification-key[trusted audit public key]:file:_files')
+fi
+improve_option_specs+=('--agent-model[local model identity]:value:')
+improve_option_specs+=('--agent-model-path[local GGUF model]:file:_files')
+improve_option_specs+=('--agent-model-sha256[expected model digest]:value:')
+improve_option_specs+=('--no-agent[disable local refinement]')
+if _improve_context_allowed \
+  plan \
+  apply \
+  plan:create \
+  plan:list \
+  plan:show \
+  plan:approve \
+  plan:diff \
+  plan:explain \
+  plan:graph; then
+  improve_option_specs+=('--dry-run[preview without writes]')
+fi
+if _improve_context_allowed \
+  doctor; then
+  improve_option_specs+=('--release[validate release candidate]')
+fi
+if _improve_context_allowed \
+  status; then
+  improve_option_specs+=('--all[select every project]')
+fi
+improve_option_specs+=('--verbose[include operational detail]')
+improve_option_specs+=('--quiet[suppress nonessential output]')
+improve_option_specs+=('--help[display help]')
+if [[ -z $command ]]; then
+  improve_option_specs+=('--version[display version]')
+fi
+_arguments -C \
+  "1:command:($improve_commands)" \
+  $improve_option_specs \
+  '*::argument:->arguments'
+if [[ $state == arguments ]]; then
+  case "$command" in
+    plan) _values 'argument' list show approve diff explain graph ;;
+    audit) _values 'argument' verify ;;
+    config) _values 'argument' show validate explain ;;
+    completion) _values 'argument' bash zsh fish ;;
+    help) _values 'argument' $improve_commands ;;
+  esac
+fi

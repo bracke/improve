@@ -31,6 +31,7 @@ package body Improve.Persistence_Records is
       Pair ("harness_id", To_String (Value.Harness_Id)) & LF &
       Pair ("origin", To_String (Value.Origin)) & LF &
       Pair ("contract", To_String (Value.Contract)) & LF &
+      Pair ("core_state", To_String (Value.Core_State)) & LF &
       Pair ("plan_revision", Number (Value.Plan_Revision)));
 
    function Decode_Publication (Payload : String) return Publication_Data is
@@ -41,6 +42,7 @@ package body Improve.Persistence_Records is
          Harness_Id    => To_Unbounded_String (Field (Payload, "harness_id")),
          Origin        => To_Unbounded_String (Field (Payload, "origin")),
          Contract      => To_Unbounded_String (Field_Or (Payload, "contract", "")),
+         Core_State    => To_Unbounded_String (Field_Or (Payload, "core_state", "")),
          Plan_Revision => Positive'Value (Field_Or (Payload, "plan_revision", "1")));
       Require_Value (To_String (Result.Plan_Id), "publication plan identity");
       Require_Value (To_String (Result.Harness_Id), "publication harness identity");

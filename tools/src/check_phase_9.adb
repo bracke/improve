@@ -17,6 +17,8 @@ procedure Check_Phase_9 is
    Runtime : constant String := Project_Tools.Files.Join (Root, "model_runner_runtime");
    Docs    : constant String := Project_Tools.Test_Fixtures.Fresh_Temp_Dir ("improve-gnatdoc");
    Alr     : constant String := Project_Tools.Processes.Locate_Command ("alr");
+   Fish    : constant String := Project_Tools.Processes.Locate_Command ("fish");
+   Zsh     : constant String := Project_Tools.Processes.Locate_Command ("zsh");
 
    procedure Build_Project
      (Label, Project : String;
@@ -38,6 +40,9 @@ procedure Check_Phase_9 is
    end Build_Project;
 begin
    if Root = "" or else Alr = "" then raise Program_Error with "project root or Alire is unavailable"; end if;
+   if Fish = "" or else Zsh = "" then
+      raise Program_Error with "Fish and Zsh are required by the Phase 9 completion gate";
+   end if;
    Project_Tools.Processes.Run
      ("validation build", Root, Alr,
       Project_Tools.Processes.Arguments
@@ -54,6 +59,10 @@ begin
           Project_Tools.Processes.Argument ("-j1")]));
    Project_Tools.Processes.Run
      ("AUnit suite", Tests, Project_Tools.Files.Join (Tests, "bin/improve_tests"),
+      Project_Tools.Processes.No_Arguments);
+   Project_Tools.Processes.Run
+     ("CLI asset publication fault injection", Root,
+      Project_Tools.Files.Join (Tools, "check_cli_asset_publication"),
       Project_Tools.Processes.No_Arguments);
    Project_Tools.Processes.Run
      ("model runtime configuration generation", Runtime, Alr,

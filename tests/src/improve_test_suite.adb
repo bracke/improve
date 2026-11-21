@@ -12,8 +12,9 @@ with AUnit.Simple_Test_Cases;
 with Improve;
 with Improve.CLI;
 with Improve.Canonical_Digests;
-with Improve.Audit_Artifacts;
+with Improve_Audit_Artifacts_Testing;
 with Improve_CLI_Test_Suite;
+with Improve_CLI_Output_Test_Suite;
 with Improve_JSON_Output_Testing;
 with Improve_Coverage_Units_Test_Suite;
 with Improve_Planning_Test_Suite;
@@ -32,7 +33,6 @@ with Improve.Inspection_Filters;
 with Improve.JSON;
 with Improve.Model;
 with Improve.Operations;
-with Improve.Operations.Audit;
 with Improve.Operations.Diagnostics;
 with Improve.Operations.Planning;
 with Improve.Planner;
@@ -311,6 +311,7 @@ package body Improve_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
       Result.Add_Test (Improve_CLI_Test_Suite.Suite);
+      Result.Add_Test (Improve_CLI_Output_Test_Suite.Suite);
       Result.Add_Test (Improve_Coverage_Units_Test_Suite.Suite);
       Result.Add_Test (Improve_Operations_Test_Suite.Suite);
       Result.Add_Test (Improve_Planning_Test_Suite.Suite);

@@ -32,7 +32,7 @@ begin
             "create logical identity counter");
       end;
    end loop;
-   Metadata.State := WW (Number (Current_Schema_Version));
+   Metadata.State := WW ("7");
    Check
      (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Schema_Metadata_Table), Metadata),
       "record schema version 7");

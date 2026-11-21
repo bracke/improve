@@ -24,4 +24,8 @@ package Improve.Storage.Schema_Testing is
    procedure Downgrade_To_Version_6 (Path : String);
    --  Destructively convert a current test database into the supported version-6 fixture shape.
    --  @param Path Existing writable Improve database.
+
+   procedure Downgrade_To_Version_7 (Path : String);
+   --  Mark a current test database as a version-7 fixture.
+   --  @param Path Existing writable Improve database.
 end Improve.Storage.Schema_Testing;

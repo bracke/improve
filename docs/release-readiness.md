@@ -44,7 +44,7 @@ Tag creation, index submission, and runtime submission remain unreachable after 
 The gate requires all of the following:
 
 1. The application and test crate build in validation mode with warnings treated as errors.
-2. All 134 AUnit cases pass, including schema, structured-error, audit, inference-client, property, and scale coverage.
+2. All 135 AUnit cases pass, including schema, structured-error, audit, inference-client, property, and scale coverage.
 3. Repository structure, 120-column Ada source policy, required release files, and the Ada-only tooling rule pass.
 4. GNATdoc accepts every Improve package without warnings while excluding dependency-owned APIs.
 5. GNATprove proves every source unit that declares `SPARK_Mode` at level 2; the repository check rejects an omitted
@@ -58,6 +58,12 @@ The coverage driver inventories production units through Ada Quality, requires g
 missing objects. The only zero-line exception is the explicitly reviewed empty `Improve.Operations` namespace; future
 spec-only units fail closed. Test sources are never counted as production. The generated result and fingerprints are
 recorded in `coverage/gcov-summary.txt`.
+
+Development coverage may resolve dependency projects from `IMPROVE_GPR_OVERLAY`, `IMPROVE_GPR_OVERLAY_2`, and
+`IMPROVE_GPR_OVERLAY_3`. Each nonempty overlay requires the matching identity variable (the overlay name plus `_ID`),
+expressed as one or more auditable `dependency@commit` identities. Coverage evidence records both the immutable
+identity and a content fingerprint. The release-candidate gate rejects all overlay variables, so release evidence
+always covers the pin-free dependency solution selected inside the staged candidate.
 
 ## Publication dependency gate
 

@@ -11,7 +11,7 @@ private with Improve.Persistence_Schema;
 package Improve.Storage is
    --  Improve-owned transactional persistence for immutable plans and append-only evidence.
 
-   Current_Schema_Version : constant Positive := 7;
+   Current_Schema_Version : constant Positive := 8;
    --  Supported Improve state schema version.
 
    type Store is limited private;

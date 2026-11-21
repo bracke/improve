@@ -4,9 +4,9 @@
 improve <command> [options]
 ```
 
-Commands are `projects`, `findings`, `plan`, `audit`, `apply`, `tasks`, `status`, `refresh`, `verify`, `recover`, `doctor`,
-`config`, `completion`, `manpage`, `help`, and `version`. Global options may precede or follow the command. Unknown,
-repeated, missing, malformed, and
+Commands are `projects`, `findings`, `plan`, `audit`, `apply`, `tasks`, `status`, `refresh`, `verify`, `recover`,
+`doctor`, `config`, `completion`, `manpage`, `help`, and `version`. Global options may precede or follow the command.
+Unknown, repeated, missing, malformed, and
 command-incompatible options are rejected deterministically with exit code 2.
 
 `--config PATH` selects an Improve configuration explicitly. Without it, only `config/improve.toml` beneath the
@@ -19,8 +19,9 @@ missing or malformed.
 of `--color`. Diagnostics are written only to standard error. Inspection commands return zero when inspection
 succeeds even when quality findings exist; verification returns one when its requested criteria remain unresolved.
 `--format markdown` emits a color-free fenced report suitable for issue trackers and release artifacts. The formal
-version-1 JSON envelope and the structured diagnostic and plan-comparison documents are described by
-`schemas/improve-output-v1.schema.json`. When JSON is requested, failures are a single versioned `error` document on
+version-2 JSON envelope and the structured diagnostic and plan-comparison documents are described by
+`schemas/improve-output-v2.schema.json`; the frozen version-1 schema remains available for existing consumers. When
+JSON is requested, failures are a single versioned `error` document on
 standard error with a stable `IMP-E-*` code, category, detail, and optional corrective hint.
 
 `--agent-model NAME`, `--agent-model-path FILE`, and `--agent-model-sha256 HEX` provide invocation-local refinement
@@ -53,7 +54,13 @@ into one contract flag.
 `audit PLAN-ID [--revision N]` exports the selected immutable plan provenance and task-contract fingerprints together
 with exact-revision approval, publication mappings, and verification evidence. It opens only Improve state, read-only,
 and is intended for review archives and release evidence. JSON is the complete machine-readable bundle; terminal and
-Markdown formats provide a concise count and identity summary.
+Markdown formats provide a concise count and identity summary. Publication JSON and audit evidence report the raw
+model_runner state as `state` and its normalized core meaning as `core_state`. `--signing-key FILE` is accepted only
+with `--format json`, because terminal and Markdown summaries do not carry integrity fields. `audit verify FILE`
+reads one bounded file snapshot, validates the complete version-2 audit schema and canonical evidence, and checks an
+unsigned artifact's digest, but reports that authenticity was not established. A signed artifact
+must be verified with an independently supplied `--verification-key FILE`; the embedded public key is never trusted
+by itself.
 
 `verify --project PROJECT --revision N --run RUN` evaluates an exact historical plan revision. Task, plan, and project
 evidence records retain that revision and its immutable acceptance-contract fingerprint, so valid evaluations of two
@@ -104,11 +111,15 @@ Each JSON task view likewise reports `verification_run`, tri-state `verification
 Boolean `verification_current`, which is derived from the tri-state value. Its historical `quality_outcome`
 is retained for audit, but the derived task status does not treat it as verified when a newer completed assessment is
 current or when the current assessment is unknown. This freshness rule applies to verified, regressed, superseded,
-partially resolved, still failing, and inconclusive measurement outcomes.
+partially resolved, still failing, and inconclusive measurement outcomes. `harness_state` retains the raw
+model_runner state while `harness_core_state` exposes the normalized core state used for status classification.
 
 Every collection output is bounded by `output.maximum_output_items`, including projects, findings, plans,
-publication results, tasks, status, and verification results. Historical evidence reads and appends use the independent
-`operations.maximum_history_items` operation-wide budget, schema upgrades use `operations.maximum_migration_rows`,
+publication results, tasks, status, and verification results. For paginated commands, `--limit` cannot exceed that
+output bound, while the query may scan the independent assessment or history budget before applying its stable cursor;
+later pages therefore remain reachable even when the first page fills the output bound. Historical evidence reads and
+appends use the independent `operations.maximum_history_items` operation-wide budget, schema upgrades use
+`operations.maximum_migration_rows`,
 and assessment normalization has separate finding and byte limits.
 Read-only queries never initialize, migrate, or repair Improve state.
 

@@ -90,6 +90,9 @@ IMPROVE_TEST_MODEL_SHA256=0123456789abcdef0123456789abcdef0123456789abcdef012345
 
 Optional `IMPROVE_TEST_MAX_OPEN_SECONDS`, `IMPROVE_TEST_MAX_INFER_SECONDS`, and
 `IMPROVE_TEST_MAX_CLI_SECONDS` values enforce wall-time budgets. CI additionally uses GNU `time` to cap peak RSS.
+The executable reports whether the CLI accepted the refinement or safely selected deterministic fallback. The
+scheduled production qualification job requires `metric.CLI_REFINEMENT=accepted`; fallback remains accepted only by
+the standalone compatibility smoke check.
 
 CI runs the deterministic runtime suite on Linux and Intel macOS. Windows remains explicitly unavailable while the
 pinned database and Ada Quality revisions require POSIX process, locking, and durability APIs. A scheduled or manually

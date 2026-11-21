@@ -66,7 +66,7 @@ package body Improve.Text is
      "en.help.opt.database = Ada Quality database" & LF &
      "en.help.opt.state = Improve state database" & LF &
      "en.help.opt.project = Project identity or unique name" & LF &
-     "en.help.opt.format = Output format: terminal, json, or markdown" & LF &
+     "en.help.opt.format = Output format: terminal, json, markdown, or dot" & LF &
      "en.help.opt.color = Color policy: auto, always, or never" & LF &
      "en.help.opt.progress = Runtime progress: auto, always, or never" & LF &
      "en.help.opt.run = Completed assessment identity" & LF &
@@ -77,11 +77,15 @@ package body Improve.Text is
      "en.help.opt.indicator = Finding indicator filter" & LF &
      "en.help.opt.severity = Finding severity filter" & LF &
      "en.help.opt.path = Finding path filter" & LF &
+     "en.help.opt.pagination = Pagination limit and cursor" & LF &
+     "en.help.opt.signing_key = Signing key file" & LF &
+     "en.help.opt.verification_key = Trusted audit public key file" & LF &
      "en.help.opt.agent_model = Local refinement model identity" & LF &
      "en.help.opt.agent_model_path = Local GGUF model file" & LF &
      "en.help.opt.agent_model_sha256 = Expected lower-case model SHA-256" & LF &
      "en.help.opt.no_agent = Disable local refinement for this invocation" & LF &
      "en.help.opt.dry_run = Preview without persistent modification" & LF &
+     "en.help.opt.release = Validate the pin-free release candidate" & LF &
      "en.help.opt.all = Select every registered project" & LF &
      "en.help.opt.verbose = Include operational detail" & LF &
      "en.help.opt.quiet = Suppress nonessential terminal output" & LF &

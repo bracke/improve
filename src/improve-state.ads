@@ -1,5 +1,6 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Improve.Harness_States;
 with Improve.Model;
 
 --  Persistence-neutral remediation state shared by storage and domain services.
@@ -36,6 +37,7 @@ package Improve.State is
       Origin          : UString;
       Contract        : UString;
       State           : UString;
+      Core_State      : Improve.Harness_States.State;
       Plan_Revision   : Positive := 1;
    end record;
    --  Verified mapping from Improve work to a native harness task.
@@ -43,7 +45,8 @@ package Improve.State is
    --  @field Harness_Task_Id Native model_runner task identity.
    --  @field Origin Authenticated Improve publication origin.
    --  @field Contract Dependency-qualified execution contract.
-   --  @field State Cached harness-owned runtime state.
+   --  @field State Cached raw harness-owned runtime state.
+   --  @field Core_State Cached normalized model_runner core state.
    --  @field Plan_Revision Revision that first published the mapping.
 
    package Publication_Vectors is new Ada.Containers.Vectors (Positive, Publication_Record);
@@ -104,4 +107,5 @@ package Improve.State is
 
    package Publication_Operation_Vectors is new Ada.Containers.Vectors (Positive, Publication_Operation);
    --  Ordered pending publication operations.
+
 end Improve.State;

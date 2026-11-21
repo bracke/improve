@@ -108,7 +108,7 @@ begin
                   Mappings.Append
                     (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
-                        Value.State, First.Plan.Revision));
+                        Value.State, Value.Core_State, First.Plan.Revision));
                end loop;
                Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
                Assert (Errors.Is_Ok (Status), "could not open dependency replacement harness");
@@ -165,7 +165,7 @@ begin
                   Mappings.Append
                     (Improve.State.Publication_Record'
                        (Value.Improve_Id, Value.Harness_Id, Value.Origin, Value.Contract,
-                        Value.State, Second.Plan.Revision));
+                        Value.State, Value.Core_State, Second.Plan.Revision));
                end loop;
                Stores.Open (Harness, To_String (Data.Target), Recovery, Status);
                Move_Task (To_String (Republished.Tasks (1).Harness_Id), "accepted");

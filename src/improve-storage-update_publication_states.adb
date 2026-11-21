@@ -48,6 +48,11 @@ begin
       begin
          if not Rows.Contains (Key) then
             raise Data_Error with "publication reconciliation references an unknown Improve task";
+         elsif not Improve.Harness_States.Consistent (To_String (Value.State), Value.Core_State)
+         then
+            raise Data_Error with "publication reconciliation has invalid harness state";
+         elsif not Improve.Harness_States.Authoritative_For_Write (Value.Core_State) then
+            raise Data_Error with "publication reconciliation state was not resolved by model_runner";
          end if;
          Status := Entity_Tables.Find
            (Tx, Item.DB, Item.Schemas (Publications_Table),
@@ -55,7 +60,7 @@ begin
          Check (Status, "read publication mapping for reconciliation");
          declare Payload : constant String := S (Row.Payload); begin
             Require_Payload_Limit (Payload, Limits, "publication mapping payload");
-            declare Data : constant Improve.Persistence_Records.Publication_Data :=
+            declare Data : Improve.Persistence_Records.Publication_Data :=
               Improve.Persistence_Records.Decode_Publication (Payload);
             begin
                Improve.Persistence_Validation.Validate (Data, Plan_Id);
@@ -63,9 +68,12 @@ begin
                then
                   raise Data_Error with "publication reconciliation identity does not match stored mapping";
                end if;
+               Data.Core_State := To_Unbounded_String (Improve.Harness_States.Image (Value.Core_State));
+               Row.Payload := WW (Improve.Persistence_Records.Encode_Publication (Data));
             end;
          end;
          Row.State := WW (To_String (Value.State));
+         Require_Payload_Limit (S (Row.Payload), Limits, "publication mapping payload");
          Check
            (Entity_Tables.Update (Tx, Item.DB, Item.Schemas (Publications_Table), Row),
             "update reconciled publication state");

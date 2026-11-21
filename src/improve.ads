@@ -3,7 +3,7 @@ package Improve with SPARK_Mode is
    Version : constant String := "0.1.0";
    --  Application version.
 
-   JSON_Format_Version : constant := 1;
+   JSON_Format_Version : constant := 2;
    --  Version of every machine-readable output envelope.
 
    Argument_Error   : exception;

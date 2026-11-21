@@ -4,6 +4,7 @@ with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
+with Improve.Harness_States;
 with Model_Runner.Errors;
 with Model_Runner.Framework.Records;
 with Model_Runner.Framework.Stores;
